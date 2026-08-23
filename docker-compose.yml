@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: getitnow-postgres
+    environment:
+      POSTGRES_USER: getitnow
+      POSTGRES_PASSWORD: getitnow
+      POSTGRES_DB: getitnow
+    ports:
+      - "5432:5432"
+    volumes:
+      - getitnow-postgres-data:/var/lib/postgresql/data
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/src/db/migration_phase1_2.sql:/docker-entrypoint-initdb.d/02-migration_phase1_2.sql:ro
+      - ./backend/src/db/migration_phase4.sql:/docker-entrypoint-initdb.d/03-migration_phase4.sql:ro
+      - ./backend/src/db/migration_phase5.sql:/docker-entrypoint-initdb.d/04-migration_phase5.sql:ro
+      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/05-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U getitnow -d getitnow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: getitnow-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: getitnow-backend
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgres://getitnow:getitnow@postgres:5432/getitnow
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-getitnow-super-secret-jwt-key-change-in-production}
+      AI_SERVICE_URL: http://ai:8001
+      STORAGE_DIR: /var/lib/getitnow/storage
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai:
+        condition: service_started
+    restart: unless-stopped
+    volumes:
+      - getitnow-worker-storage:/var/lib/getitnow/storage
+
+  ai:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: getitnow-ai
+    expose:
+      - "8001"
+    restart: unless-stopped
+
+volumes:
+  getitnow-postgres-data:
+  getitnow-worker-storage:
+

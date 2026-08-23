@@ -1,0 +1,119 @@
+import cors from "cors";
+import express, { type Express } from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import crypto from "node:crypto";
+import swaggerUi from "swagger-ui-express";
+import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { requireAuth, requireRoles } from "./middleware/auth.js";
+import { env } from "./config/env.js";
+import { adminRouter } from "./routes/admin.js";
+import { aiRouter } from "./routes/ai.js";
+import { authRouter } from "./routes/auth.js";
+import { bookingsRouter } from "./routes/bookings.js";
+import { servicesRouter } from "./routes/services.js";
+import { workersRouter } from "./routes/workers.js";
+import { trustRouter } from "./routes/trust.js";
+import { notificationsRouter } from "./routes/notifications.js";
+import { filesRouter } from "./routes/files.js";
+import { usersRouter } from "./routes/users.js";
+import { cooperativesRouter } from "./routes/cooperatives.js";
+import { skillsRouter } from "./routes/skills.js";
+import { documentsRouter } from "./routes/documents.js";
+import { pricingRouter } from "./routes/pricing.js";
+import { emergencyRouter } from "./routes/emergency.js";
+import { paymentsRouter } from "./routes/payments.js";
+import { settlementsRouter } from "./routes/settlements.js";
+import { earningsRouter } from "./routes/earnings.js";
+import { invoicesRouter } from "./routes/invoices.js";
+import { analyticsRouter } from "./routes/analytics.js";
+import { institutionsRouter } from "./routes/institutions.js";
+import { recurringRouter } from "./routes/recurring.js";
+import { reportsRouter } from "./routes/reports.js";
+import { supportRouter } from "./routes/support.js";
+import { matchingRouter } from "./routes/matching.js";
+import { welfareRouter } from "./routes/welfare.js";
+import { reviewsRouter } from "./routes/reviews.js";
+import { serviceAreasRouter } from "./routes/serviceAreas.js";
+import { getLiveness, getReadiness } from "./core/health.js";
+import { getMetrics, getMetricsContentType } from "./core/metrics.js";
+import { errorHandler, notFoundHandler } from "./core/errors.js";
+import logger from "./core/logger.js";
+import { httpRequestDuration, httpRequestTotal } from "./core/metrics.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const swaggerSpec = JSON.parse(readFileSync(resolve(__dirname, "../swagger.json"), "utf-8"));
+
+export function createApp(): Express {
+  const app = express();
+
+  const allowedOrigins = new Set(env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean));
+  app.use(helmet());
+  app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)) }));
+  app.use(express.json({ limit: "256kb" }));
+
+  app.use((req, res, next) => {
+    const requestId = req.header("x-request-id")?.trim() || crypto.randomUUID();
+    res.setHeader("x-request-id", requestId);
+    (req as any).requestId = requestId;
+    const start = Date.now();
+    res.on("finish", () => {
+      const duration = (Date.now() - start) / 1000;
+      httpRequestDuration.observe({ method: req.method, route: req.route?.path ?? req.path, status_code: res.statusCode }, duration);
+      httpRequestTotal.inc({ method: req.method, route: req.route?.path ?? req.path, status_code: res.statusCode });
+    });
+    next();
+  });
+
+  app.use("/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false }));
+
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "GET IT NOW API Docs" }));
+  app.get("/docs.json", (_req, res) => res.json(swaggerSpec));
+
+  app.get("/health/live", async (_req, res) => { res.json(await getLiveness()); });
+  app.get("/health/ready", async (_req, res) => {
+    const health = await getReadiness();
+    res.status(health.status === "healthy" ? 200 : health.status === "degraded" ? 200 : 503).json(health);
+  });
+  app.get("/metrics", async (_req, res) => { res.set("Content-Type", getMetricsContentType()).send(await getMetrics()); });
+  app.get("/version", (_req, res) => { res.json({ version: process.env.npm_package_version ?? "0.1.0", env: env.NODE_ENV }); });
+
+  app.use("/auth", authRouter);
+  app.use("/users", requireAuth, usersRouter);
+  app.use("/cooperatives", requireAuth, cooperativesRouter);
+  app.use("/skills", requireAuth, skillsRouter);
+  app.use("/documents", requireAuth, documentsRouter);
+  app.use("/pricing", requireAuth, pricingRouter);
+  app.use("/emergency", requireAuth, emergencyRouter);
+  app.use("/payments", requireAuth, paymentsRouter);
+  app.use("/settlements", requireAuth, settlementsRouter);
+  app.use("/earnings", earningsRouter);
+  app.use("/invoices", requireAuth, invoicesRouter);
+  app.use("/analytics", requireAuth, analyticsRouter);
+  app.use("/institutions", requireAuth, institutionsRouter);
+  app.use("/recurring", requireAuth, recurringRouter);
+app.use("/matching", requireAuth, matchingRouter);
+  app.use("/welfare", requireAuth, welfareRouter);
+  app.use("/reviews", requireAuth, reviewsRouter);
+  app.use("/service-areas", requireAuth, serviceAreasRouter);
+  app.use("/reports", requireAuth, reportsRouter);
+  app.use("/support", requireAuth, supportRouter);
+  app.use("/services", servicesRouter);
+  app.use("/workers", requireAuth, workersRouter);
+  app.use("/bookings", requireAuth, bookingsRouter);
+  app.use("/admin", requireAuth, requireRoles("society_admin", "federation_admin", "system_admin"), adminRouter);
+  app.use("/ai", requireAuth, aiRouter);
+  app.use("/trust", requireAuth, trustRouter);
+  app.use("/notifications", requireAuth, notificationsRouter);
+  app.use("/files", requireAuth, filesRouter);
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  logger.info({ env: env.NODE_ENV }, "Express app created");
+  return app;
+}

@@ -1,0 +1,1110 @@
+Absolutely. Since **GET IT NOW** is your final platform name, the SRS should present it as a proper software product while keeping the language easy enough for a hackathon/jury review.
+
+# Software Requirements Specification (SRS)
+
+## GET IT NOW
+
+**Cooperative Gig Services Platform for Household & Community Services**
+
+**Problem Statement ID:** 26089
+**Organization:** Ministry of Cooperation
+**Department:** National Council for Cooperative Training (NCCT)
+**Category:** Software
+**Theme:** Smart Automation
+
+---
+
+# 1. Introduction
+
+## 1.1 Purpose
+
+**GET IT NOW** is a cooperative-owned digital platform that connects households, institutions, and communities with verified local skilled workers.
+
+The platform allows customers to easily find and book workers such as electricians, plumbers, carpenters, painters, cleaners, caregivers, drivers, gardeners, and technicians.
+
+At the same time, it helps cooperative workers receive more opportunities, earn fairly, and access worker welfare services.
+
+The system also uses AI to predict service demand and help cooperative administrators allocate workers efficiently.
+
+---
+
+## 1.2 Problem Statement
+
+Many Labour Cooperative Federations and Labour Cooperative Societies have a large number of skilled workers, but there is no organized digital system to connect them with people who need their services.
+
+Private service platforms currently dominate this market. Cooperative workers may have the required skills and local experience but still remain underutilized.
+
+Customers also face difficulties in finding:
+
+* Trusted workers
+* Skilled professionals
+* Available workers nearby
+* Emergency services
+* Transparent pricing
+* Reliable service providers
+
+**GET IT NOW** addresses these problems through one cooperative-owned platform.
+
+---
+
+# 2. Objectives
+
+The main objectives of GET IT NOW are:
+
+1. Connect customers with verified local workers.
+2. Provide workers with more job opportunities.
+3. Support fair and transparent earnings.
+4. Make service booking simple and fast.
+5. Match customers with suitable nearby workers.
+6. Provide emergency and on-demand services.
+7. Enable digital payments and invoices.
+8. Build customer trust through ratings and verification.
+9. Support worker welfare and insurance.
+10. Use AI to forecast demand.
+11. Help cooperatives manage their workforce efficiently.
+12. Provide multilingual access for users.
+
+---
+
+# 3. Scope
+
+## 3.1 In Scope
+
+The platform will provide:
+
+* Customer registration and login
+* Worker registration
+* Worker verification
+* Skill and certification management
+* Service discovery
+* Location-based worker matching
+* Service booking
+* Scheduled bookings
+* Emergency bookings
+* Worker availability management
+* Job acceptance and completion
+* Live booking status
+* Digital payments
+* Digital invoices
+* Ratings and reviews
+* Worker earnings tracking
+* Cooperative administration
+* Worker welfare management
+* AI demand forecasting
+* Workforce allocation
+* Notifications
+* Multilingual support
+* Reports and analytics
+
+## 3.2 Out of Scope for Initial MVP
+
+The following can be implemented in later versions:
+
+* Fully automated insurance claim processing
+* Advanced AI pricing
+* Physical worker verification centers
+* International services
+* Complex enterprise contract management
+* Fully autonomous worker allocation without administrator approval
+
+---
+
+# 4. Stakeholders
+
+## 4.1 Primary Users
+
+### Customers
+
+Households and individuals who require services.
+
+Examples:
+
+* Plumbing
+* Electrical work
+* Cleaning
+* Painting
+* Gardening
+* Appliance repair
+* Carpentry
+
+### Service Workers
+
+Verified cooperative workers who provide services.
+
+Examples:
+
+* Electricians
+* Plumbers
+* Carpenters
+* Painters
+* Cleaners
+* Drivers
+* Caregivers
+* Gardeners
+* Technicians
+
+### Cooperative Society Staff
+
+Local administrators who manage workers and services.
+
+### Federation Administrators
+
+Administrators who manage multiple cooperative societies and monitor overall operations.
+
+### Institutional Customers
+
+Organizations that require regular or bulk services.
+
+Examples:
+
+* Schools
+* Hospitals
+* Offices
+* Apartments
+* Government institutions
+* Businesses
+
+---
+
+# 5. System Users and Roles
+
+| Role             | Main Responsibilities                             |
+| ---------------- | ------------------------------------------------- |
+| Customer         | Search, book, pay, track and review services      |
+| Worker           | Manage profile, availability and jobs             |
+| Society Admin    | Verify workers and manage local operations        |
+| Federation Admin | Manage societies, workers, analytics and policies |
+| Support Staff    | Handle complaints and disputes                    |
+| System Admin     | Manage platform configuration and security        |
+
+---
+
+# 6. Functional Requirements
+
+## 6.1 User Registration
+
+The system shall allow users to create accounts using:
+
+* Mobile number
+* Email
+* OTP verification
+* Password or secure authentication
+
+The system shall support different user roles.
+
+---
+
+## 6.2 Worker Registration
+
+Workers shall be able to provide:
+
+* Name
+* Phone number
+* Address
+* Profile photo
+* Skills
+* Experience
+* Certifications
+* Cooperative membership
+* Service areas
+* Availability
+* Bank/payment details
+
+The worker profile shall remain unverified until the cooperative approves it.
+
+---
+
+## 6.3 Worker Verification
+
+Cooperative administrators shall be able to verify worker information.
+
+Verification may include:
+
+* Identity verification
+* Skill verification
+* Certification verification
+* Experience verification
+* Cooperative membership verification
+
+A verified worker shall receive a **Verified Worker** badge.
+
+---
+
+# 7. Service Management
+
+The system shall provide service categories such as:
+
+* Electrical
+* Plumbing
+* Carpentry
+* Painting
+* Cleaning
+* Gardening
+* Driving
+* Caregiving
+* Appliance repair
+* Technical services
+
+Administrators shall be able to add, remove, or modify service categories.
+
+---
+
+# 8. Service Booking
+
+Customers shall be able to:
+
+1. Select a service.
+2. Describe the problem.
+3. Upload images if required.
+4. Select immediate or scheduled service.
+5. Enter/select their location.
+6. View available workers.
+7. Select or accept a recommended worker.
+8. Confirm the booking.
+
+The system shall generate a unique booking ID.
+
+---
+
+# 9. Location-Based Matching
+
+The system shall identify suitable workers based on:
+
+* Distance
+* Skill match
+* Availability
+* Certification
+* Rating
+* Current workload
+* Service area
+
+Example:
+
+```text
+Customer requires:
+Emergency Plumbing
+
+Available Workers:
+
+Worker A
+Distance: 1.2 km
+Rating: 4.8
+Availability: Yes
+
+Worker B
+Distance: 2.0 km
+Rating: 4.9
+Availability: Yes
+
+Worker C
+Distance: 3.1 km
+Rating: 4.7
+Availability: Yes
+```
+
+The system shall recommend the most suitable worker rather than simply selecting the closest worker.
+
+---
+
+# 10. Smart Worker Matching
+
+The platform shall use a matching score.
+
+Example:
+
+```text
+Skill Match        30%
+Distance           20%
+Availability       15%
+Certification      15%
+Rating             10%
+Workload Balance   10%
+```
+
+This prevents the same workers from receiving all available jobs.
+
+---
+
+# 11. Emergency Services
+
+Customers shall have an option to request emergency services.
+
+Examples:
+
+* Water leakage
+* Electrical failure
+* Emergency repair
+* Lock-related assistance
+* Critical maintenance
+
+Emergency requests shall be prioritized based on worker availability and distance.
+
+---
+
+# 12. Worker Application
+
+Workers shall have a dedicated application/dashboard.
+
+The worker shall be able to:
+
+* View profile
+* Update skills
+* Update availability
+* Receive job requests
+* Accept/reject jobs
+* View job details
+* Navigate to customer location
+* Start job
+* Complete job
+* View earnings
+* View previous jobs
+* View ratings
+* View welfare information
+
+---
+
+# 13. Customer Application
+
+Customers shall be able to:
+
+* Register/login
+* Search services
+* Find nearby workers
+* Book services
+* Schedule services
+* Request emergency services
+* Track bookings
+* Make payments
+* Download invoices
+* Rate workers
+* View booking history
+* Raise complaints
+* Save favourite workers
+
+---
+
+# 14. Booking Lifecycle
+
+```text
+Customer Creates Request
+          ↓
+Service Identified
+          ↓
+Nearby Workers Found
+          ↓
+Smart Matching
+          ↓
+Worker Receives Request
+          ↓
+Worker Accepts
+          ↓
+Customer Gets Confirmation
+          ↓
+Worker Travels
+          ↓
+Job Started
+          ↓
+Job Completed
+          ↓
+Payment
+          ↓
+Invoice Generated
+          ↓
+Customer Rating
+          ↓
+Worker Earnings Updated
+```
+
+---
+
+# 15. Payment System
+
+The system shall support digital payments.
+
+Possible payment methods:
+
+* UPI
+* Debit/Credit Cards
+* Net Banking
+* Wallets
+
+The system shall:
+
+* Generate payment requests.
+* Track payment status.
+* Generate invoices.
+* Record worker earnings.
+* Maintain transaction history.
+
+---
+
+# 16. Rating and Feedback
+
+After completing a service, customers shall be able to provide:
+
+* Star rating
+* Written feedback
+* Service quality rating
+* Professionalism rating
+* Optional complaint
+
+Ratings shall contribute to the worker's profile.
+
+The system shall also monitor abnormal or abusive rating patterns.
+
+---
+
+# 17. Worker Earnings
+
+Workers shall have an earnings dashboard showing:
+
+```text
+Today's Earnings
+Weekly Earnings
+Monthly Earnings
+Completed Jobs
+Pending Payments
+Total Earnings
+```
+
+The platform shall maintain transparent records of completed jobs and payments.
+
+---
+
+# 18. Worker Welfare
+
+The platform shall maintain worker welfare information.
+
+Possible information includes:
+
+* Insurance status
+* Welfare scheme enrollment
+* Training
+* Certification
+* Safety programs
+* Work history
+* Emergency assistance
+
+The cooperative administration can use this information to identify workers who require support.
+
+---
+
+# 19. Workload Management
+
+The system shall monitor worker workloads.
+
+For example:
+
+```text
+Worker A
+Jobs Today: 8
+Status: High Workload
+
+Worker B
+Jobs Today: 3
+Status: Available
+
+Worker C
+Jobs Today: 2
+Status: Available
+```
+
+The matching system shall prefer workers with suitable availability and balanced workloads.
+
+---
+
+# 20. AI Demand Forecasting
+
+The platform shall analyze historical service data to predict future demand.
+
+The AI system may consider:
+
+* Previous bookings
+* Service type
+* Location
+* Time
+* Day
+* Season
+* Emergency requests
+* Local trends
+
+Example:
+
+```text
+Tomorrow – Area A
+
+Expected Plumbing Requests: 42
+Available Plumbers: 18
+
+Predicted Shortage: 9 workers
+
+Recommendation:
+Move available workers from nearby areas.
+```
+
+---
+
+# 21. AI Workforce Allocation
+
+Based on predicted demand, the system shall recommend how workers should be distributed.
+
+The administrator shall receive recommendations such as:
+
+```text
+AREA A
+High demand expected
+
+Recommendation:
++6 Plumbers
++3 Electricians
++2 Cleaners
+```
+
+Administrators can approve or modify these recommendations.
+
+---
+
+# 22. Cooperative Dashboard
+
+The cooperative dashboard shall provide:
+
+### Overview
+
+* Total workers
+* Verified workers
+* Active workers
+* Total bookings
+* Completed jobs
+* Pending jobs
+* Emergency requests
+* Total earnings
+
+### Workforce
+
+* Worker list
+* Skills
+* Certifications
+* Availability
+* Workload
+* Ratings
+
+### Operations
+
+* Current bookings
+* Active jobs
+* Delayed jobs
+* Complaints
+* Emergency requests
+
+### Analytics
+
+* Service demand
+* Popular services
+* Worker utilization
+* Earnings
+* Area-wise demand
+* Customer satisfaction
+
+---
+
+# 23. Federation Dashboard
+
+The federation dashboard shall provide a higher-level view across multiple cooperative societies.
+
+It shall display:
+
+* Number of societies
+* Total workers
+* Total customers
+* Total bookings
+* Total earnings
+* Service demand
+* Worker utilization
+* Welfare statistics
+* Regional demand
+* AI forecasts
+* Society performance
+
+---
+
+# 24. Notifications
+
+The system shall send notifications for:
+
+* Booking confirmation
+* Worker assignment
+* Worker arrival
+* Booking cancellation
+* Payment confirmation
+* Invoice generation
+* New job request
+* Job completion
+* Rating reminders
+* Certification expiry
+* Welfare updates
+* Emergency requests
+
+Notifications may be delivered through:
+
+* Push notifications
+* SMS
+* Email
+* In-app notifications
+
+---
+
+# 25. Multilingual Support
+
+The platform shall support multiple Indian languages.
+
+The initial implementation can support:
+
+* English
+* Telugu
+* Hindi
+
+Additional languages can be added later.
+
+Users shall be able to change their preferred language.
+
+---
+
+# 26. Non-Functional Requirements
+
+## 26.1 Performance
+
+* Normal pages should load quickly.
+* Booking operations should respond within a few seconds under normal network conditions.
+* The system should support multiple simultaneous users.
+
+## 26.2 Scalability
+
+The architecture should support expansion from:
+
+```text
+One Cooperative Society
+        ↓
+Multiple Societies
+        ↓
+District
+        ↓
+State
+        ↓
+National Platform
+```
+
+## 26.3 Security
+
+The system shall provide:
+
+* Secure authentication
+* OTP verification
+* Role-based access control
+* Encrypted communication
+* Secure payment processing
+* Protection of personal information
+* Audit logs
+* Secure API endpoints
+
+## 26.4 Reliability
+
+The system should:
+
+* Maintain regular database backups.
+* Prevent loss of booking information.
+* Handle payment failures safely.
+* Recover from temporary service failures.
+
+## 26.5 Usability
+
+The application should be:
+
+* Simple
+* Mobile-friendly
+* Easy to understand
+* Accessible to users with limited technical knowledge
+* Available in multiple languages
+
+---
+
+# 27. Data Requirements
+
+The system shall maintain the following major entities:
+
+### User
+
+```text
+User
+- userId
+- name
+- phone
+- email
+- role
+- location
+- language
+```
+
+### Worker
+
+```text
+Worker
+- workerId
+- userId
+- skills
+- experience
+- certifications
+- verificationStatus
+- availability
+- rating
+- workload
+```
+
+### Service
+
+```text
+Service
+- serviceId
+- name
+- category
+- description
+```
+
+### Booking
+
+```text
+Booking
+- bookingId
+- customerId
+- workerId
+- serviceId
+- location
+- date
+- time
+- status
+- price
+```
+
+### Payment
+
+```text
+Payment
+- paymentId
+- bookingId
+- amount
+- method
+- status
+- timestamp
+```
+
+### Review
+
+```text
+Review
+- reviewId
+- bookingId
+- customerId
+- workerId
+- rating
+- feedback
+```
+
+### Cooperative
+
+```text
+Cooperative
+- cooperativeId
+- name
+- location
+- federationId
+```
+
+---
+
+# 28. High-Level Architecture
+
+```text
+                 ┌─────────────────┐
+                 │ Customer App    │
+                 └────────┬────────┘
+                          │
+                 ┌────────▼────────┐
+                 │   API Gateway   │
+                 └────────┬────────┘
+                          │
+       ┌──────────────────┼──────────────────┐
+       │                  │                  │
+       ▼                  ▼                  ▼
+   Auth Service      Booking Service    Worker Service
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          │
+                  ┌───────▼────────┐
+                  │   Database     │
+                  │ PostgreSQL     │
+                  │ + PostGIS      │
+                  └───────┬────────┘
+                          │
+                  ┌───────▼────────┐
+                  │   AI Engine    │
+                  ├────────────────┤
+                  │ Demand         │
+                  │ Forecasting    │
+                  │ Matching       │
+                  │ Allocation     │
+                  └────────────────┘
+```
+
+Additional services:
+
+* Payment Service
+* Notification Service
+* Rating Service
+* Welfare Service
+* Location Service
+* Admin Service
+
+---
+
+# 29. Recommended Technology Stack
+
+## Mobile Applications
+
+**Flutter**
+
+One codebase can support:
+
+* Android
+* iOS
+
+## Web Dashboard
+
+**Next.js / React**
+
+Used for:
+
+* Cooperative dashboard
+* Federation dashboard
+* Administration
+
+## Backend
+
+**Node.js + TypeScript**
+
+Possible framework:
+
+* Express.js
+* NestJS
+
+## Database
+
+**PostgreSQL + PostGIS**
+
+PostGIS can be used for location-based worker matching.
+
+## Cache
+
+**Redis**
+
+Used for:
+
+* Availability
+* Temporary booking states
+* Real-time information
+* Performance optimization
+
+## AI
+
+Possible technologies:
+
+* Python
+* Scikit-learn
+* XGBoost
+* TensorFlow/PyTorch where required
+
+## Maps
+
+Possible integration:
+
+* Google Maps
+* OpenStreetMap
+
+## Payments
+
+Possible integration:
+
+* UPI
+* Razorpay
+* Other approved payment gateway
+
+## Cloud
+
+Possible deployment:
+
+* AWS
+* Google Cloud
+* Azure
+* Vercel for frontend components
+
+---
+
+# 30. Use Case Summary
+
+## Customer
+
+```text
+Register
+   ↓
+Search Service
+   ↓
+Select Location
+   ↓
+Find Worker
+   ↓
+Book
+   ↓
+Track
+   ↓
+Pay
+   ↓
+Review
+```
+
+## Worker
+
+```text
+Register
+   ↓
+Submit Verification
+   ↓
+Add Skills
+   ↓
+Set Availability
+   ↓
+Receive Job
+   ↓
+Accept
+   ↓
+Complete Job
+   ↓
+Receive Earnings
+```
+
+## Cooperative Admin
+
+```text
+Verify Workers
+       ↓
+Manage Workforce
+       ↓
+Monitor Bookings
+       ↓
+View Demand
+       ↓
+Review AI Recommendations
+       ↓
+Allocate Workers
+       ↓
+Monitor Welfare
+```
+
+---
+
+# 31. Business Rules
+
+1. Only verified workers can receive regular service bookings.
+2. Workers must have the required skill for a service.
+3. Emergency jobs should prioritize available qualified workers.
+4. Workers should not be overloaded when other suitable workers are available.
+5. Payments must be associated with a valid booking.
+6. Reviews can only be submitted after a completed booking.
+7. Administrators can suspend workers or customers for serious violations.
+8. Worker earnings must be recorded transparently.
+9. AI recommendations should be reviewable by authorized administrators.
+10. Personal and payment information must be protected.
+
+---
+
+# 32. Future Enhancements
+
+Future versions may include:
+
+* AI-powered service price estimation
+* Voice-based booking
+* AI chatbot for customers
+* Automatic skill verification
+* Predictive maintenance
+* Smart recurring service subscriptions
+* Institutional service contracts
+* Worker training recommendations
+* Advanced insurance integration
+* Offline-first worker application
+* Digital cooperative membership card
+* Community service request system
+
+---
+
+# 33. Expected Benefits
+
+## For Customers
+
+* Easy access to trusted workers
+* Faster service
+* Transparent booking
+* Digital payments
+* Better service quality
+* Emergency support
+
+## For Workers
+
+* More job opportunities
+* Fairer access to work
+* Transparent earnings
+* Skill recognition
+* Welfare support
+* Insurance integration
+
+## For Cooperatives
+
+* Better workforce management
+* Digital operations
+* Increased worker utilization
+* Demand visibility
+* Data-driven decisions
+* Reduced dependence on private platforms
+
+## For Government / Federation
+
+* Better visibility of cooperative workforce
+* Improved worker welfare
+* Digital records
+* Regional service-demand data
+* Support for cooperative growth
+
+---
+
+# 34. Success Metrics
+
+The platform can measure:
+
+| Metric                     | Goal     |
+| -------------------------- | -------- |
+| Worker verification rate   | Increase |
+| Booking completion rate    | Increase |
+| Average response time      | Decrease |
+| Worker utilization         | Increase |
+| Customer satisfaction      | Increase |
+| Worker earnings            | Increase |
+| Emergency response time    | Decrease |
+| Booking cancellations      | Decrease |
+| Repeat customers           | Increase |
+| Unbalanced worker workload | Decrease |
+
+---
+
+# 35. Conclusion
+
+**GET IT NOW** provides a digital bridge between customers who need services and skilled workers belonging to Labour Cooperatives.
+
+Instead of operating like a normal private gig platform, the system focuses on **cooperative ownership, worker welfare, fair opportunities, customer trust, and smart workforce management**.
+
+With location-based matching, digital payments, verified workers, emergency booking, multilingual support, and AI-powered demand forecasting, GET IT NOW can create a scalable digital ecosystem for cooperative workers and the communities they serve.
