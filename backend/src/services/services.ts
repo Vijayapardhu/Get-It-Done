@@ -169,11 +169,15 @@ export async function updateService(id: string, input: UpdateService): Promise<S
   return mapServiceRow(result.rows[0]);
 }
 
-export async function deleteService(id: string): Promise<boolean> {
-  const result = await pool.query(
-    "delete from services where id = $1",
-    [id]
-  );
-
-  return (result.rowCount ?? 0) > 0;
+export async function deleteService(id: string): Promise<"deleted" | "not_found" | "in_use"> {
+  try {
+    const result = await pool.query(
+      "delete from services where id = $1",
+      [id]
+    );
+    return (result.rowCount ?? 0) > 0 ? "deleted" : "not_found";
+  } catch (error) {
+    if ((error as { code?: string })?.code === "23503") return "in_use";
+    throw error;
+  }
 }

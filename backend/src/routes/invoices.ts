@@ -4,6 +4,7 @@ import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import PDFDocument from "pdfkit";
 import { PassThrough } from "node:stream";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -25,15 +26,20 @@ import { PassThrough } from "node:stream";
 
 export const invoicesRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+invoicesRouter.param("id", rejectNonUuidParam);
+
 invoicesRouter.get("/:id/pdf", requireAuth, async (req, res, next) => {
   try {
     const result = await pool.query(`select i.*, b.address as booking_address, b.description as booking_description, b.scheduled_at,
        u.name as customer_name, u.email as customer_email, u.phone as customer_phone,
-       w.name as worker_name, s.name as service_name, c.name as cooperative_name
+       wu.name as worker_name, s.name as service_name, c.name as cooperative_name
        from invoices i
        join bookings b on b.id = i.booking_id
        join users u on u.id = i.customer_id
        join workers w on w.id = i.worker_id
+       join users wu on wu.id = w.user_id
        join services s on s.id = i.service_id
        left join cooperatives c on c.id = w.cooperative_id
        where i.id = $1`, [req.params.id]);
@@ -54,7 +60,7 @@ invoicesRouter.get("/:id/pdf", requireAuth, async (req, res, next) => {
     stream.pipe(res);
 
     // Header
-    doc.fontSize(24).font("Helvetica-Bold").text("GET IT NOW", { align: "center" });
+    doc.fontSize(24).font("Helvetica-Bold").text("GET IT DONE", { align: "center" });
     doc.moveDown();
     doc.fontSize(14).font("Helvetica").text("Invoice", { align: "center" });
     doc.moveDown(2);
@@ -153,7 +159,7 @@ invoicesRouter.get("/:id/pdf", requireAuth, async (req, res, next) => {
     y += 30;
 
     // Footer
-    doc.fontSize(8).font("Helvetica").text("Thank you for using GET IT NOW", { align: "center" });
+    doc.fontSize(8).font("Helvetica").text("Thank you for using GET IT DONE", { align: "center" });
     doc.text("This is a computer-generated invoice and does not require a signature.", { align: "center" });
 
     doc.end();

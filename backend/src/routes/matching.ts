@@ -17,8 +17,12 @@ import {
   type MatchingCriteria
 } from "../services/matching.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 export const matchingRouter = Router();
+matchingRouter.param("id", rejectNonUuidParam);
+matchingRouter.param("bookingId", rejectNonUuidParam);
+matchingRouter.param("workerId", rejectNonUuidParam);
 
 const matchingCriteriaSchema = z.object({
   serviceId: z.string().uuid(),

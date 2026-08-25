@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -104,6 +105,11 @@ import { recordAuditEvent } from "../services/auditService.js";
 
 export const usersRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+usersRouter.param("id", rejectNonUuidParam);
+usersRouter.param("workerId", rejectNonUuidParam);
+
 const profileUpdateSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
   displayName: z.string().trim().max(100).optional(),
@@ -151,10 +157,119 @@ usersRouter.patch("/me", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+// ─── Customer Favorite Workers ────────────────────────────────────────────────
+
+usersRouter.get("/favorites", requireAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT cf.id, cf.worker_id, cf.notes, cf.created_at,
+              w.user_id, u.name as worker_name, u.avatar_url,
+              w.rating, w.completed_jobs,
+              array_agg(DISTINCT s.name) as skills
+       FROM customer_favorites cf
+       JOIN workers w ON w.id = cf.worker_id
+       JOIN users u ON u.id = w.user_id
+       LEFT JOIN worker_skills ws ON ws.worker_id = w.id
+       LEFT JOIN services s ON s.id = ws.service_id
+       WHERE cf.customer_id = $1
+       GROUP BY cf.id, cf.worker_id, cf.notes, cf.created_at,
+                w.user_id, u.name, u.avatar_url,
+                w.rating, w.completed_jobs
+       ORDER BY cf.created_at DESC`,
+      [req.user!.id]
+    );
+    res.json({ favorites: result.rows });
+  } catch (error) { next(error); }
+});
+
+usersRouter.post("/favorites/:workerId", requireAuth, async (req, res, next) => {
+  try {
+    const workerId = String(req.params.workerId);
+    const { notes } = z.object({ notes: z.string().max(500).optional() }).parse(req.body);
+
+    const worker = await pool.query("SELECT id FROM workers WHERE id = $1 AND verification_status = 'verified'", [workerId]);
+    if (!worker.rows[0]) {
+      res.status(404).json({ error: "Worker not found or not verified" });
+      return;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO customer_favorites (id, customer_id, worker_id, notes)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       ON CONFLICT (customer_id, worker_id) DO UPDATE SET notes = EXCLUDED.notes
+       RETURNING *`,
+      [req.user!.id, workerId, notes ?? null]
+    );
+    res.status(201).json({ favorite: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
+usersRouter.delete("/favorites/:workerId", requireAuth, async (req, res, next) => {
+  try {
+    const workerId = String(req.params.workerId);
+    const result = await pool.query(
+      "DELETE FROM customer_favorites WHERE customer_id = $1 AND worker_id = $2 RETURNING id",
+      [req.user!.id, workerId]
+    );
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "Favorite not found" });
+      return;
+    }
+    res.status(204).send();
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /users/{id}:
+ *   get:
+ *     summary: Get a user profile
+ *     description: >
+ *       Staff see the full record. Everyone else sees only the public fields,
+ *       and only for themselves or a worker they have an active booking with.
+ *     tags: [Users]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: User profile }
+ *       403: { description: Not permitted to view this user }
+ *       404: { description: Not found }
+ */
 usersRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
-    const result = await pool.query(`SELECT id, name, display_name, phone, email, role, language, status, avatar_url, created_at FROM users WHERE id = $1`, [req.params.id]);
+    const targetId = String(req.params.id);
+    const isSelf = targetId === req.user!.id;
+    const isStaff = ["system_admin", "federation_admin", "society_admin", "support_staff"].includes(req.user!.role);
+
+    // Contact details are only disclosed to staff, to the user themselves, or
+    // between two parties who share a live booking (a customer needs their
+    // assigned worker's number, and vice versa).
+    let sharesBooking = false;
+    if (!isSelf && !isStaff) {
+      const shared = await pool.query(
+        `SELECT 1
+           FROM bookings b
+           LEFT JOIN workers w ON w.id = b.worker_id
+          WHERE b.status NOT IN ('cancelled', 'expired')
+            AND ((b.customer_id = $1 AND w.user_id = $2) OR (b.customer_id = $2 AND w.user_id = $1))
+          LIMIT 1`,
+        [req.user!.id, targetId]
+      );
+      sharesBooking = Boolean(shared.rows[0]);
+    }
+
+    const full = isSelf || isStaff || sharesBooking;
+    const columns = full
+      ? "id, name, display_name, phone, email, role, language, status, avatar_url, created_at"
+      : "id, name, display_name, role, avatar_url, created_at";
+
+    const result = await pool.query(`SELECT ${columns} FROM users WHERE id = $1`, [targetId]);
     if (!result.rows[0]) { res.status(404).json({ error: "User not found" }); return; }
+
     res.json({ user: result.rows[0] });
   } catch (error) { next(error); }
 });
@@ -209,7 +324,8 @@ usersRouter.get("/me/preferences", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-usersRouter.patch("/me/preferences", requireAuth, async (req, res, next) => {
+// Blueprint spells this PUT; the codebase used PATCH. Both are served.
+usersRouter.patch(["/me/preferences"], requireAuth, async (req, res, next) => {
   try {
     const input = preferencesSchema.parse(req.body);
     const fields: string[] = [];

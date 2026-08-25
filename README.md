@@ -1,4 +1,4 @@
-# GET IT NOW — Enterprise Backend Platform
+# GET IT DONE — Enterprise Backend Platform
 
 > **A cooperative-owned service network platform** connecting households, institutions, cooperative societies, and federations with verified workers — making trust, fair opportunity, welfare, and local operational intelligence visible.
 
@@ -28,7 +28,7 @@
 
 ## 🎯 Project Overview
 
-**GET IT NOW** is a **cooperative-owned service network platform** (not just a worker booking app) that connects:
+**GET IT DONE** is a **cooperative-owned service network platform** (not just a worker booking app) that connects:
 
 | User Type | Description |
 |-----------|-------------|
@@ -58,7 +58,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           GET IT NOW ARCHITECTURE                           │
+│                          GET IT DONE ARCHITECTURE                           │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
@@ -342,8 +342,8 @@ src/
 
 ```bash
 # Clone repository
-git clone https://github.com/Vijayapardhu/Get-It-Now.git
-cd Get-It-Now
+git clone https://github.com/Vijayapardhu/Get-It-Done.git
+cd Get-It-Done
 
 # Copy environment template
 cp .env.example .env
@@ -397,7 +397,7 @@ TZ=Asia/Kolkata
 
 # Storage (MinIO/S3)
 S3_ENDPOINT=http://localhost:9000
-S3_BUCKET=getitnow
+S3_BUCKET=getitdone
 S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
 S3_REGION=us-east-1
@@ -485,7 +485,7 @@ curl http://localhost:4000/version       # Version info
 
 ```json
 {
-  "type": "https://api.getitnow.in/errors/not_found",
+  "type": "https://api.getitdone.in/errors/not_found",
   "title": "Not Found",
   "status": 404,
   "detail": "Booking not found",
@@ -533,8 +533,8 @@ services:
 ### Kubernetes (Helm)
 
 ```bash
-helm repo add getitnow https://charts.getitnow.in
-helm install getitnow getitnow/getitnow --namespace production
+helm repo add getitdone https://charts.getitdone.in
+helm install getitdone getitdone/getitdone --namespace production
 ```
 
 ---
@@ -543,8 +543,8 @@ helm install getitnow getitnow/getitnow --namespace production
 
 ```bash
 # Fork & Clone
-git clone https://github.com/Vijayapardhu/Get-It-Now.git
-cd Get-It-Now
+git clone https://github.com/Vijayapardhu/Get-It-Done.git
+cd Get-It-Done
 
 # Create feature branch
 git checkout -b feature/amazing-feature
@@ -589,9 +589,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/Vijayapardhu/Get-It-Now/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Vijayapardhu/Get-It-Now/discussions)
-- **Email**: support@getitnow.in
+- **Issues**: [GitHub Issues](https://github.com/Vijayapardhu/Get-It-Done/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Vijayapardhu/Get-It-Done/discussions)
+- **Email**: support@getitdone.in
 
 ---
 

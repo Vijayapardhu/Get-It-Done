@@ -1,4 +1,4 @@
-# GET IT NOW — Enterprise Backend Implementation Tasklist
+# GET IT DONE — Enterprise Backend Implementation Tasklist
 
 > Generated from gap analysis against the Enterprise Module Plan. Each task maps to a specific module, API endpoint, or schema change.
 

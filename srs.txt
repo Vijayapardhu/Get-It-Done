@@ -1,8 +1,8 @@
-Absolutely. Since **GET IT NOW** is your final platform name, the SRS should present it as a proper software product while keeping the language easy enough for a hackathon/jury review.
+Absolutely. Since **GET IT DONE** is your final platform name, the SRS should present it as a proper software product while keeping the language easy enough for a hackathon/jury review.
 
 # Software Requirements Specification (SRS)
 
-## GET IT NOW
+## GET IT DONE
 
 **Cooperative Gig Services Platform for Household & Community Services**
 
@@ -18,7 +18,7 @@ Absolutely. Since **GET IT NOW** is your final platform name, the SRS should pre
 
 ## 1.1 Purpose
 
-**GET IT NOW** is a cooperative-owned digital platform that connects households, institutions, and communities with verified local skilled workers.
+**GET IT DONE** is a cooperative-owned digital platform that connects households, institutions, and communities with verified local skilled workers.
 
 The platform allows customers to easily find and book workers such as electricians, plumbers, carpenters, painters, cleaners, caregivers, drivers, gardeners, and technicians.
 
@@ -43,13 +43,13 @@ Customers also face difficulties in finding:
 * Transparent pricing
 * Reliable service providers
 
-**GET IT NOW** addresses these problems through one cooperative-owned platform.
+**GET IT DONE** addresses these problems through one cooperative-owned platform.
 
 ---
 
 # 2. Objectives
 
-The main objectives of GET IT NOW are:
+The main objectives of GET IT DONE are:
 
 1. Connect customers with verified local workers.
 2. Provide workers with more job opportunities.
@@ -1103,8 +1103,8 @@ The platform can measure:
 
 # 35. Conclusion
 
-**GET IT NOW** provides a digital bridge between customers who need services and skilled workers belonging to Labour Cooperatives.
+**GET IT DONE** provides a digital bridge between customers who need services and skilled workers belonging to Labour Cooperatives.
 
 Instead of operating like a normal private gig platform, the system focuses on **cooperative ownership, worker welfare, fair opportunities, customer trust, and smart workforce management**.
 
-With location-based matching, digital payments, verified workers, emergency booking, multilingual support, and AI-powered demand forecasting, GET IT NOW can create a scalable digital ecosystem for cooperative workers and the communities they serve.
+With location-based matching, digital payments, verified workers, emergency booking, multilingual support, and AI-powered demand forecasting, GET IT DONE can create a scalable digital ecosystem for cooperative workers and the communities they serve.

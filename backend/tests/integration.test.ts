@@ -3,6 +3,9 @@ import request from "supertest";
 import { createApp } from "../src/app.js";
 import http from "node:http";
 
+import { pool } from "../src/db/pool.js";
+import { closeRedis } from "../src/core/redis.js";
+
 let server: http.Server;
 let app: ReturnType<typeof createApp>;
 
@@ -13,10 +16,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(resolve));
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await pool.end().catch(() => {});
+  await closeRedis().catch(() => {});
 });
 
-const baseUrl = () => `http://localhost:${server.address().port}`;
+const baseUrl = () => {
+  const addr = server.address();
+  if (addr && typeof addr === "object") return `http://localhost:${addr.port}`;
+  return "http://localhost:4000";
+};
 
 describe("Health Endpoints", () => {
   it("GET /health/live returns healthy", async () => {
@@ -107,9 +116,19 @@ describe("Booking Endpoints", () => {
 });
 
 describe("Worker Endpoints", () => {
+  let authToken: string;
+
+  beforeAll(async () => {
+    const email = `workeruser${Date.now()}@example.com`;
+    await request(baseUrl()).post("/auth/register").send({ name: "Worker User", email, password: "password123", role: "customer" });
+    const login = await request(baseUrl()).post("/auth/login").send({ email, password: "password123" });
+    authToken = login.body.accessToken;
+  });
+
   it("GET /workers/nearby returns matches", async () => {
     const res = await request(baseUrl())
       .get("/workers/nearby")
+      .set("Authorization", `Bearer ${authToken}`)
       .query({ serviceId: "00000000-0000-0000-0000-000000000201", latitude: 16.5, longitude: 80.6 });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("matches");

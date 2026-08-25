@@ -1,10 +1,10 @@
-# GET IT NOW Implementation Plan
+# GET IT DONE Implementation Plan
 
 Source reviewed: `srs.txt`
 
 ## 1. Product Direction
 
-GET IT NOW should be built as a cooperative-owned gig services platform for local household and community services. The core value is not just booking a worker; it is verified cooperative workers, fair job distribution, welfare visibility, emergency response, and AI-assisted workforce planning.
+GET IT DONE should be built as a cooperative-owned gig services platform for local household and community services. The core value is not just booking a worker; it is verified cooperative workers, fair job distribution, welfare visibility, emergency response, and AI-assisted workforce planning.
 
 For the hackathon, build a focused MVP that proves the full story:
 

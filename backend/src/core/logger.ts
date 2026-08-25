@@ -10,7 +10,7 @@ const logger = pino({
     level: (label) => ({ level: label }),
   },
   timestamp: pino.stdTimeFunctions.isoTime,
-  base: { service: "getitnow-backend" },
+  base: { service: "getitdone-backend" },
 });
 
 export function createRequestLogger(requestId: string) {

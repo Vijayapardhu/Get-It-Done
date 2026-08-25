@@ -4,8 +4,14 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 export const reviewsRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+reviewsRouter.param("id", rejectNonUuidParam);
+reviewsRouter.param("workerId", rejectNonUuidParam);
 
 const createReviewSchema = z.object({
   bookingId: z.string().uuid(),
@@ -76,7 +82,7 @@ reviewsRouter.post("/", requireAuth, async (req, res, next) => {
 
 /**
  * @openapi
- * /workers/{workerId}/reviews:
+ * /reviews/workers/{workerId}/reviews:
  *   get:
  *     summary: Get reviews for a worker
  *     tags: [Reviews]
@@ -114,7 +120,7 @@ reviewsRouter.get("/workers/:workerId/reviews", requireAuth, async (req, res, ne
 
 /**
  * @openapi
- * /workers/{workerId}/rating-summary:
+ * /reviews/workers/{workerId}/rating-summary:
  *   get:
  *     summary: Get worker rating summary
  *     tags: [Reviews]

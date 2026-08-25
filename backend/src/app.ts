@@ -15,7 +15,7 @@ import { authRouter } from "./routes/auth.js";
 import { bookingsRouter } from "./routes/bookings.js";
 import { servicesRouter } from "./routes/services.js";
 import { workersRouter } from "./routes/workers.js";
-import { trustRouter } from "./routes/trust.js";
+import trustRouter from "./routes/trust.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { filesRouter } from "./routes/files.js";
 import { usersRouter } from "./routes/users.js";
@@ -30,6 +30,7 @@ import { earningsRouter } from "./routes/earnings.js";
 import { invoicesRouter } from "./routes/invoices.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { institutionsRouter } from "./routes/institutions.js";
+import { institutionalRouter } from "./routes/institutional.js";
 import { recurringRouter } from "./routes/recurring.js";
 import { reportsRouter } from "./routes/reports.js";
 import { supportRouter } from "./routes/support.js";
@@ -37,6 +38,18 @@ import { matchingRouter } from "./routes/matching.js";
 import { welfareRouter } from "./routes/welfare.js";
 import { reviewsRouter } from "./routes/reviews.js";
 import { serviceAreasRouter } from "./routes/serviceAreas.js";
+import { bookingAttachmentsRouter } from "./routes/ba.js";
+import { addressesRouter } from "./routes/addresses.js";
+import { chatRouter } from "./routes/chat.js";
+import { customerDashboardRouter } from "./routes/customerDashboard.js";
+import { workerDashboardRouter } from "./routes/workerDashboard.js";
+import { cooperativeDashboardRouter } from "./routes/cooperativeDashboard.js";
+import { federationDashboardRouter } from "./routes/federationDashboard.js";
+import { i18nRouter } from "./routes/i18n.js";
+import { serviceDiscoveryRouter } from "./routes/serviceDiscovery.js";
+import { googleMapsRouter } from "./routes/googleMaps.js";
+import { healthRouter } from "./routes/health.js";
+import { compatRewrite } from "./routes/compat.js";
 import { getLiveness, getReadiness } from "./core/health.js";
 import { getMetrics, getMetricsContentType } from "./core/metrics.js";
 import { errorHandler, notFoundHandler } from "./core/errors.js";
@@ -54,7 +67,19 @@ export function createApp(): Express {
   const allowedOrigins = new Set(env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean));
   app.use(helmet());
   app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)) }));
-  app.use(express.json({ limit: "256kb" }));
+  // Payment gateways sign the RAW body. Re-serialising the parsed object never
+  // reproduces it byte-for-byte, so stash the untouched Buffer on the request
+  // for the webhook routes before the JSON parser discards it.
+  app.use(
+    express.json({
+      limit: "256kb",
+      verify: (req, _res, buf) => {
+        if (req.url?.startsWith("/payments/webhooks")) {
+          (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+        }
+      },
+    })
+  );
 
   app.use((req, res, next) => {
     const requestId = req.header("x-request-id")?.trim() || crypto.randomUUID();
@@ -69,9 +94,13 @@ export function createApp(): Express {
     next();
   });
 
+  // Blueprint-spelling aliases (e.g. /auth/otp/send -> /auth/request-otp).
+  // Rewrites req.url before routing, so alias and canonical share one handler.
+  app.use(compatRewrite);
+
   app.use("/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false }));
 
-  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "GET IT NOW API Docs" }));
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "GET IT DONE API Docs" }));
   app.get("/docs.json", (_req, res) => res.json(swaggerSpec));
 
   app.get("/health/live", async (_req, res) => { res.json(await getLiveness()); });
@@ -79,6 +108,7 @@ export function createApp(): Express {
     const health = await getReadiness();
     res.status(health.status === "healthy" ? 200 : health.status === "degraded" ? 200 : 503).json(health);
   });
+  app.use("/health", healthRouter);
   app.get("/metrics", async (_req, res) => { res.set("Content-Type", getMetricsContentType()).send(await getMetrics()); });
   app.get("/version", (_req, res) => { res.json({ version: process.env.npm_package_version ?? "0.1.0", env: env.NODE_ENV }); });
 
@@ -89,27 +119,48 @@ export function createApp(): Express {
   app.use("/documents", requireAuth, documentsRouter);
   app.use("/pricing", requireAuth, pricingRouter);
   app.use("/emergency", requireAuth, emergencyRouter);
+  app.use("/payments/webhooks", paymentsRouter);
   app.use("/payments", requireAuth, paymentsRouter);
   app.use("/settlements", requireAuth, settlementsRouter);
-  app.use("/earnings", earningsRouter);
+  app.use("/earnings", requireAuth, earningsRouter);
   app.use("/invoices", requireAuth, invoicesRouter);
   app.use("/analytics", requireAuth, analyticsRouter);
   app.use("/institutions", requireAuth, institutionsRouter);
+  // Institutional module (bulk bookings, contracts, service plans, purchase orders, analytics)
+  app.use("/institutions", requireAuth, institutionalRouter);
   app.use("/recurring", requireAuth, recurringRouter);
-app.use("/matching", requireAuth, matchingRouter);
+  app.use("/matching", requireAuth, matchingRouter);
   app.use("/welfare", requireAuth, welfareRouter);
   app.use("/reviews", requireAuth, reviewsRouter);
   app.use("/service-areas", requireAuth, serviceAreasRouter);
   app.use("/reports", requireAuth, reportsRouter);
   app.use("/support", requireAuth, supportRouter);
+  // Mounted before "/services" so servicesRouter's GET /:id cannot swallow it.
+  app.use("/services/discovery", requireAuth, serviceDiscoveryRouter);
   app.use("/services", servicesRouter);
   app.use("/workers", requireAuth, workersRouter);
   app.use("/bookings", requireAuth, bookingsRouter);
+  app.use("/bookings", requireAuth, bookingAttachmentsRouter);
+  app.use("/addresses", requireAuth, addressesRouter);
   app.use("/admin", requireAuth, requireRoles("society_admin", "federation_admin", "system_admin"), adminRouter);
   app.use("/ai", requireAuth, aiRouter);
   app.use("/trust", requireAuth, trustRouter);
   app.use("/notifications", requireAuth, notificationsRouter);
   app.use("/files", requireAuth, filesRouter);
+  app.use("/chats", requireAuth, chatRouter);
+
+  // New Dashboard Routes
+  app.use("/customer", requireAuth, customerDashboardRouter);
+  app.use("/worker", requireAuth, workerDashboardRouter);
+  app.use("/cooperatives", requireAuth, cooperativeDashboardRouter);
+  app.use("/federation", requireAuth, federationDashboardRouter);
+  // Admin-facing aliases for the same dashboards (documented contract)
+  app.use("/admin/dashboard", requireAuth, requireRoles("society_admin", "federation_admin", "system_admin"), cooperativeDashboardRouter);
+  app.use("/admin/federation", requireAuth, requireRoles("society_admin", "federation_admin", "system_admin"), federationDashboardRouter);
+
+  // New Feature Routes
+  app.use("/i18n", i18nRouter);
+  app.use("/maps", requireAuth, googleMapsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

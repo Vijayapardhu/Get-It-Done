@@ -4,6 +4,7 @@ import { env } from "../config/env.js";
 import { demoServices } from "../data/demoStore.js";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { getAllServices, getServicesByCategory, getServiceById, createService, updateService, deleteService } from "../services/services.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -239,6 +240,10 @@ import { getAllServices, getServicesByCategory, getServiceById, createService, u
 
 export const servicesRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+servicesRouter.param("id", rejectNonUuidParam);
+
 const listQuerySchema = z.object({
   category: z.string().optional(),
   emergencyOnly: z.coerce.boolean().optional(),
@@ -357,10 +362,15 @@ servicesRouter.delete("/:id", requireAuth, requireRoles("society_admin", "federa
     }
 
     const id = z.string().uuid().parse(req.params.id);
-    const deleted = await deleteService(id);
+    const result = await deleteService(id);
 
-    if (!deleted) {
+    if (result === "not_found") {
       res.status(404).json({ error: "Service not found" });
+      return;
+    }
+
+    if (result === "in_use") {
+      res.status(409).json({ error: "Service is referenced by existing bookings and cannot be deleted" });
       return;
     }
 

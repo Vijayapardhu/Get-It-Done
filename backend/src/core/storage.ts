@@ -11,7 +11,7 @@ const s3Client = new S3Client({
   forcePathStyle: env.S3_FORCE_PATH_STYLE,
 });
 
-const BUCKET = env.S3_BUCKET ?? "getitnow";
+const BUCKET = env.S3_BUCKET ?? "getitdone";
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
 const ALLOWED_TYPES = {
@@ -50,6 +50,34 @@ export async function getUploadUrl(userId: string, type: string, filename: strin
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
 
   return { uploadUrl, fileKey, expiresIn: 3600 };
+}
+
+/**
+ * Upload bytes the server itself generated (report exports, invoice PDFs).
+ *
+ * Every other helper here issues a presigned URL for a *client* to upload
+ * through, which is no use for a file that only exists inside a background job.
+ */
+export async function putObject(
+  fileKey: string,
+  body: Buffer | string,
+  contentType: string
+): Promise<{ fileKey: string; fileUrl: string; size: number }> {
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body, "utf-8");
+  if (buffer.byteLength > MAX_FILE_SIZE) {
+    throw new Error(`FILE_TOO_LARGE: ${buffer.byteLength} bytes exceeds ${MAX_FILE_SIZE}`);
+  }
+
+  await s3Client.send(
+    new PutObjectCommand({ Bucket: BUCKET, Key: fileKey, Body: buffer, ContentType: contentType })
+  );
+
+  return { fileKey, fileUrl: `${env.S3_ENDPOINT}/${BUCKET}/${fileKey}`, size: buffer.byteLength };
+}
+
+/** Deterministic key for a generated artefact, scoped by kind and owner. */
+export function generatedFileKey(kind: string, ownerId: string, filename: string): string {
+  return `private/generated/${kind}/${ownerId}/${filename}`;
 }
 
 export async function completeUpload(fileKey: string): Promise<{ fileKey: string; fileUrl: string }> {

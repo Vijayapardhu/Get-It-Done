@@ -97,7 +97,7 @@ earningsRouter.get("/workers/me/earnings", requireAuth, async (req, res, next) =
                          sum(case when entry_type = 'payout' then amount else 0 end) as total_payouts,
                          sum(case when entry_type = 'adjustment' then amount else 0 end) as total_adjustments,
                          sum(case when entry_type = 'refund' then amount else 0 end) as total_refunds
-                  from worker_earnings_ledger where ${whereClause}`, [worker.rows[0].id]),
+                  from worker_earnings_ledger where ${whereClause}`, [...values]),
     ]);
 
     res.json({

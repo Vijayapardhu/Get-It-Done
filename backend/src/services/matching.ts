@@ -1,6 +1,7 @@
 import { pool } from "../db/pool.js";
 import type { BookingUrgency, MatchingCandidate, WorkerMatch } from "../types.js";
 import { recordAuditEvent } from "./auditService.js";
+import { writeNotification } from "./notificationService.js";
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
@@ -109,11 +110,9 @@ let query = `
       and st_dwithin(
         wl.location,
         st_setsrid(st_makepoint($1, $2), 4326)::geography,
-        $4 * 1000
+        ($4 * 1000)::double precision
       )
-      and st_distance(wl.location, st_setsrid(st_makepoint($1, $2), 4326)::geography) <= wsa.radius_km * 1000
-    order by "distanceKm" asc
-    limit 50
+      and st_distance(wl.location, st_setsrid(st_makepoint($1, $2), 4326)::geography) <= (wsa.radius_km * 1000)::double precision
   `;
 
   const params_list: any[] = [params.longitude, params.latitude, params.serviceId, radiusKm];
@@ -127,6 +126,8 @@ let query = `
     query += ` and w.id != ALL($${params_list.length + 1})`;
     params_list.push(params.excludeWorkerIds);
   }
+
+  query += ` order by "distanceKm" asc limit 50`;
 
   const result = await pool.query<MatchingCandidate>(query, params_list);
 
@@ -230,6 +231,23 @@ export async function assignWorker(
     
     await client.query("COMMIT");
     
+    // Notify the assigned worker (manual/admin assignment path)
+    try {
+      const workerUser = await pool.query(`SELECT user_id FROM workers WHERE id = $1`, [workerId]);
+      if (workerUser.rows[0]) {
+        await writeNotification(pool, {
+          userId: workerUser.rows[0].user_id,
+          type: "booking.assigned",
+          title: "New service booking",
+          body: "You have been assigned a new service request.",
+          aggregateType: "booking",
+          aggregateId: bookingId,
+        });
+      }
+    } catch (notifyError) {
+      // Notification failure must not fail the assignment
+    }
+    
     // Record matching audit
     await recordMatchingAudit({
       bookingId,
@@ -298,7 +316,11 @@ export async function getWorkerAvailability(workerId: string): Promise<{
     `SELECT current_status, current_workload FROM workers WHERE id = $1`,
     [workerId]
   );
-  if (!result.rows[0]) throw new Error("Worker not found");
+  if (!result.rows[0]) return {
+    isAvailable: false,
+    currentStatus: 'offline',
+    currentWorkload: 0
+  };
   
   const worker = result.rows[0];
   return {

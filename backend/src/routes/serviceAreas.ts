@@ -4,8 +4,13 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 export const serviceAreasRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+serviceAreasRouter.param("id", rejectNonUuidParam);
 
 const serviceAreaCreateSchema = z.object({
   serviceId: z.string().uuid(),
@@ -83,8 +88,8 @@ serviceAreasRouter.post("/", requireAuth, requireRoles("system_admin", "federati
   try {
     const input = serviceAreaCreateSchema.parse(req.body);
     const result = await pool.query(
-      `INSERT INTO service_areas (id, service_id, polygon) VALUES ($1, $2, $3) RETURNING *`,
-      [crypto.randomUUID(), input.serviceId, input.polygon]
+      `INSERT INTO service_areas (id, service_id, polygon) VALUES ($1, $2, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326)::geography) RETURNING id, service_id, status, created_at, updated_at, ST_AsGeoJSON(polygon::geometry)::jsonb as polygon`,
+      [crypto.randomUUID(), input.serviceId, JSON.stringify(input.polygon)]
     );
     await recordAuditEvent({ actorId: req.user!.id, action: "service_area.created", resourceType: "service_area", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(201).json({ serviceArea: result.rows[0] });
@@ -160,13 +165,8 @@ serviceAreasRouter.get("/", requireAuth, async (req, res, next) => {
  *       404:
  *         description: Not found
  */
-serviceAreasRouter.get("/:id", requireAuth, async (req, res, next) => {
-  try {
-    const result = await pool.query(`SELECT sa.*, s.name as service_name FROM service_areas sa JOIN services s ON s.id = sa.service_id WHERE sa.id = $1`, [req.params.id]);
-    if (!result.rows[0]) { res.status(404).json({ error: "Service area not found" }); return; }
-    res.json({ serviceArea: result.rows[0] });
-  } catch (error) { next(error); }
-});
+// NOTE: registered at the bottom of this file so literal GET paths
+// (/requirements, /variants, /categories, /services) are matched first.
 
 serviceAreasRouter.patch("/:id", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
@@ -175,11 +175,18 @@ serviceAreasRouter.patch("/:id", requireAuth, requireRoles("system_admin", "fede
     const values: any[] = [];
     let index = 1;
     for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) { fields.push(`${key} = $${index++}`); values.push(value); }
+      if (value === undefined) continue;
+      if (key === "polygon") {
+        fields.push(`polygon = ST_SetSRID(ST_GeomFromGeoJSON($${index++}), 4326)::geography`);
+        values.push(JSON.stringify(value));
+      } else {
+        fields.push(`${key} = $${index++}`);
+        values.push(value);
+      }
     }
     if (fields.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
     values.push(req.params.id);
-    const result = await pool.query(`UPDATE service_areas SET ${fields.join(", ")}, updated_at = now() WHERE id = $${index} RETURNING *`, values);
+    const result = await pool.query(`UPDATE service_areas SET ${fields.join(", ")}, updated_at = now() WHERE id = $${index} RETURNING id, service_id, status, created_at, updated_at, ST_AsGeoJSON(polygon::geometry)::jsonb as polygon`, values);
     if (!result.rows[0]) { res.status(404).json({ error: "Service area not found" }); return; }
     await recordAuditEvent({ actorId: req.user!.id, action: "service_area.updated", resourceType: "service_area", resourceId: String(req.params.id), requestId: req.header("x-request-id") ?? undefined, metadata: { fields: Object.keys(input) } }).catch(() => undefined);
     res.json({ serviceArea: result.rows[0] });
@@ -198,7 +205,7 @@ serviceAreasRouter.delete("/:id", requireAuth, requireRoles("system_admin", "fed
 
 /**
  * @openapi
- * /service-requirements:
+ * /service-areas/requirements:
  *   post:
  *     summary: Create service requirement
  *     tags: [Service Areas]
@@ -260,7 +267,7 @@ serviceAreasRouter.get("/requirements", requireAuth, async (req, res, next) => {
 
 /**
  * @openapi
- * /service-variants:
+ * /service-areas/variants:
  *   post:
  *     summary: Create service variant
  *     tags: [Service Areas]
@@ -320,7 +327,7 @@ serviceAreasRouter.get("/variants", requireAuth, async (req, res, next) => {
 
 /**
  * @openapi
- * /service-categories:
+ * /service-areas/categories:
  *   post:
  *     summary: Create service category
  *     tags: [Service Areas]
@@ -469,5 +476,13 @@ serviceAreasRouter.delete("/services/:id", requireAuth, requireRoles("system_adm
     if (!result.rows[0]) { res.status(404).json({ error: "Service not found" }); return; }
     await recordAuditEvent({ actorId: req.user!.id, action: "service.deleted", resourceType: "service", resourceId: id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(204).send();
+  } catch (error) { next(error); }
+});
+// Registered last so literal GET paths above are matched first.
+serviceAreasRouter.get("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(`SELECT sa.*, s.name as service_name FROM service_areas sa JOIN services s ON s.id = sa.service_id WHERE sa.id = $1`, [req.params.id]);
+    if (!result.rows[0]) { res.status(404).json({ error: "Service area not found" }); return; }
+    res.json({ serviceArea: result.rows[0] });
   } catch (error) { next(error); }
 });

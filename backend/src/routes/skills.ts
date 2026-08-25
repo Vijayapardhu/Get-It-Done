@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -102,6 +103,7 @@ import { recordAuditEvent } from "../services/auditService.js";
  *         schema: { type: string, format: uuid }
  *     responses:
  *       204: { description: Skill removed }
+ * /skills/workers/{workerId}/skills/{skillId}/verify:
  *   post:
  *     summary: Verify worker skill (admin)
  *     tags: [Skills]
@@ -124,6 +126,12 @@ import { recordAuditEvent } from "../services/auditService.js";
  */
 
 export const skillsRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+skillsRouter.param("id", rejectNonUuidParam);
+skillsRouter.param("workerId", rejectNonUuidParam);
+skillsRouter.param("skillId", rejectNonUuidParam);
 
 const skillCreateSchema = z.object({
   name: z.string().trim().min(2).max(100),
@@ -160,7 +168,13 @@ skillsRouter.get("/", async (req, res, next) => {
 skillsRouter.post("/", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const input = skillCreateSchema.parse(req.body);
-    const result = await pool.query(`INSERT INTO skills (id, name, category, description, requires_certification) VALUES ($1, $2, $3, $4, $5) RETURNING *`, [crypto.randomUUID(), input.name, input.category, input.description ?? null, input.requiresCertification]);
+    let result;
+    try {
+      result = await pool.query(`INSERT INTO skills (id, name, category, description, requires_certification) VALUES ($1, $2, $3, $4, $5) RETURNING *`, [crypto.randomUUID(), input.name, input.category, input.description ?? null, input.requiresCertification]);
+    } catch (insertError) {
+      if ((insertError as { code?: string })?.code === "23505") { res.status(409).json({ error: "A skill with this name already exists" }); return; }
+      throw insertError;
+    }
     await recordAuditEvent({ actorId: req.user!.id, action: "skill.created", resourceType: "skill", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(201).json({ skill: result.rows[0] });
   } catch (error) { next(error); }

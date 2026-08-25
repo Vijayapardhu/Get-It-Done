@@ -6,7 +6,10 @@ import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { findMatchingWorkers } from "../services/matching.js";
 import { writeNotification } from "../services/notificationService.js";
-import { emitEmergencyEscalated } from "../core/realtime.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
+import { generateBookingOtps } from "../core/otp.js";
+import { enqueue } from "../core/jobQueue.js";
+import { escalateEmergency, scheduleAssignmentTimeout } from "../services/emergencyService.js";
 
 /**
  * @openapi
@@ -90,6 +93,8 @@ import { emitEmergencyEscalated } from "../core/realtime.js";
 
 export const emergencyRouter = Router();
 
+emergencyRouter.param("id", rejectNonUuidParam);
+
 const emergencyCreateSchema = z.object({
   serviceId: z.string().uuid(),
   description: z.string().trim().min(3).max(2000),
@@ -103,6 +108,7 @@ const emergencyCreateSchema = z.object({
 const escalateSchema = z.object({
   newRadiusKm: z.number().positive().max(50).optional(),
   notifySupervisors: z.boolean().default(true),
+  reason: z.string().max(500).optional(),
 });
 
 emergencyRouter.post("/bookings", requireAuth, async (req, res, next) => {
@@ -111,7 +117,7 @@ emergencyRouter.post("/bookings", requireAuth, async (req, res, next) => {
     const input = emergencyCreateSchema.parse(req.body);
 
     const duplicateKey = input.duplicateKey ?? `${req.user.id}:${input.serviceId}:${input.latitude.toFixed(3)}:${input.longitude.toFixed(3)}`;
-    const existing = await pool.query(`SELECT id FROM emergency_bookings WHERE duplicate_key = $1 AND created_at > now() - interval '10 minutes'`, [duplicateKey]);
+    const existing = await pool.query(`SELECT booking_id FROM emergency_bookings WHERE duplicate_key = $1 AND created_at > now() - interval '10 minutes'`, [duplicateKey]);
     if (existing.rows[0]) { res.status(409).json({ error: "EMERGENCY_DUPLICATE", message: "Similar emergency request already exists" }); return; }
 
     const service = await pool.query(`SELECT id, base_price, emergency_supported FROM services WHERE id = $1`, [input.serviceId]);
@@ -139,7 +145,18 @@ emergencyRouter.post("/bookings", requireAuth, async (req, res, next) => {
         }
       }
 
-      const bookingResult = await client.query(`insert into bookings (id, customer_id, worker_id, service_id, status, is_emergency, location, address, description) values ($1, $2, $3, $4, $5, true, st_setsrid(st_makepoint($6, $7), 4326)::geography, $8, $9) returning id`, [crypto.randomUUID(), req.user.id, confirmedWorkerId, input.serviceId, confirmedWorkerId ? "assigned" : "requested", input.longitude, input.latitude, input.address, input.description]);
+      const { startOtp, completionOtp, startOtpHash, completionOtpHash } = generateBookingOtps();
+
+      const bookingResult = await client.query(
+        `insert into bookings
+           (id, customer_id, worker_id, service_id, status, is_emergency, location, address, description,
+            start_otp_hash, completion_otp_hash, otp_issued_at)
+         values ($1, $2, $3, $4, $5, true, st_setsrid(st_makepoint($6, $7), 4326)::geography, $8, $9, $10, $11, now())
+         returning id`,
+        [crypto.randomUUID(), req.user.id, confirmedWorkerId, input.serviceId,
+         confirmedWorkerId ? "assigned" : "requested", input.longitude, input.latitude,
+         input.address, input.description, startOtpHash, completionOtpHash]
+      );
       const bookingId = bookingResult.rows[0].id;
 
       await client.query(`insert into emergency_bookings (booking_id, priority, radius_km, max_response_minutes, escalation_level, duplicate_key) values ($1, $2, $3, $4, 0, $5)`, [bookingId, input.priority, radiusKm, maxResponseMinutes, duplicateKey]);
@@ -152,21 +169,129 @@ emergencyRouter.post("/bookings", requireAuth, async (req, res, next) => {
 
       await client.query("commit");
 
-      if (!confirmedWorkerId) {
-        setTimeout(async () => { await escalateEmergency(bookingId); }, maxResponseMinutes * 60 * 1000);
+      // Durable scheduling: survives restarts, unlike the setTimeout this replaces.
+      if (confirmedWorkerId) {
+        // Blueprint 5.4: accept within WORKER_ACCEPT_TIMEOUT_SECONDS or the job
+        // moves to the next candidate.
+        await scheduleAssignmentTimeout(bookingId, confirmedWorkerId);
+      } else {
+        await enqueue(
+          "emergency.escalate",
+          { bookingId, reason: "no_worker_at_dispatch" },
+          { delaySeconds: maxResponseMinutes * 60, dedupeKey: `emergency-escalate:${bookingId}` }
+        );
       }
 
-      res.status(201).json({ bookingId, status, recommendedWorker: confirmedWorkerId ? matches.workers[0] ?? null : null, alternatives: matches.workers.slice(1, 4) });
+      res.status(201).json({
+        bookingId,
+        status,
+        recommendedWorker: confirmedWorkerId ? matches.workers[0] ?? null : null,
+        alternatives: matches.workers.slice(1, 4),
+        // Shown once; only the hashes are stored.
+        otps: { startOtp, completionOtp },
+      });
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
   } catch (error) { next(error); }
 });
 
 emergencyRouter.get("/active", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"), async (req, res, next) => {
   try {
-    const result = await pool.query(`select b.id, b.customer_id, b.worker_id, b.service_id, b.status, b.address, b.description, b.created_at, eb.priority, eb.radius_km, eb.max_response_minutes, eb.escalation_level, eb.escalated_at, u.name as customer_name, s.name as service_name from emergency_bookings eb join bookings b on b.id = eb.booking_id join users u on u.id = b.customer_id join services s on s.id = b.service_id where b.status not in ('completed', 'cancelled') order by eb.priority desc, b.created_at asc`);
+    const result = await pool.query(`select b.id, b.customer_id, b.worker_id, b.service_id, b.status, b.address, b.description, b.created_at, eb.priority, eb.radius_km, eb.max_response_minutes, eb.escalation_level, eb.escalated_at, u.name as customer_name, s.name as service_name from emergency_bookings eb join bookings b on b.id = eb.booking_id join users u on u.id = b.customer_id join services s on s.id = b.service_id where b.status not in ('completed', 'cancelled') order by emergency_priority_rank(eb.priority) desc, b.created_at asc`);
     res.json({ emergencies: result.rows });
   } catch (error) { next(error); }
 });
+
+/**
+ * @openapi
+ * /emergency/zones:
+ *   get:
+ *     summary: Emergency density heatmap by zone
+ *     description: >
+ *       Buckets emergency bookings from the last N days onto a coarse
+ *       geographic grid and reports volume, response time and current
+ *       responder coverage per cell.
+ *     tags: [Emergency]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: days
+ *         in: query
+ *         schema: { type: integer, default: 30, minimum: 1, maximum: 365 }
+ *       - name: precision
+ *         in: query
+ *         description: Grid size in decimal degrees (default 0.05, roughly 5km).
+ *         schema: { type: number, default: 0.05 }
+ *     responses:
+ *       200: { description: Zone density buckets }
+ */
+emergencyRouter.get(
+  "/zones",
+  requireAuth,
+  requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"),
+  async (req, res, next) => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? 30), 10) || 30, 1), 365);
+      const precision = Math.min(Math.max(Number(req.query.precision ?? 0.05), 0.01), 1);
+
+      const result = await pool.query(
+        `with grid as (
+           select
+             round((st_y(b.location::geometry) / $2)::numeric) * $2 as lat_cell,
+             round((st_x(b.location::geometry) / $2)::numeric) * $2 as lng_cell,
+             b.id,
+             b.status,
+             eb.priority,
+             eb.escalation_level,
+             extract(epoch from (
+               coalesce(eb.resolved_at, b.updated_at) - b.created_at
+             )) / 60 as response_minutes
+           from emergency_bookings eb
+           join bookings b on b.id = eb.booking_id
+           where b.location is not null
+             and b.created_at >= now() - ($1 || ' days')::interval
+         )
+         select lat_cell::float8                                  as latitude,
+                lng_cell::float8                                  as longitude,
+                count(*)::int                                     as incident_count,
+                count(*) filter (where status not in ('completed', 'cancelled'))::int as active_count,
+                count(*) filter (where priority = 'critical')::int as critical_count,
+                round(avg(response_minutes)::numeric, 1)::float8   as avg_response_minutes,
+                round(avg(escalation_level)::numeric, 2)::float8   as avg_escalation_level
+           from grid
+          group by lat_cell, lng_cell
+          having count(*) > 0
+          order by incident_count desc
+          limit 500`,
+        [String(days), precision]
+      );
+
+      // Available responders per cell, so a hotspot can be read against capacity.
+      const coverage = await pool.query(
+        `select round((st_y(wl.location::geometry) / $1)::numeric) * $1 as lat_cell,
+                round((st_x(wl.location::geometry) / $1)::numeric) * $1 as lng_cell,
+                count(*)::int as available_workers
+           from worker_locations wl
+           join workers w on w.id = wl.worker_id
+          where w.verification_status = 'verified'
+            and w.current_status = 'available'
+          group by lat_cell, lng_cell`,
+        [precision]
+      );
+
+      const coverageByCell = new Map(
+        coverage.rows.map((row) => [`${row.lat_cell}:${row.lng_cell}`, Number(row.available_workers)])
+      );
+
+      res.json({
+        windowDays: days,
+        precision,
+        zones: result.rows.map((row) => ({
+          ...row,
+          availableWorkers: coverageByCell.get(`${row.latitude}:${row.longitude}`) ?? 0,
+        })),
+      });
+    } catch (error) { next(error); }
+  }
+);
 
 emergencyRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
@@ -182,8 +307,37 @@ emergencyRouter.post("/:id/escalate", requireAuth, requireRoles("system_admin", 
   try {
     const bookingId = String(req.params.id);
     const input = escalateSchema.parse(req.body);
-    await escalateEmergency(bookingId, input.newRadiusKm, input.notifySupervisors);
-    res.json({ message: "Emergency escalated" });
+
+    // escalateEmergency writes the emergency_escalations audit row itself; this
+    // handler used to write a second one, duplicating every manual escalation.
+    const result = await escalateEmergency(
+      bookingId,
+      input.newRadiusKm,
+      input.notifySupervisors,
+      input.reason ?? "manual_escalation"
+    );
+
+    if (!result.escalated) {
+      const status = result.reason === "NOT_AN_EMERGENCY_BOOKING" ? 404 : 409;
+      res.status(status).json({ error: result.reason, escalationLevel: result.escalationLevel });
+      return;
+    }
+
+    void recordAuditEvent({
+      actorId: req.user!.id,
+      action: "emergency.escalated",
+      resourceType: "emergency_booking",
+      resourceId: bookingId,
+      requestId: req.header("x-request-id") ?? undefined,
+      metadata: { attempt: result.escalationLevel, radiusKm: result.radiusKm, assigned: Boolean(result.assignedWorkerId) },
+    }).catch(() => undefined);
+
+    res.json({
+      message: "Emergency escalated",
+      attemptNumber: result.escalationLevel,
+      radiusKm: result.radiusKm,
+      assignedWorkerId: result.assignedWorkerId ?? null,
+    });
   } catch (error) { next(error); }
 });
 
@@ -221,38 +375,3 @@ emergencyRouter.post("/:id/reassign", requireAuth, requireRoles("system_admin", 
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
   } catch (error) { next(error); }
 });
-
-async function escalateEmergency(bookingId: string, newRadiusKm?: number, notifySupervisors = true) {
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    const emergency = await client.query(`select * from emergency_bookings where booking_id = $1`, [bookingId]);
-    if (!emergency.rows[0]) { await client.query("rollback"); return; }
-    const newLevel = emergency.rows[0].escalation_level + 1;
-    const radius = newRadiusKm ?? Math.min(emergency.rows[0].radius_km * 1.5, 50);
-    await client.query(`update emergency_bookings set escalation_level = $1, radius_km = $2, escalated_at = now() where booking_id = $3`, [newLevel, radius, bookingId]);
-    await client.query(`update bookings set status = 'matching' where id = $1 and status = 'requested'`, [bookingId]);
-
-    const booking = await client.query(`select service_id, customer_id, location, address from bookings where id = $1`, [bookingId]);
-    if (booking.rows[0]) {
-      const matches = await findMatchingWorkers({ serviceId: booking.rows[0].service_id, latitude: booking.rows[0].location.coordinates[1], longitude: booking.rows[0].location.coordinates[0], urgency: "emergency", radiusKm: radius });
-      if (matches.workers.length > 0) {
-        const workerId = matches.workers[0].workerId;
-        const worker = await client.query("select id from workers where id = $1 and verification_status = 'verified' and current_status = 'available' for update", [workerId]);
-        if (worker.rows[0]) {
-          await client.query("update workers set current_status = 'busy', updated_at = now() where id = $1", [workerId]);
-          await client.query(`update bookings set worker_id = $1, status = 'assigned', updated_at = now() where id = $2`, [workerId, bookingId]);
-          await client.query("insert into booking_status_events (booking_id, status, actor_id, reason, request_id) values ($1, 'assigned', $2, $3, $4)", [bookingId, "system", `escalated_assigned_${workerId}`, null]);
-          const workerUser = await client.query("select user_id from workers where id = $1", [workerId]);
-          if (workerUser.rows[0]) await writeNotification(client, { userId: workerUser.rows[0].user_id, type: "emergency.assigned", title: "Emergency service request", body: "You have been assigned an emergency service request.", aggregateType: "booking", aggregateId: bookingId });
-        }
-      }
-    }
-
-    if (notifySupervisors && newLevel >= 2) {
-      emitEmergencyEscalated({ bookingId, priority: emergency.rows[0].priority, escalationLevel: newLevel, radiusKm: radius });
-    }
-
-    await client.query("commit");
-  } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
-}

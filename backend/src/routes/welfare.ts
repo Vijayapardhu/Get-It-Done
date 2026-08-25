@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 import {
   getWelfareBundle,
   addTraining,
@@ -12,6 +13,11 @@ import {
 } from "../services/welfareService.js";
 
 export const welfareRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+welfareRouter.param("id", rejectNonUuidParam);
+welfareRouter.param("workerId", rejectNonUuidParam);
 
 const trainingSchema = z.object({
   courseName: z.string().trim().min(2).max(200),
@@ -59,6 +65,105 @@ const benefitEligibilitySchema = z.object({
   eligible: z.boolean().default(false),
   expiresAt: z.string().datetime().optional(),
   metadata: z.record(z.unknown()).optional(),
+});
+
+/**
+ * @openapi
+ * /welfare/training:
+ *   get:
+ *     summary: List the caller's completed and upcoming training programmes
+ *     tags: [Welfare]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: status
+ *         in: query
+ *         schema: { type: string, enum: [planned, in_progress, completed, expired] }
+ *     responses:
+ *       200: { description: Training records }
+ *       404: { description: No worker profile for this account }
+ */
+welfareRouter.post(["/payout-account", "/workers/me/payout-account"], requireAuth, async (req, res, next) => {
+  try {
+    const account = await setPayoutAccount(req.user!.id, payoutAccountSchema.parse(req.body));
+    if (!account) { res.status(404).json({ error: "Worker profile not found" }); return; }
+    void recordAuditEvent({ actorId: req.user!.id, action: "welfare.payout_account_set", resourceType: "payout_account", requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
+    res.json({ payoutAccount: account });
+  } catch (error) { next(error); }
+});
+
+welfareRouter.get(["/training", "/workers/me/training"], requireAuth, async (req, res, next) => {
+  try {
+    const worker = await pool.query("select id from workers where user_id = $1", [req.user!.id]);
+    if (!worker.rows[0]) { res.status(404).json({ error: "Worker profile not found" }); return; }
+
+    const conditions = ["worker_id = $1"];
+    const values: unknown[] = [worker.rows[0].id];
+    if (typeof req.query.status === "string") {
+      conditions.push(`status = $${values.length + 1}`);
+      values.push(req.query.status);
+    }
+
+    const result = await pool.query(
+      `select id, course_name, provider, completed_on, expires_on, status, created_at
+         from worker_training_records
+        where ${conditions.join(" and ")}
+        order by coalesce(completed_on, created_at::date) desc`,
+      values
+    );
+
+    const summary = await pool.query(
+      `select count(*) filter (where status = 'completed')::int   as completed,
+              count(*) filter (where status = 'planned')::int     as planned,
+              count(*) filter (where status = 'in_progress')::int as in_progress,
+              count(*) filter (where status = 'expired')::int     as expired
+         from worker_training_records where worker_id = $1`,
+      [worker.rows[0].id]
+    );
+
+    res.json({ training: result.rows, summary: summary.rows[0] });
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /welfare/insurance:
+ *   get:
+ *     summary: View the caller's insurance policies and coverage
+ *     tags: [Welfare]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Insurance records with active coverage summary }
+ *       404: { description: No worker profile for this account }
+ */
+welfareRouter.get(["/insurance", "/workers/me/insurance"], requireAuth, async (req, res, next) => {
+  try {
+    const worker = await pool.query("select id from workers where user_id = $1", [req.user!.id]);
+    if (!worker.rows[0]) { res.status(404).json({ error: "Worker profile not found" }); return; }
+
+    const result = await pool.query(
+      `select id, provider, policy_reference, coverage_amount, starts_on, expires_on, status, created_at,
+              (status = 'active' and expires_on >= current_date) as is_currently_active,
+              (expires_on - current_date)                        as days_until_expiry
+         from worker_insurance_records
+        where worker_id = $1
+        order by expires_on desc`,
+      [worker.rows[0].id]
+    );
+
+    const active = result.rows.filter((row) => row.is_currently_active);
+
+    res.json({
+      insurance: result.rows,
+      coverage: {
+        activePolicies: active.length,
+        totalCoverage: active.reduce((sum, row) => sum + Number(row.coverage_amount ?? 0), 0),
+        // Surface the soonest expiry so the app can prompt for renewal.
+        nextExpiry: active.length > 0
+          ? active.reduce((soonest, row) => (row.expires_on < soonest ? row.expires_on : soonest), active[0].expires_on)
+          : null,
+      },
+    });
+  } catch (error) { next(error); }
 });
 
 /**
@@ -171,7 +276,9 @@ welfareRouter.post("/workers/me/insurance", requireAuth, async (req, res, next) 
  *       200:
  *         description: Payout account updated
  */
-welfareRouter.put("/workers/me/payout-account", requireAuth, async (req, res, next) => {
+// Blueprint spells this POST /welfare/payout-account; the codebase used PUT.
+// Both verbs and both paths hit the same handler.
+welfareRouter.put(["/workers/me/payout-account", "/payout-account"], requireAuth, async (req, res, next) => {
   try {
     const input = payoutAccountSchema.parse(req.body);
     const payoutAccount = await setPayoutAccount(req.user!.id, input);

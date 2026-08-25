@@ -1,7 +1,7 @@
 import { pool } from "../db/pool.js";
 
 export async function recordAuditEvent(input: {
-  actorId?: string;
+  actorId?: string | null;
   action: string;
   resourceType: string;
   resourceId?: string;

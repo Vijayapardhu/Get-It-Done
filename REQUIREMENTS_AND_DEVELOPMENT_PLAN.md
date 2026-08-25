@@ -1,4 +1,4 @@
-# GET IT NOW
+# GET IT DONE
 
 ## Requirements and Development Plan
 
@@ -10,7 +10,7 @@
 
 ## 1. Product Definition
 
-GET IT NOW is a cooperative-owned service network, not only a worker booking app. It connects households, institutions, cooperative societies, and federations with verified workers while making trust, fair opportunity, welfare, and local operational intelligence visible.
+GET IT DONE is a cooperative-owned service network, not only a worker booking app. It connects households, institutions, cooperative societies, and federations with verified workers while making trust, fair opportunity, welfare, and local operational intelligence visible.
 
 ### Product promise
 

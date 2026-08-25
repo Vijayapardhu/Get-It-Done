@@ -8,12 +8,12 @@ const routesPath = path.resolve(process.cwd(), "src/routes/*.ts");
 const swaggerDefinition = {
   openapi: "3.0.3",
   info: {
-    title: "GET IT NOW API",
+    title: "GET IT DONE API",
     version: "1.0.0",
     description: "On-demand service marketplace API for connecting customers with verified workers",
     contact: {
       name: "API Support",
-      email: "support@getitnow.example"
+      email: "support@getitdone.example"
     },
     license: {
       name: "MIT",
@@ -26,7 +26,7 @@ const swaggerDefinition = {
       description: "Development server"
     },
     {
-      url: "https://api.getitnow.example",
+      url: "https://api.getitdone.example",
       description: "Production server"
     }
   ],

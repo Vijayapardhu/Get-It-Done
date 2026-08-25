@@ -1,12 +1,12 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "GET IT NOW API",
+    "title": "GET IT DONE API",
     "version": "1.0.0",
     "description": "On-demand service marketplace API for connecting customers with verified workers",
     "contact": {
       "name": "API Support",
-      "email": "support@getitnow.example"
+      "email": "support@getitdone.example"
     },
     "license": {
       "name": "MIT",
@@ -19,7 +19,7 @@
       "description": "Development server"
     },
     {
-      "url": "https://api.getitnow.example",
+      "url": "https://api.getitdone.example",
       "description": "Production server"
     }
   ],
@@ -776,6 +776,141 @@
     }
   ],
   "paths": {
+    "/files/upload-url": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Get presigned upload URL",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "filename",
+                  "contentType"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50
+                  },
+                  "filename": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "contentType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload URL generated"
+          }
+        }
+      }
+    },
+    "/files/{id}/complete": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Complete file upload after upload",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload completed"
+          },
+          "400": {
+            "description": "Malware scan failed"
+          }
+        }
+      }
+    },
+    "/files/{id}": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Download file",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to download URL"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Delete file",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File deleted"
+          }
+        }
+      }
+    },
     "/workers": {
       "get": {
         "summary": "List workers with filters",
@@ -812,7 +947,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker profile"
+          },
+          "404": {
+            "description": "Worker not found"
+          }
+        }
       }
     },
     "/workers/{id}/jobs": {
@@ -825,7 +979,45 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of worker jobs"
+          },
+          "404": {
+            "description": "Worker not found"
+          }
+        }
       }
     },
     "/workers/{id}/earnings": {
@@ -838,7 +1030,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker earnings"
+          },
+          "404": {
+            "description": "Worker not found"
+          }
+        }
       }
     },
     "/workers/{id}/ratings": {
@@ -851,7 +1062,45 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker ratings"
+          },
+          "404": {
+            "description": "Worker not found"
+          }
+        }
       }
     },
     "/workers/{id}/statistics": {
@@ -864,7 +1113,382 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker statistics"
+          },
+          "404": {
+            "description": "Worker not found"
+          }
+        }
+      }
+    },
+    "/workers/me/verification/submit": {
+      "post": {
+        "summary": "Submit worker profile for verification",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "documents"
+                ],
+                "properties": {
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "fileKey"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "fileKey": {
+                          "type": "string"
+                        },
+                        "issuedBy": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date"
+                        }
+                      }
+                    }
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Verification submitted"
+          },
+          "400": {
+            "description": "Missing required documents"
+          }
+        }
+      }
+    },
+    "/workers/me/verification/status": {
+      "get": {
+        "summary": "Get worker verification status",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification status and details"
+          }
+        }
+      }
+    },
+    "/workers/me/skills": {
+      "get": {
+        "summary": "List the caller's certified skills",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skills with certification level"
+          },
+          "404": {
+            "description": "No worker profile for this account"
+          }
+        }
+      }
+    },
+    "/workers/me/service-areas": {
+      "get": {
+        "summary": "Get the caller's configured coverage radius per service",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service areas"
+          },
+          "404": {
+            "description": "No worker profile for this account"
+          }
+        }
+      }
+    },
+    "/worker/dashboard": {
+      "get": {
+        "summary": "Get worker dashboard overview",
+        "tags": [
+          "Worker Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker dashboard data"
+          }
+        }
+      }
+    },
+    "/worker/upcoming-jobs": {
+      "get": {
+        "summary": "Get worker's upcoming/active jobs",
+        "tags": [
+          "Worker Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of upcoming jobs"
+          }
+        }
+      }
+    },
+    "/worker/earnings/summary": {
+      "get": {
+        "summary": "Get worker earnings summary (today, week, month, total)",
+        "tags": [
+          "Worker Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Earnings summary"
+          }
+        }
+      }
+    },
+    "/worker/welfare/summary": {
+      "get": {
+        "summary": "Get worker welfare summary (insurance, training, safety)",
+        "tags": [
+          "Worker Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Welfare summary"
+          }
+        }
+      }
+    },
+    "/worker/navigate/{bookingId}": {
+      "post": {
+        "summary": "Get navigation details for a booking",
+        "tags": [
+          "Worker Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bookingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Navigation details"
+          },
+          "404": {
+            "description": "Booking not found or not assigned to worker"
+          }
+        }
+      }
+    },
+    "/worker/jobs/history": {
+      "get": {
+        "summary": "Get worker job history with filters",
+        "tags": [
+          "Worker Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "cancelled",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated job history"
+          }
+        }
+      }
+    },
+    "/welfare/training": {
+      "get": {
+        "summary": "List the caller's completed and upcoming training programmes",
+        "tags": [
+          "Welfare"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "planned",
+                "in_progress",
+                "completed",
+                "expired"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Training records"
+          },
+          "404": {
+            "description": "No worker profile for this account"
+          }
+        }
+      }
+    },
+    "/welfare/insurance": {
+      "get": {
+        "summary": "View the caller's insurance policies and coverage",
+        "tags": [
+          "Welfare"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Insurance records with active coverage summary"
+          },
+          "404": {
+            "description": "No worker profile for this account"
+          }
+        }
       }
     },
     "/welfare/workers/me": {
@@ -1576,7 +2200,7 @@
     },
     "/users/{id}": {
       "get": {
-        "summary": "Get public user profile",
+        "summary": "Get a user profile",
         "tags": [
           "Users"
         ],
@@ -1598,12 +2222,16 @@
         ],
         "responses": {
           "200": {
-            "description": "Public user profile"
+            "description": "User profile"
+          },
+          "403": {
+            "description": "Not permitted to view this user"
           },
           "404": {
-            "description": "User not found"
+            "description": "Not found"
           }
-        }
+        },
+        "description": "Staff see the full record. Everyone else sees only the public fields, and only for themselves or a worker they have an active booking with.\n"
       },
       "patch": {
         "summary": "Admin update user",
@@ -1707,11 +2335,185 @@
             "bearerAuth": []
           }
         ]
+      },
+      "get": {
+        "summary": "List complaints",
+        "tags": [
+          "Complaints"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "investigating",
+                "resolved",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "bookingId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "raisedBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of complaints"
+          }
+        }
+      }
+    },
+    "/trust/complaints/{id}": {
+      "get": {
+        "summary": "Get complaint by ID",
+        "tags": [
+          "Complaints"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complaint details"
+          },
+          "404": {
+            "description": "Complaint not found"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update complaint status",
+        "tags": [
+          "Complaints"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "investigating",
+                      "resolved",
+                      "rejected"
+                    ]
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Optional updated description"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complaint updated"
+          },
+          "400": {
+            "description": "Invalid status"
+          },
+          "404": {
+            "description": "Complaint not found"
+          }
+        }
+      }
+    },
+    "/trust/workers/{id}": {
+      "get": {
+        "summary": "Public Cooperative Trust Graph for a worker",
+        "description": "Cooperative pillar #1. Publishes the trust signals a customer needs to decide — verification tier, society membership, certified skills, insurance and training standing, safety record and rating distribution — without exposing any document URL, identity number or contact detail.\n",
+        "tags": [
+          "Trust"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Worker id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust graph"
+          },
+          "404": {
+            "description": "Worker not found"
+          }
+        }
       }
     },
     "/support/tickets": {
       "post": {
-        "summary": "Create support ticket",
+        "summary": "Create a support ticket/complaint",
         "tags": [
           "Support"
         ],
@@ -1721,6 +2523,7 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1730,7 +2533,7 @@
                   "description"
                 ],
                 "properties": {
-                  "categoryId": {
+                  "bookingId": {
                     "type": "string",
                     "format": "uuid"
                   },
@@ -1746,7 +2549,19 @@
                       "low",
                       "medium",
                       "high",
-                      "urgent"
+                      "critical"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "booking",
+                      "payment",
+                      "worker",
+                      "service",
+                      "technical",
+                      "billing",
+                      "other"
                     ]
                   }
                 }
@@ -1778,31 +2593,26 @@
               "type": "string",
               "enum": [
                 "open",
-                "in_progress",
+                "investigating",
                 "resolved",
-                "closed"
+                "rejected",
+                "all"
               ]
             }
           },
           {
-            "name": "categoryId",
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bookingId",
             "in": "query",
             "schema": {
               "type": "string",
               "format": "uuid"
-            }
-          },
-          {
-            "name": "priority",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "low",
-                "medium",
-                "high",
-                "urgent"
-              ]
             }
           },
           {
@@ -1827,9 +2637,27 @@
         }
       }
     },
+    "/support/tickets/stats": {
+      "get": {
+        "summary": "Get support ticket statistics (admin)",
+        "tags": [
+          "Support"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket statistics"
+          }
+        }
+      }
+    },
     "/support/tickets/{id}": {
       "get": {
-        "summary": "Get ticket with messages",
+        "summary": "Get ticket details with comments",
         "tags": [
           "Support"
         ],
@@ -1851,15 +2679,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Ticket with messages"
-          },
-          "404": {
-            "description": "Not found"
+            "description": "Ticket details"
           }
         }
       },
       "patch": {
-        "summary": "Update ticket",
+        "summary": "Update ticket (admin/support staff)",
         "tags": [
           "Support"
         ],
@@ -1880,6 +2705,7 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -1889,10 +2715,17 @@
                     "type": "string",
                     "enum": [
                       "open",
-                      "in_progress",
+                      "investigating",
                       "resolved",
-                      "closed"
+                      "rejected"
                     ]
+                  },
+                  "assignedTo": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "resolution": {
+                    "type": "string"
                   },
                   "priority": {
                     "type": "string",
@@ -1900,12 +2733,8 @@
                       "low",
                       "medium",
                       "high",
-                      "urgent"
+                      "critical"
                     ]
-                  },
-                  "assignedTo": {
-                    "type": "string",
-                    "format": "uuid"
                   }
                 }
               }
@@ -1914,14 +2743,14 @@
         },
         "responses": {
           "200": {
-            "description": "Updated ticket"
+            "description": "Ticket updated"
           }
         }
       }
     },
-    "/support/tickets/{id}/messages": {
+    "/support/tickets/{id}/comments": {
       "post": {
-        "summary": "Add message to ticket",
+        "summary": "Add comment to ticket",
         "tags": [
           "Support"
         ],
@@ -1942,15 +2771,16 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "required": [
-                  "body"
+                  "comment"
                 ],
                 "properties": {
-                  "body": {
+                  "comment": {
                     "type": "string"
                   },
                   "isInternal": {
@@ -1963,14 +2793,14 @@
         },
         "responses": {
           "201": {
-            "description": "Message added"
+            "description": "Comment added"
           }
         }
       }
     },
-    "/support/tickets/{id}/assign": {
+    "/support/tickets/{id}/resolve": {
       "post": {
-        "summary": "Assign ticket (support_staff, admin)",
+        "summary": "Resolve a ticket with resolution details",
         "tags": [
           "Support"
         ],
@@ -1991,99 +2821,16 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "required": [
-                  "assignedTo"
+                  "resolution"
                 ],
                 "properties": {
-                  "assignedTo": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Ticket assigned"
-          }
-        }
-      }
-    },
-    "/support/tickets/{id}/close": {
-      "post": {
-        "summary": "Close ticket",
-        "tags": [
-          "Support"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Ticket closed"
-          }
-        }
-      }
-    },
-    "/support/categories": {
-      "get": {
-        "summary": "List support categories",
-        "tags": [
-          "Support"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of categories"
-          }
-        }
-      },
-      "post": {
-        "summary": "Create support category (system_admin)",
-        "tags": [
-          "Support"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "name"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "description": {
+                  "resolution": {
                     "type": "string"
                   }
                 }
@@ -2092,8 +2839,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Category created"
+          "200": {
+            "description": "Ticket resolved"
           }
         }
       }
@@ -2392,7 +3139,9 @@
             "description": "Skill removed"
           }
         }
-      },
+      }
+    },
+    "/skills/workers/{workerId}/skills/{skillId}/verify": {
       "post": {
         "summary": "Verify worker skill (admin)",
         "tags": [
@@ -2455,13 +3204,29 @@
     },
     "/settlements": {
       "get": {
-        "summary": "List settlements",
+        "summary": "List cooperative settlement batches",
         "tags": [
           "Settlements"
         ],
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "processing",
+                "completed",
+                "paid",
+                "failed"
+              ]
+            }
           }
         ],
         "responses": {
@@ -2471,9 +3236,54 @@
         }
       }
     },
+    "/settlements/generate": {
+      "post": {
+        "summary": "Aggregate paid bookings into settlement batches",
+        "description": "Defaults to the previous calendar month. Idempotent — an invoice already attached to a batch is never claimed again, so re-running only picks up new activity. Also runs every six hours as the `settlement.generate` job.\n",
+        "tags": [
+          "Settlements"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "periodStart": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "periodEnd": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "cooperativeId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Batches generated"
+          },
+          "403": {
+            "description": "Not permitted for that cooperative"
+          }
+        }
+      }
+    },
     "/settlements/{id}/process": {
       "post": {
-        "summary": "Process settlement (admin)",
+        "summary": "Close a draft batch (draft -> completed)",
         "tags": [
           "Settlements"
         ],
@@ -2495,20 +3305,82 @@
         ],
         "responses": {
           "200": {
-            "description": "Settlement processed"
-          },
-          "404": {
-            "description": "Not found"
+            "description": "Settlement closed"
           },
           "409": {
-            "description": "Already processed"
+            "description": "Not in draft state"
+          }
+        }
+      }
+    },
+    "/settlements/{id}/payout": {
+      "post": {
+        "summary": "Record the payout transfer to the cooperative escrow",
+        "tags": [
+          "Settlements"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "method",
+                  "reference"
+                ],
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "bank_transfer",
+                      "upi",
+                      "neft",
+                      "imps",
+                      "manual"
+                    ]
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payout recorded"
+          },
+          "409": {
+            "description": "Batch is not in 'completed' state",
+            "or already paid": null
           }
         }
       }
     },
     "/settlements/{id}": {
       "get": {
-        "summary": "Get settlement details",
+        "summary": "Get a settlement with its line items",
         "tags": [
           "Settlements"
         ],
@@ -2915,6 +3787,438 @@
         }
       }
     },
+    "/services/discovery/search": {
+      "get": {
+        "summary": "Advanced service search with filters",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search query"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by category"
+          },
+          {
+            "name": "latitude",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "User latitude for distance sorting"
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "User longitude for distance sorting"
+          },
+          {
+            "name": "radiusKm",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "Search radius in km"
+          },
+          {
+            "name": "emergencyOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Only show emergency-supported services"
+          },
+          {
+            "name": "minPrice",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "relevance",
+                "price_asc",
+                "price_desc",
+                "rating",
+                "distance"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/services/discovery/nearby": {
+      "get": {
+        "summary": "Get services available near a location",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "radiusKm",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "default": 15
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Nearby services"
+          }
+        }
+      }
+    },
+    "/services/discovery/{id}/workers": {
+      "get": {
+        "summary": "Get workers offering a specific service",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "latitude",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "radiusKm",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workers for service"
+          }
+        }
+      }
+    },
+    "/services/discovery/categories": {
+      "get": {
+        "summary": "Get all service categories with counts",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service categories"
+          }
+        }
+      }
+    },
+    "/services/discovery/geocode": {
+      "post": {
+        "summary": "Convert address to coordinates using Google Maps",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Geocoded results"
+          }
+        }
+      }
+    },
+    "/services/discovery/reverse-geocode": {
+      "post": {
+        "summary": "Convert coordinates to address using Google Maps",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lat",
+                  "lng"
+                ],
+                "properties": {
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reverse geocoded results"
+          }
+        }
+      }
+    },
+    "/services/discovery/places/search": {
+      "post": {
+        "summary": "Search for places using Google Places API",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radius": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Place search results"
+          }
+        }
+      }
+    },
+    "/services/discovery/distance-matrix": {
+      "post": {
+        "summary": "Get travel distance and duration between locations using Google Maps",
+        "tags": [
+          "Service Discovery"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "origins",
+                  "destinations"
+                ],
+                "properties": {
+                  "origins": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number"
+                        },
+                        "lng": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "destinations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number"
+                        },
+                        "lng": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "driving",
+                      "walking",
+                      "bicycling",
+                      "transit"
+                    ]
+                  },
+                  "departureTime": {
+                    "type": "integer"
+                  },
+                  "trafficModel": {
+                    "type": "string",
+                    "enum": [
+                      "best_guess",
+                      "pessimistic",
+                      "optimistic"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Distance matrix results"
+          }
+        }
+      }
+    },
     "/service-areas": {
       "post": {
         "summary": "Create service coverage area",
@@ -3085,7 +4389,7 @@
         }
       }
     },
-    "/service-requirements": {
+    "/service-areas/requirements": {
       "post": {
         "summary": "Create service requirement",
         "tags": [
@@ -3155,7 +4459,7 @@
         }
       }
     },
-    "/service-variants": {
+    "/service-areas/variants": {
       "post": {
         "summary": "Create service variant",
         "tags": [
@@ -3240,7 +4544,7 @@
         }
       }
     },
-    "/service-categories": {
+    "/service-areas/categories": {
       "post": {
         "summary": "Create service category",
         "tags": [
@@ -3361,7 +4665,7 @@
         }
       }
     },
-    "/workers/{workerId}/reviews": {
+    "/reviews/workers/{workerId}/reviews": {
       "get": {
         "summary": "Get reviews for a worker",
         "tags": [
@@ -3409,7 +4713,7 @@
         }
       }
     },
-    "/workers/{workerId}/rating-summary": {
+    "/reviews/workers/{workerId}/rating-summary": {
       "get": {
         "summary": "Get worker rating summary",
         "tags": [
@@ -3987,9 +5291,10 @@
         }
       }
     },
-    "/recurring": {
+    "/recurring/plans/{id}/generate": {
       "post": {
-        "summary": "Create recurring booking",
+        "summary": "Spawn a booking instance from a recurring plan",
+        "description": "Also runs automatically every 15 minutes via the `recurring.generate` background job for every plan whose next_generation_at has passed.\n",
         "tags": [
           "Recurring"
         ],
@@ -3998,239 +5303,30 @@
             "bearerAuth": []
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "serviceId",
-                  "frequency",
-                  "startDate"
-                ],
-                "properties": {
-                  "serviceId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "variantId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "addressId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "frequency": {
-                    "type": "string",
-                    "enum": [
-                      "daily",
-                      "weekly",
-                      "monthly",
-                      "custom"
-                    ]
-                  },
-                  "daysOfWeek": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "timeWindowStart": {
-                    "type": "string"
-                  },
-                  "timeWindowEnd": {
-                    "type": "string"
-                  },
-                  "startDate": {
-                    "type": "string",
-                    "format": "date"
-                  },
-                  "endDate": {
-                    "type": "string",
-                    "format": "date"
-                  }
-                }
-              }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
-        },
+        ],
         "responses": {
           "201": {
-            "description": "Recurring booking created"
-          }
-        }
-      },
-      "get": {
-        "summary": "List recurring bookings",
-        "tags": [
-          "Recurring"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of recurring bookings"
-          }
-        }
-      }
-    },
-    "/recurring/{id}": {
-      "get": {
-        "summary": "Get recurring booking with generated bookings",
-        "tags": [
-          "Recurring"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Recurring booking with generated bookings"
+            "description": "Booking instance created"
           },
           "404": {
-            "description": "Not found"
-          }
-        }
-      },
-      "patch": {
-        "summary": "Update recurring booking",
-        "tags": [
-          "Recurring"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "variantId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "addressId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "frequency": {
-                    "type": "string",
-                    "enum": [
-                      "daily",
-                      "weekly",
-                      "monthly",
-                      "custom"
-                    ]
-                  },
-                  "daysOfWeek": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "timeWindowStart": {
-                    "type": "string"
-                  },
-                  "timeWindowEnd": {
-                    "type": "string"
-                  },
-                  "startDate": {
-                    "type": "string",
-                    "format": "date"
-                  },
-                  "endDate": {
-                    "type": "string",
-                    "format": "date"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated recurring booking"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Cancel recurring booking",
-        "tags": [
-          "Recurring"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Recurring booking cancelled"
+            "description": "No active plan with that id"
           }
         }
       }
     },
-    "/recurring/{id}/pause": {
+    "/recurring/plans/generate-due": {
       "post": {
-        "summary": "Pause recurring booking",
+        "summary": "Run the due-plan sweep immediately (admin)",
         "tags": [
           "Recurring"
         ],
@@ -4239,49 +5335,9 @@
             "bearerAuth": []
           }
         ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
         "responses": {
           "200": {
-            "description": "Recurring booking paused"
-          }
-        }
-      }
-    },
-    "/recurring/{id}/resume": {
-      "post": {
-        "summary": "Resume recurring booking",
-        "tags": [
-          "Recurring"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Recurring booking resumed"
+            "description": "Sweep result"
           }
         }
       }
@@ -5206,7 +6262,7 @@
     },
     "/payments/webhooks/{provider}": {
       "post": {
-        "summary": "Handle payment webhook",
+        "summary": "Payment gateway webhook (HMAC-signed, no bearer auth)",
         "tags": [
           "Payments"
         ],
@@ -5216,7 +6272,13 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "razorpay",
+                "stripe",
+                "phonepe",
+                "upi"
+              ]
             }
           }
         ],
@@ -5247,7 +6309,10 @@
         },
         "responses": {
           "200": {
-            "description": "Webhook processed"
+            "description": "Event accepted (or ignored as a duplicate)"
+          },
+          "401": {
+            "description": "Missing or invalid signature"
           }
         }
       }
@@ -6405,7 +7470,9 @@
             "description": "Member added"
           }
         }
-      },
+      }
+    },
+    "/institutions/{id}/members/{userId}": {
       "delete": {
         "summary": "Remove member from organization",
         "tags": [
@@ -6507,9 +7574,9 @@
     },
     "/institutions/{id}/contracts": {
       "post": {
-        "summary": "Create service contract",
+        "summary": "Create a service contract",
         "tags": [
-          "Institutions"
+          "Institutional"
         ],
         "security": [
           {
@@ -6563,11 +7630,53 @@
                 }
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
             "description": "Contract created"
+          }
+        }
+      },
+      "get": {
+        "summary": "Get service contracts for an organization",
+        "tags": [
+          "Institutional"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "expired",
+                "cancelled",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of contracts"
           }
         }
       }
@@ -6646,9 +7755,9 @@
     },
     "/institutions/{id}/purchase-orders": {
       "post": {
-        "summary": "Create purchase order",
+        "summary": "Create a purchase order",
         "tags": [
-          "Institutions"
+          "Institutional"
         ],
         "security": [
           {
@@ -6693,11 +7802,39 @@
                 }
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
             "description": "Purchase order created"
+          }
+        }
+      },
+      "get": {
+        "summary": "Get purchase orders for an organization",
+        "tags": [
+          "Institutional"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of purchase orders"
           }
         }
       }
@@ -6788,6 +7925,388 @@
         }
       }
     },
+    "/institutions/me": {
+      "get": {
+        "summary": "The caller's institutional dashboard, members and contracts",
+        "description": "Also served at /institutions/organizations/me (blueprint spelling).",
+        "tags": [
+          "Institutions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization dashboard"
+          },
+          "404": {
+            "description": "The caller is not a member of any organization"
+          }
+        }
+      }
+    },
+    "/institutions/bookings/bulk": {
+      "post": {
+        "summary": "Create multiple bookings for an organization",
+        "tags": [
+          "Institutional"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "organizationId",
+                  "bookings"
+                ],
+                "properties": {
+                  "organizationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "bookings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Bulk bookings created"
+          }
+        }
+      }
+    },
+    "/institutions/{id}/service-plans": {
+      "get": {
+        "summary": "Get service plans for an organization",
+        "tags": [
+          "Institutional"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of service plans"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a service plan",
+        "tags": [
+          "Institutional"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "services",
+                  "frequency"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "frequency": {
+                    "type": "string",
+                    "enum": [
+                      "daily",
+                      "weekly",
+                      "monthly",
+                      "custom"
+                    ]
+                  },
+                  "preferredDays": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "preferredTimeStart": {
+                    "type": "string"
+                  },
+                  "preferredTimeEnd": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Service plan created"
+          }
+        }
+      }
+    },
+    "/institutions/{id}/analytics": {
+      "get": {
+        "summary": "Get analytics for an organization",
+        "tags": [
+          "Institutional"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization analytics"
+          }
+        }
+      }
+    },
+    "/i18n/languages": {
+      "get": {
+        "summary": "Get supported languages",
+        "tags": [
+          "Internationalization"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of supported languages"
+          }
+        }
+      }
+    },
+    "/i18n/translations/{lang}": {
+      "get": {
+        "summary": "Get translations for a language",
+        "tags": [
+          "Internationalization"
+        ],
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "te",
+                "hi"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Translation strings"
+          },
+          "404": {
+            "description": "Language not supported"
+          }
+        }
+      }
+    },
+    "/i18n/user/language": {
+      "get": {
+        "summary": "Get current user's preferred language",
+        "tags": [
+          "Internationalization"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User's language preference"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update user's preferred language",
+        "tags": [
+          "Internationalization"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "language"
+                ],
+                "properties": {
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "te",
+                      "hi"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Language updated"
+          },
+          "400": {
+            "description": "Invalid language"
+          }
+        }
+      }
+    },
+    "/i18n/admin/translations": {
+      "get": {
+        "summary": "List all translation keys (admin)",
+        "tags": [
+          "Internationalization"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Translation keys"
+          }
+        }
+      }
+    },
+    "/i18n/admin/translations/{lang}": {
+      "put": {
+        "summary": "Update translations for a language (admin)",
+        "tags": [
+          "Internationalization"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "te",
+                "hi"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Translations updated"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health check",
@@ -6815,6 +8334,610 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/maps/geocode": {
+      "post": {
+        "summary": "Convert address to coordinates",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Geocoded results"
+          }
+        }
+      }
+    },
+    "/maps/reverse-geocode": {
+      "post": {
+        "summary": "Convert coordinates to address",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lat",
+                  "lng"
+                ],
+                "properties": {
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reverse geocoded results"
+          }
+        }
+      }
+    },
+    "/maps/distance-matrix": {
+      "post": {
+        "summary": "Get distance and duration between multiple origins and destinations",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "origins",
+                  "destinations"
+                ],
+                "properties": {
+                  "origins": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number"
+                        },
+                        "lng": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "destinations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number"
+                        },
+                        "lng": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "driving",
+                      "walking",
+                      "bicycling",
+                      "transit"
+                    ]
+                  },
+                  "departureTime": {
+                    "type": "integer"
+                  },
+                  "trafficModel": {
+                    "type": "string",
+                    "enum": [
+                      "best_guess",
+                      "pessimistic",
+                      "optimistic"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Distance matrix results"
+          }
+        }
+      }
+    },
+    "/maps/places/search": {
+      "post": {
+        "summary": "Search for places",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radius": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Place search results"
+          }
+        }
+      }
+    },
+    "/maps/places/{placeId}": {
+      "get": {
+        "summary": "Get place details",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "placeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Place details"
+          }
+        }
+      }
+    },
+    "/maps/directions": {
+      "post": {
+        "summary": "Get directions between two points",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "origin",
+                  "destination"
+                ],
+                "properties": {
+                  "origin": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "destination": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "driving",
+                      "walking",
+                      "bicycling",
+                      "transit"
+                    ]
+                  },
+                  "departureTime": {
+                    "type": "integer"
+                  },
+                  "avoid": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Directions result"
+          }
+        }
+      }
+    },
+    "/maps/static-map": {
+      "post": {
+        "summary": "Get static map image URL",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "center"
+                ],
+                "properties": {
+                  "center": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "zoom": {
+                    "type": "integer"
+                  },
+                  "size": {
+                    "type": "string"
+                  },
+                  "markers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "lat": {
+                          "type": "number"
+                        },
+                        "lng": {
+                          "type": "number"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "color": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Static map URL"
+          }
+        }
+      }
+    },
+    "/maps/embed": {
+      "post": {
+        "summary": "Get embed map URL for directions",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "origin",
+                  "destination"
+                ],
+                "properties": {
+                  "origin": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "destination": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "driving",
+                      "walking",
+                      "bicycling",
+                      "transit"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Embed map URL"
+          }
+        }
+      }
+    },
+    "/maps/navigation": {
+      "post": {
+        "summary": "Get navigation URL",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "destination"
+                ],
+                "properties": {
+                  "destination": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Navigation URL"
+          }
+        }
+      }
+    },
+    "/maps/distance": {
+      "post": {
+        "summary": "Calculate straight-line distance between two points",
+        "tags": [
+          "Google Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lat1",
+                  "lng1",
+                  "lat2",
+                  "lng2"
+                ],
+                "properties": {
+                  "lat1": {
+                    "type": "number"
+                  },
+                  "lng1": {
+                    "type": "number"
+                  },
+                  "lat2": {
+                    "type": "number"
+                  },
+                  "lng2": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Distance in kilometers"
+          }
+        }
+      }
+    },
+    "/admin/federation/overview": {
+      "get": {
+        "summary": "Get federation dashboard overview",
+        "tags": [
+          "Federation Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Federation overview metrics"
+          }
+        }
+      }
+    },
+    "/admin/federation/regional-demand": {
+      "get": {
+        "summary": "Get regional demand analytics across societies",
+        "tags": [
+          "Federation Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Regional demand data"
+          }
+        }
+      }
+    },
+    "/admin/federation/ai-forecasts": {
+      "get": {
+        "summary": "Get AI demand forecasts across societies",
+        "tags": [
+          "Federation Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AI forecasts"
+          }
+        }
+      }
+    },
+    "/admin/federation/society-performance": {
+      "get": {
+        "summary": "Get society performance comparison",
+        "tags": [
+          "Federation Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Society performance data"
           }
         }
       }
@@ -7053,6 +9176,46 @@
         "responses": {
           "200": {
             "description": "Emergency reassigned"
+          }
+        }
+      }
+    },
+    "/emergency/zones": {
+      "get": {
+        "summary": "Emergency density heatmap by zone",
+        "description": "Buckets emergency bookings from the last N days onto a coarse geographic grid and reports volume, response time and current responder coverage per cell.\n",
+        "tags": [
+          "Emergency"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 365
+            }
+          },
+          {
+            "name": "precision",
+            "in": "query",
+            "description": "Grid size in decimal degrees (default 0.05, roughly 5km).",
+            "schema": {
+              "type": "number",
+              "default": 0.05
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zone density buckets"
           }
         }
       }
@@ -7762,6 +9925,223 @@
         }
       }
     },
+    "/customer/dashboard": {
+      "get": {
+        "summary": "Get customer dashboard overview",
+        "tags": [
+          "Customer Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer dashboard data"
+          }
+        }
+      }
+    },
+    "/customer/bookings/{id}/track": {
+      "get": {
+        "summary": "Track booking with real-time worker location",
+        "tags": [
+          "Customer Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking tracking data"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
+      }
+    },
+    "/customer/favorites": {
+      "get": {
+        "summary": "List customer's favorite workers",
+        "tags": [
+          "Customer Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of favorite workers"
+          }
+        }
+      },
+      "post": {
+        "summary": "Add worker to favorites",
+        "tags": [
+          "Customer Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workerId"
+                ],
+                "properties": {
+                  "workerId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Worker added to favorites"
+          },
+          "409": {
+            "description": "Already in favorites"
+          }
+        }
+      }
+    },
+    "/customer/favorites/{workerId}": {
+      "delete": {
+        "summary": "Remove worker from favorites",
+        "tags": [
+          "Customer Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Worker removed from favorites"
+          },
+          "404": {
+            "description": "Favorite not found"
+          }
+        }
+      }
+    },
+    "/customer/bookings/history": {
+      "get": {
+        "summary": "Get customer booking history with filters",
+        "tags": [
+          "Customer Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "cancelled",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "serviceId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated booking history"
+          }
+        }
+      }
+    },
     "/cooperatives/federations": {
       "post": {
         "summary": "Create federation (system_admin)",
@@ -8297,6 +10677,210 @@
         }
       }
     },
+    "/admin/dashboard/overview": {
+      "get": {
+        "summary": "Get cooperative dashboard overview",
+        "tags": [
+          "Cooperative Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard overview metrics"
+          }
+        }
+      }
+    },
+    "/admin/dashboard/workforce": {
+      "get": {
+        "summary": "Get workforce details (workers, skills, certifications, workload)",
+        "tags": [
+          "Cooperative Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "verificationStatus",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "under_review",
+                "verified",
+                "rejected",
+                "suspended",
+                "expired"
+              ]
+            }
+          },
+          {
+            "name": "availability",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "available",
+                "busy",
+                "offline"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated workforce list"
+          }
+        }
+      }
+    },
+    "/admin/dashboard/operations": {
+      "get": {
+        "summary": "Get current operations (bookings, jobs, complaints, emergencies)",
+        "tags": [
+          "Cooperative Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operations data"
+          }
+        }
+      }
+    },
+    "/admin/dashboard/analytics": {
+      "get": {
+        "summary": "Get analytics (service demand, popular services, worker utilization, earnings)",
+        "tags": [
+          "Cooperative Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analytics data"
+          }
+        }
+      }
+    },
+    "/admin/dashboard/area-demand": {
+      "get": {
+        "summary": "Get area-wise demand breakdown",
+        "tags": [
+          "Cooperative Dashboard"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Area-wise demand data"
+          }
+        }
+      }
+    },
+    "/chats": {
+      "get": {
+        "summary": "Get user's chats",
+        "description": "Returns a list of chats for the current user",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create a new chat",
+        "description": "Creates a new chat for a booking (customer or worker only)",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/chats/{id}": {
+      "get": {
+        "summary": "Get chat with messages",
+        "description": "Returns a specific chat with its messages",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/chats/{id}/messages": {
+      "get": {
+        "summary": "Get chat messages (paginated)",
+        "description": "Returns paginated messages for a specific chat",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Send a message in a chat",
+        "description": "Sends a new message in a specific chat",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/bookings": {
       "post": {
         "summary": "Create a booking",
@@ -8331,7 +10915,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking details"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/status": {
@@ -8344,7 +10947,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status updated"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/cancel": {
@@ -8357,7 +10979,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking cancelled"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/reschedule": {
@@ -8370,7 +11011,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking rescheduled"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/accept": {
@@ -8383,7 +11043,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking accepted"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/reject": {
@@ -8396,7 +11075,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking rejected"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/start": {
@@ -8409,7 +11107,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking started"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/complete": {
@@ -8422,7 +11139,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking completed"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/reassign": {
@@ -8435,7 +11171,26 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking reassigned"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
       }
     },
     "/bookings/{id}/timeline": {
@@ -8448,7 +11203,62 @@
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking timeline"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
+      }
+    },
+    "/bookings/{id}/otp": {
+      "post": {
+        "summary": "Issue (or reissue) the start and completion verification codes",
+        "description": "Customer-only. Returns both 6-digit codes in plaintext exactly once — only the SHA-256 hashes are stored. Reissuing invalidates the previous pair and clears the failed-attempt counters.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Freshly issued codes"
+          },
+          "403": {
+            "description": "Only the booking customer may issue codes"
+          },
+          "409": {
+            "description": "Booking is already finished"
+          }
+        }
       }
     },
     "/auth/register": {
@@ -9114,9 +11924,96 @@
         }
       }
     },
+    "/analytics/cooperative/{id}": {
+      "get": {
+        "summary": "Local demand, response times and revenue for one society",
+        "tags": [
+          "Analytics"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 365
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cooperative analytics"
+          },
+          "403": {
+            "description": "Outside the caller's administrative scope"
+          },
+          "404": {
+            "description": "Cooperative not found"
+          }
+        }
+      }
+    },
+    "/analytics/federation": {
+      "get": {
+        "summary": "Cross-society benchmark metrics for a federation",
+        "tags": [
+          "Analytics"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "federationId",
+            "in": "query",
+            "description": "Defaults to the caller's own federation scope.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 365
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Federation benchmark"
+          },
+          "403": {
+            "description": "Outside the caller's administrative scope"
+          }
+        }
+      }
+    },
     "/ai/demand-forecast": {
       "get": {
-        "summary": "Get demand forecast",
+        "summary": "Demand forecast by zone and service",
         "description": "Returns AI-powered demand forecast for services",
         "tags": [
           "AI"
@@ -9128,42 +12025,47 @@
         ],
         "responses": {
           "200": {
-            "description": "Demand forecast",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AIDemandForecast"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "description": "Forecast"
           },
           "500": {
-            "description": "AI service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
+            "description": "AI service unavailable"
+          },
+          "502": {
+            "description": "AI engine unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 7,
+              "minimum": 1,
+              "maximum": 14
+            }
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
-        }
+        ]
       }
     },
     "/ai/workforce-allocation": {
       "get": {
-        "summary": "Get workforce allocation recommendations",
-        "description": "Returns AI-powered workforce allocation recommendations",
+        "summary": "Request an AI workforce rebalancing recommendation",
+        "description": "Advisory only. Each recommendation is persisted as 'pending' and takes effect only once an administrator approves and applies it.\n",
         "tags": [
           "AI"
         ],
@@ -9174,34 +12076,223 @@
         ],
         "responses": {
           "200": {
-            "description": "Workforce allocation recommendations",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AIWorkforceAllocation"
-                }
-              }
-            }
+            "description": "Recommendations",
+            "with the ids persisted for approval": null
           },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
+          "502": {
+            "description": "AI engine unavailable"
+          }
+        }
+      }
+    },
+    "/ai/recommendations": {
+      "get": {
+        "summary": "List persisted AI recommendations",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "applied"
+              ]
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of AI recommendation records"
+          }
+        }
+      }
+    },
+    "/ai/recommendations/{id}/approve": {
+      "post": {
+        "summary": "Approve an AI recommendation (admin)",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recommendation approved"
+          }
+        }
+      }
+    },
+    "/ai/recommendations/{id}/reject": {
+      "post": {
+        "summary": "Reject an AI recommendation (admin)",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recommendation rejected"
+          }
+        }
+      }
+    },
+    "/ai/recommendations/{id}/apply": {
+      "post": {
+        "summary": "Apply an approved AI recommendation (admin)",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recommendation applied"
+          }
+        }
+      }
+    },
+    "/ai/health": {
+      "get": {
+        "summary": "Check Python AI engine connectivity",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Engine reachable"
           },
-          "500": {
-            "description": "AI service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
+          "502": {
+            "description": "Engine unreachable"
+          }
+        }
+      }
+    },
+    "/ai/forecast": {
+      "post": {
+        "summary": "Demand forecast by zone and service (blueprint spelling)",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/ai/allocation": {
+      "post": {
+        "summary": "Request an AI workforce rebalancing recommendation (blueprint spelling)",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/ai/allocation/approve": {
+      "post": {
+        "summary": "Authorize a workforce rebalancing recommendation (blueprint spelling)",
+        "description": "Same effect as POST /ai/recommendations/{id}/approve.",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "recommendationId"
+                ],
+                "properties": {
+                  "recommendationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "apply": {
+                    "type": "boolean",
+                    "description": "Also mark it applied immediately"
+                  }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recommendation approved"
+          },
+          "404": {
+            "description": "Not found or not pending"
           }
         }
       }
@@ -9770,6 +12861,224 @@
         "responses": {
           "200": {
             "description": "Worker suspended"
+          }
+        }
+      }
+    },
+    "/addresses": {
+      "get": {
+        "summary": "List the caller's saved addresses",
+        "tags": [
+          "Addresses"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "is_default",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of addresses"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a saved address",
+        "tags": [
+          "Addresses"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "address"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 100
+                  },
+                  "address": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 500
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  },
+                  "is_default": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Address created"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/addresses/{id}": {
+      "get": {
+        "summary": "Get address details",
+        "tags": [
+          "Addresses"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Address details"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update an address",
+        "tags": [
+          "Addresses"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "type": "number"
+                  },
+                  "is_default": {
+                    "type": "boolean"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address updated"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an address",
+        "tags": [
+          "Addresses"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Address deleted"
+          },
+          "404": {
+            "description": "Not found"
           }
         }
       }

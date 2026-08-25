@@ -4,6 +4,12 @@ import authService from "../services/authService.js";
 declare global {
   namespace Express {
     interface User { id: string; name: string; phone: string | null; email?: string | null; role: string; language?: string; status?: string; }
+    interface Request {
+      /** Untouched request body, captured by express.json's `verify` hook for
+       *  webhook routes so HMAC signatures can be checked against the exact
+       *  bytes the gateway signed. Undefined everywhere else. */
+      rawBody?: Buffer;
+    }
   }
 }
 

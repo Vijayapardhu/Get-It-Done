@@ -4,6 +4,9 @@ import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { createPaymentOrder, getPaymentOrder, getPaymentOrderByBooking, listPaymentOrders, processWebhook, initiateRefund, getPaymentLedger, getReconciliationReport, getInvoice, getInvoiceByBooking, listInvoices } from "../services/paymentService.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { verifyWebhookSignature, verifyCheckoutSignature } from "../services/webhookSignature.js";
+import logger from "../core/logger.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -191,6 +194,11 @@ import { recordAuditEvent } from "../services/auditService.js";
 
 export const paymentsRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+paymentsRouter.param("id", rejectNonUuidParam);
+paymentsRouter.param("bookingId", rejectNonUuidParam);
+
 const createOrderSchema = z.object({
   bookingId: z.string().uuid(),
   provider: z.string().trim().min(2).max(30),
@@ -263,11 +271,51 @@ paymentsRouter.get("/orders", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-paymentsRouter.post("/webhooks/:provider", async (req, res, next) => {
+/**
+ * @openapi
+ * /payments/webhooks/{provider}:
+ *   post:
+ *     summary: Payment gateway webhook (HMAC-signed, no bearer auth)
+ *     tags: [Payments]
+ *     parameters:
+ *       - name: provider
+ *         in: path
+ *         required: true
+ *         schema: { type: string, enum: [razorpay, stripe, phonepe, upi] }
+ *     responses:
+ *       200: { description: Event accepted (or ignored as a duplicate) }
+ *       401: { description: Missing or invalid signature }
+ */
+paymentsRouter.post("/:provider", async (req, res, next) => {
   try {
-    const provider = req.params.provider;
+    const provider = String(req.params.provider);
+
+    // Verify BEFORE parsing or touching any state. Previously this handler
+    // trusted the body outright, so anyone could POST `payment.captured` and
+    // drive a booking to paid.
+    const signature = verifyWebhookSignature(provider, req.rawBody, req.headers as Record<string, string | undefined>);
+    if (!signature.verified) {
+      logger.warn(
+        { provider, reason: signature.reason, ip: req.ip, requestId: req.header("x-request-id") },
+        "Rejected payment webhook with invalid signature"
+      );
+      await recordAuditEvent({
+        actorId: null,
+        action: "payment.webhook.rejected",
+        resourceType: "payment_webhook",
+        resourceId: provider,
+        requestId: req.header("x-request-id") ?? undefined,
+        metadata: { reason: signature.reason, ip: req.ip },
+      }).catch(() => undefined);
+      res.status(401).json({ error: "INVALID_WEBHOOK_SIGNATURE" });
+      return;
+    }
+
     const input = webhookSchema.parse(req.body);
-    const result = await processWebhook(provider, input.eventId, input.eventType, input.payload);
+    const result = await processWebhook(provider, input.eventId, input.eventType, input.payload, {
+      signatureVerified: true,
+      receivedIp: req.ip,
+    });
     res.json({ processed: result.processed, paymentOrderId: result.paymentOrderId });
   } catch (error) { next(error); }
 });
@@ -279,15 +327,27 @@ paymentsRouter.post("/orders/:id/verify", requireAuth, async (req, res, next) =>
     if (!order) { res.status(404).json({ error: "Payment order not found" }); return; }
     if (order.customerId !== req.user!.id) { res.status(403).json({ error: "Forbidden" }); return; }
 
-    const input = z.object({ signature: z.string().min(1), payload: z.record(z.unknown()) }).parse(req.body);
-    const valid = await verifyPaymentSignature(order.provider, input.payload, input.signature);
+    const input = z.object({
+      signature: z.string().min(1),
+      // Razorpay checkout returns these two ids alongside the signature; they
+      // are the signed payload, so they are required rather than free-form.
+      paymentId: z.string().min(1).optional(),
+      orderId: z.string().min(1).optional(),
+      payload: z.record(z.unknown()).optional(),
+    }).parse(req.body);
 
-    if (!valid) {
-      await recordAuditEvent({ actorId: req.user!.id, action: "payment.verification.failed", resourceType: "payment_order", resourceId: orderId, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
-      res.status(400).json({ error: "Invalid payment signature" });
+    const result = verifyCheckoutSignature(order.provider, {
+      orderId: input.orderId ?? order.providerOrderId ?? undefined,
+      paymentId: input.paymentId ?? (input.payload?.paymentId as string | undefined),
+    }, input.signature);
+
+    if (!result.verified) {
+      await recordAuditEvent({ actorId: req.user!.id, action: "payment.verification.failed", resourceType: "payment_order", resourceId: orderId, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: result.reason } }).catch(() => undefined);
+      res.status(400).json({ error: "INVALID_PAYMENT_SIGNATURE", message: result.reason });
       return;
     }
 
+    await recordAuditEvent({ actorId: req.user!.id, action: "payment.verification.succeeded", resourceType: "payment_order", resourceId: orderId, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.json({ verified: true });
   } catch (error) { next(error); }
 });
@@ -383,11 +443,3 @@ paymentsRouter.get("/invoices/booking/:bookingId", requireAuth, async (req, res,
     res.json({ invoice });
   } catch (error) { next(error); }
 });
-
-async function verifyPaymentSignature(provider: string, payload: Record<string, unknown>, signature: string): Promise<boolean> {
-  // Implement provider-specific verification
-  // Razorpay: HMAC SHA256 of payload with secret
-  // Stripe: Stripe-Signature header verification
-  // PhonePe: SHA256 verification
-  return true;
-}

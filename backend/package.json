@@ -1,5 +1,5 @@
 {
-  "name": "get-it-now-backend",
+  "name": "get-it-done-backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,12 @@
     "build": "tsc -p tsconfig.json && npm run swagger:generate",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "jest --runInBand",
-    "test:watch": "jest --watch",
-    "swagger:generate": "swagger-jsdoc -d swagger-definition.cjs -o swagger.json src/routes/*.ts"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --forceExit",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "swagger:generate": "swagger-jsdoc -d swagger-definition.cjs -o swagger.json src/routes/*.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/migrate.ts --seed",
+    "worker": "tsx src/worker.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",

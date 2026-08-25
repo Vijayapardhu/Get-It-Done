@@ -4,100 +4,19 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
-import { findMatchingWorkers } from "../services/matching.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
+import {
+  calculateNextGeneration,
+  generateInstanceById,
+  generateDueRecurringBookings,
+} from "../services/recurringService.js";
 
-/**
- * @openapi
- * /recurring:
- *   post:
- *     summary: Create recurring booking
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       content:
- *         application/json:
- *           schema: { type: object, required: [serviceId, frequency, startDate], properties: { serviceId: { type: string, format: uuid }, variantId: { type: string, format: uuid }, addressId: { type: string, format: uuid }, frequency: { type: string, enum: [daily, weekly, monthly, custom] }, daysOfWeek: { type: array, items: { type: integer } }, timeWindowStart: { type: string }, timeWindowEnd: { type: string }, startDate: { type: string, format: date }, endDate: { type: string, format: date } } }
- *     responses:
- *       201: { description: Recurring booking created }
- *   get:
- *     summary: List recurring bookings
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - name: page
- *         in: query
- *         schema: { type: integer }
- *       - name: limit
- *         in: query
- *         schema: { type: integer }
- *     responses:
- *       200: { description: List of recurring bookings }
-* /recurring/{id}:
- *   get:
- *     summary: Get recurring booking with generated bookings
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200: { description: Recurring booking with generated bookings }
- *       404: { description: Not found }
- *   patch:
- *     summary: Update recurring booking
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       content:
- *         application/json:
- *           schema: { type: object, properties: { variantId: { type: string, format: uuid }, addressId: { type: string, format: uuid }, frequency: { type: string, enum: [daily, weekly, monthly, custom] }, daysOfWeek: { type: array, items: { type: integer } }, timeWindowStart: { type: string }, timeWindowEnd: { type: string }, startDate: { type: string, format: date }, endDate: { type: string, format: date } } }
- *     responses:
- *       200: { description: Updated recurring booking }
- *   delete:
- *     summary: Cancel recurring booking
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       204: { description: Recurring booking cancelled }
- * /recurring/{id}/pause:
- *   post:
- *     summary: Pause recurring booking
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200: { description: Recurring booking paused }
- * /recurring/{id}/resume:
- *   post:
- *     summary: Resume recurring booking
- *     tags: [Recurring]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200: { description: Recurring booking resumed }
- */
 
 export const recurringRouter = Router();
+
+// "/plans/..." is the blueprint spelling; "/..." is what the codebase
+// already used. Both are served so neither client breaks.
+recurringRouter.param("id", rejectNonUuidParam);
 
 const recurringCreateSchema = z.object({
   serviceId: z.string().uuid(),
@@ -113,7 +32,7 @@ const recurringCreateSchema = z.object({
 
 const recurringUpdateSchema = recurringCreateSchema.partial();
 
-recurringRouter.post("/", requireAuth, async (req, res, next) => {
+recurringRouter.post(["/", "/plans"], requireAuth, async (req, res, next) => {
   try {
     if (!["customer", "institutional_customer"].includes(req.user!.role)) { res.status(403).json({ error: "Only customers can create recurring bookings" }); return; }
     const input = recurringCreateSchema.parse(req.body);
@@ -125,7 +44,7 @@ recurringRouter.post("/", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-recurringRouter.get("/", requireAuth, async (req, res, next) => {
+recurringRouter.get(["/", "/plans"], requireAuth, async (req, res, next) => {
   try {
     const page = Math.max(parseInt(String(req.query.page ?? 1)), 1);
     const limit = Math.min(parseInt(String(req.query.limit ?? 20)), 100);
@@ -135,7 +54,7 @@ recurringRouter.get("/", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-recurringRouter.get("/:id", requireAuth, async (req, res, next) => {
+recurringRouter.get(["/:id", "/plans/:id"], requireAuth, async (req, res, next) => {
   try {
     const rbId = String(req.params.id);
     const result = await pool.query(`SELECT rb.*, s.name as service_name FROM recurring_bookings rb JOIN services s ON s.id = rb.service_id WHERE rb.id = $1 AND rb.customer_id = $2`, [rbId, req.user!.id]);
@@ -145,7 +64,7 @@ recurringRouter.get("/:id", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-recurringRouter.patch("/:id", requireAuth, async (req, res, next) => {
+recurringRouter.patch(["/:id", "/plans/:id"], requireAuth, async (req, res, next) => {
   try {
     const rbId = String(req.params.id);
     const input = recurringUpdateSchema.parse(req.body);
@@ -171,7 +90,7 @@ recurringRouter.patch("/:id", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-recurringRouter.post("/:id/pause", requireAuth, async (req, res, next) => {
+recurringRouter.post(["/:id/pause", "/plans/:id/pause"], requireAuth, async (req, res, next) => {
   try {
     const rbId = String(req.params.id);
     const result = await pool.query(`UPDATE recurring_bookings SET status = 'paused', updated_at = now() WHERE id = $1 AND customer_id = $2 RETURNING *`, [rbId, req.user!.id]);
@@ -181,7 +100,7 @@ recurringRouter.post("/:id/pause", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-recurringRouter.post("/:id/resume", requireAuth, async (req, res, next) => {
+recurringRouter.post(["/:id/resume", "/plans/:id/resume"], requireAuth, async (req, res, next) => {
   try {
     const rbId = String(req.params.id);
     const current = await pool.query(`SELECT * FROM recurring_bookings WHERE id = $1 AND customer_id = $2`, [rbId, req.user!.id]);
@@ -194,7 +113,7 @@ recurringRouter.post("/:id/resume", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-recurringRouter.delete("/:id", requireAuth, async (req, res, next) => {
+recurringRouter.delete(["/:id", "/plans/:id"], requireAuth, async (req, res, next) => {
   try {
     const rbId = String(req.params.id);
     const result = await pool.query(`UPDATE recurring_bookings SET status = 'cancelled', updated_at = now() WHERE id = $1 AND customer_id = $2 RETURNING *`, [rbId, req.user!.id]);
@@ -204,76 +123,74 @@ recurringRouter.delete("/:id", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-function calculateNextGeneration(startDate: string, frequency: string, daysOfWeek: number[]): Date {
-  const start = new Date(startDate);
-  const now = new Date();
-  let next = new Date(Math.max(start.getTime(), now.getTime()));
+/**
+ * @openapi
+ * /recurring/plans/{id}/generate:
+ *   post:
+ *     summary: Spawn a booking instance from a recurring plan
+ *     description: >
+ *       Also runs automatically every 15 minutes via the `recurring.generate`
+ *       background job for every plan whose next_generation_at has passed.
+ *     tags: [Recurring]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Booking instance created }
+ *       404: { description: No active plan with that id }
+ */
+recurringRouter.post(
+  ["/:id/generate", "/plans/:id/generate"],
+  requireAuth,
+  requireRoles("system_admin", "federation_admin", "society_admin"),
+  async (req, res, next) => {
+    try {
+      const planId = String(req.params.id);
+      const instance = await generateInstanceById(planId, req.user!.id);
+      if (!instance) { res.status(404).json({ error: "Active recurring booking not found" }); return; }
 
-  if (frequency === "daily") {
-    while (next <= now) next.setDate(next.getDate() + 1);
-  } else if (frequency === "weekly") {
-    const targetDays = daysOfWeek.length > 0 ? daysOfWeek : [start.getDay()];
-    while (true) {
-      if (targetDays.includes(next.getDay()) && next >= start) break;
-      next.setDate(next.getDate() + 1);
-    }
-  } else if (frequency === "monthly") {
-    while (next <= now) next.setMonth(next.getMonth() + 1);
-  } else {
-    return start;
+      void recordAuditEvent({
+        actorId: req.user!.id,
+        action: "recurring_booking.manually_generated",
+        resourceType: "recurring_booking",
+        resourceId: planId,
+        requestId: req.header("x-request-id") ?? undefined,
+        metadata: { bookingId: instance.bookingId },
+      }).catch(() => undefined);
+
+      res.status(201).json({
+        message: "Booking instance generated",
+        bookingId: instance.bookingId,
+        status: instance.status,
+        workerId: instance.workerId,
+        // Shown once; only the hashes are stored.
+        otps: { startOtp: instance.startOtp, completionOtp: instance.completionOtp },
+      });
+    } catch (error) { next(error); }
   }
-  return next;
-}
+);
 
-export async function generateRecurringBookings() {
-  const client = await pool.connect();
-  try {
-    const now = new Date();
-    const recurring = await client.query(`SELECT * FROM recurring_bookings WHERE status = 'active' AND next_generation_at <= $1`, [now]);
-    for (const rb of recurring.rows) {
-      await client.query("begin");
-      try {
-        const addressResult = rb.address_id ? await client.query(`SELECT * FROM organization_addresses WHERE id = $1`, [rb.address_id]) : { rows: [] };
-        const service = await client.query(`SELECT * FROM services WHERE id = $1`, [rb.service_id]);
-        if (!service.rows[0]) { await client.query("rollback"); continue; }
-
-        const latitude = addressResult.rows[0]?.latitude ?? 0;
-        const longitude = addressResult.rows[0]?.longitude ?? 0;
-        const rbAddress = addressResult.rows[0]?.address ?? "Address not specified";
-
-        const matches = await findMatchingWorkers({ serviceId: rb.service_id, latitude, longitude, urgency: "regular" });
-        const workerId = matches.workers[0]?.workerId ?? null;
-        const status = workerId ? "assigned" : "requested";
-        let confirmedWorkerId: string | null = workerId;
-
-        if (workerId) {
-          const worker = await client.query("select id from workers where id = $1 and verification_status = 'verified' and current_status = 'available' for update", [workerId]);
-          if (!worker.rows[0]) { confirmedWorkerId = null; }
-          else {
-            const reserved = await client.query("update workers set current_status = 'busy', updated_at = now() where id = $1 and current_status = 'available' returning id", [workerId]);
-            if (!reserved.rows[0]) confirmedWorkerId = null;
-          }
-        }
-
-        const location = latitude && longitude ? `POINT(${longitude} ${latitude})` : null;
-        const bookingResult = await client.query(`insert into bookings (id, customer_id, worker_id, service_id, status, scheduled_at, is_emergency, location, address, description) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-          [crypto.randomUUID(), rb.customer_id, confirmedWorkerId, rb.service_id, status, null, false, location, rbAddress, `Recurring: ${rb.id}`]);
-
-        await client.query("insert into booking_status_events (booking_id, status, actor_id, reason, request_id) values ($1, $2, $3, $4, $5)", [bookingResult.rows[0].id, status, rb.customer_id, `recurring_generated_${rb.id}`, null]);
-
-        if (confirmedWorkerId) {
-          const workerUser = await client.query("select user_id from workers where id = $1", [confirmedWorkerId]);
-          if (workerUser.rows[0]) await import("../services/notificationService.js").then(m => m.writeNotification(client, { userId: workerUser.rows[0].user_id, type: "booking.assigned", title: "New service booking", body: "You have been assigned a recurring service request.", aggregateType: "booking", aggregateId: bookingResult.rows[0].id }));
-        }
-
-        const nextGen = calculateNextGeneration(rb.start_date, rb.frequency, rb.days_of_week);
-        await client.query(`update recurring_bookings set last_generated_at = $1, next_generation_at = $2, updated_at = now() where id = $3`, [now, nextGen, rb.id]);
-        await client.query("commit");
-      } catch (error) {
-        await client.query("rollback");
-      }
-    }
-  } finally {
-    client.release();
+/**
+ * @openapi
+ * /recurring/plans/generate-due:
+ *   post:
+ *     summary: Run the due-plan sweep immediately (admin)
+ *     tags: [Recurring]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Sweep result }
+ */
+recurringRouter.post(
+  ["/generate-due", "/plans/generate-due"],
+  requireAuth,
+  requireRoles("system_admin", "federation_admin"),
+  async (req, res, next) => {
+    try {
+      const result = await generateDueRecurringBookings();
+      res.json(result);
+    } catch (error) { next(error); }
   }
-}
+);

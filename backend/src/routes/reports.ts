@@ -4,6 +4,10 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { enqueue } from "../core/jobQueue.js";
+import { getDownloadUrl } from "../core/storage.js";
+import { env } from "../config/env.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -165,6 +169,10 @@ import { recordAuditEvent } from "../services/auditService.js";
 
 export const reportsRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+reportsRouter.param("id", rejectNonUuidParam);
+
 const exportQuerySchema = z.object({
   reportType: z.enum(["bookings", "workers", "earnings", "payments", "welfare", "cooperative_performance"]),
   filters: z.record(z.unknown()).optional(),
@@ -278,9 +286,19 @@ reportsRouter.get("/cooperative-performance", requireAuth, requireRoles("system_
 
 reportsRouter.post("/export", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"), async (req, res, next) => {
   try {
-    const input = exportQuerySchema.parse(req.body);
+    // The blueprint documents GET /reports/export; compat.ts rewrites that to
+    // POST, which arrives with an empty body and the parameters in the query
+    // string. Accept either source.
+    const source = req.body && Object.keys(req.body).length > 0 ? req.body : req.query;
+    const input = exportQuerySchema.parse(source);
+
     const exportId = crypto.randomUUID();
     await pool.query(`INSERT INTO report_exports (id, report_type, filters, format, status, requested_by) VALUES ($1, $2, $3, $4, 'pending', $5)`, [exportId, input.reportType, input.filters ?? {}, input.format, req.user!.id]);
+
+    // Previously the row was inserted and nothing ever processed it, so
+    // GET /reports/exports/:id reported 'pending' forever and no file existed.
+    await enqueue("report.export", { exportId }, { dedupeKey: `report-export:${exportId}` });
+
     await recordAuditEvent({ actorId: req.user!.id, action: "report.export.queued", resourceType: "report_export", resourceId: exportId, requestId: req.header("x-request-id") ?? undefined, metadata: { reportType: input.reportType, format: input.format } }).catch(() => undefined);
     res.status(202).json({ exportId, status: "pending" });
   } catch (error) { next(error); }
@@ -290,6 +308,22 @@ reportsRouter.get("/exports/:id", requireAuth, requireRoles("system_admin", "fed
   try {
     const result = await pool.query(`SELECT * FROM report_exports WHERE id = $1`, [req.params.id]);
     if (!result.rows[0]) { res.status(404).json({ error: "Export not found" }); return; }
-    res.json({ export: result.rows[0] });
+
+    // Only the requester or a system admin may fetch someone else's export.
+    const row = result.rows[0];
+    if (row.requested_by && row.requested_by !== req.user!.id && req.user!.role !== "system_admin") {
+      res.status(403).json({ error: "Not your export" });
+      return;
+    }
+
+    // Hand back a short-lived signed link rather than the raw object URL, which
+    // is not publicly readable.
+    let downloadUrl: string | null = null;
+    if (row.status === "completed" && row.file_url) {
+      const fileKey = row.file_url.split(`/${env.S3_BUCKET}/`)[1];
+      if (fileKey) downloadUrl = await getDownloadUrl(fileKey, 900).catch(() => null);
+    }
+
+    res.json({ export: row, downloadUrl });
   } catch (error) { next(error); }
 });

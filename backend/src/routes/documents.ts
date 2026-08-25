@@ -1,10 +1,11 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { getUploadUrl, completeUpload, scanForMalware, deleteFile } from "../core/storage.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -186,6 +187,12 @@ import { getUploadUrl, completeUpload, scanForMalware, deleteFile } from "../cor
 
 export const documentsRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+documentsRouter.param("id", rejectNonUuidParam);
+documentsRouter.param("workerId", rejectNonUuidParam);
+documentsRouter.param("documentId", rejectNonUuidParam);
+
 const documentTypeCreateSchema = z.object({
   name: z.string().trim().min(2).max(100),
   category: z.string().trim().min(2).max(50),
@@ -214,6 +221,43 @@ const certificationCreateSchema = z.object({
   expiresAt: z.string().date().optional(),
 });
 
+/**
+ * Resolve the caller's own worker id and rewrite to the /workers/:workerId/...
+ * form, so the self-service and admin spellings share one handler.
+ *
+ * The blueprint documents POST /documents/upload-url, POST /documents and
+ * GET /documents/my; the codebase only had the admin-shaped paths.
+ */
+async function resolveOwnWorker(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const worker = await pool.query("SELECT id FROM workers WHERE user_id = $1", [req.user!.id]);
+    if (!worker.rows[0]) {
+      res.status(404).json({ error: "Worker profile not found for this account" });
+      return;
+    }
+
+    const workerId = worker.rows[0].id;
+    const queryIndex = req.url.indexOf("?");
+    const path = queryIndex === -1 ? req.url : req.url.slice(0, queryIndex);
+    const search = queryIndex === -1 ? "" : req.url.slice(queryIndex);
+
+    if (path === "/upload-url") {
+      req.url = `/workers/${workerId}/documents/upload-url${search}`;
+    } else if (path === "/my") {
+      req.url = `/workers/${workerId}/documents${search}`;
+    } else {
+      req.url = `/workers/${workerId}/documents${search}`;
+    }
+
+    next();
+  } catch (error) { next(error); }
+}
+
+documentsRouter.post("/upload-url", requireAuth, resolveOwnWorker);
+documentsRouter.get("/my", requireAuth, resolveOwnWorker);
+// POST /documents with no sub-path registers the uploaded file for verification.
+documentsRouter.post("/", requireAuth, resolveOwnWorker);
+
 documentsRouter.get("/types", async (req, res, next) => {
   try {
     const result = await pool.query(`SELECT * FROM document_types ORDER BY category, name`);
@@ -224,7 +268,13 @@ documentsRouter.get("/types", async (req, res, next) => {
 documentsRouter.post("/types", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const input = documentTypeCreateSchema.parse(req.body);
-    const result = await pool.query(`INSERT INTO document_types (id, name, category, required_for_skills, max_size_mb, allowed_mime_types, expires) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`, [crypto.randomUUID(), input.name, input.category, input.requiredForSkills, input.maxSizeMb, input.allowedMimeTypes, input.expires]);
+    let result;
+    try {
+      result = await pool.query(`INSERT INTO document_types (id, name, category, required_for_skills, max_size_mb, allowed_mime_types, expires) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`, [crypto.randomUUID(), input.name, input.category, input.requiredForSkills, input.maxSizeMb, input.allowedMimeTypes, input.expires]);
+    } catch (insertError) {
+      if ((insertError as { code?: string })?.code === "23505") { res.status(409).json({ error: "A document type with this name already exists" }); return; }
+      throw insertError;
+    }
     await recordAuditEvent({ actorId: req.user!.id, action: "document_type.created", resourceType: "document_type", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(201).json({ documentType: result.rows[0] });
   } catch (error) { next(error); }
@@ -251,12 +301,21 @@ documentsRouter.post("/workers/:workerId/documents", requireAuth, async (req, re
     const canSubmit = req.user!.role === "worker" && worker.rows[0].user_id === req.user!.id || ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
     if (!canSubmit) { res.status(403).json({ error: "Cannot submit documents for this worker" }); return; }
     const input = documentSubmitSchema.parse(req.body);
-    const scanResult = await scanForMalware(input.fileKey);
-    if (!scanResult.clean) {
-      await deleteFile(input.fileKey);
-      return res.status(400).json({ error: "FILE_FAILED_MALWARE_SCAN", details: scanResult.details });
+    let scanResult, completeResult;
+    try {
+      scanResult = await scanForMalware(input.fileKey);
+      if (!scanResult.clean) {
+        await deleteFile(input.fileKey).catch(() => undefined);
+        return res.status(400).json({ error: "FILE_FAILED_MALWARE_SCAN", details: scanResult.details });
+      }
+      completeResult = await completeUpload(input.fileKey);
+    } catch (storageError) {
+      const msg = String((storageError as Error)?.message ?? "");
+      if ((storageError as Error)?.name === "NoSuchKey" || msg.includes("does not exist")) {
+        return res.status(400).json({ error: "FILE_NOT_UPLOADED", fileKey: input.fileKey });
+      }
+      throw storageError;
     }
-    const completeResult = await completeUpload(input.fileKey);
     const result = await pool.query(`INSERT INTO worker_documents (id, worker_id, type, file_url, file_hash, status, issued_by, issued_at, expires_at) VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8) RETURNING *`, [crypto.randomUUID(), workerId, input.type, completeResult.fileUrl, null, input.issuedBy ?? null, input.issuedAt ?? null, input.expiresAt ?? null]);
     await pool.query(`INSERT INTO document_reviews (document_id, actor_id, action, reason) VALUES ($1, $2, 'submitted', $3)`, [result.rows[0].id, req.user!.id, "Submitted by worker"]);
     await recordAuditEvent({ actorId: req.user!.id, action: "document.submitted", resourceType: "document", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined, metadata: { workerId, type: input.type } }).catch(() => undefined);
@@ -287,7 +346,7 @@ documentsRouter.get("/workers/:workerId/documents/:documentId", requireAuth, asy
   } catch (error) { next(error); }
 });
 
-documentsRouter.post("/documents/:id/submit", requireAuth, async (req, res, next) => {
+documentsRouter.post("/:id/submit", requireAuth, async (req, res, next) => {
   try {
     const documentId = String(req.params.id);
     const result = await pool.query(`SELECT wd.*, w.user_id FROM worker_documents wd JOIN workers w ON w.id = wd.worker_id WHERE wd.id = $1`, [documentId]);
@@ -300,7 +359,7 @@ documentsRouter.post("/documents/:id/submit", requireAuth, async (req, res, next
   } catch (error) { next(error); }
 });
 
-documentsRouter.post("/documents/:id/approve", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
+documentsRouter.post("/:id/approve", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const documentId = String(req.params.id);
     const input = documentReviewSchema.parse(req.body);
@@ -312,7 +371,7 @@ documentsRouter.post("/documents/:id/approve", requireAuth, requireRoles("system
   } catch (error) { next(error); }
 });
 
-documentsRouter.post("/documents/:id/reject", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
+documentsRouter.post("/:id/reject", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const documentId = String(req.params.id);
     const input = documentReviewSchema.parse(req.body);

@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import type { PoolClient } from "pg";
 import { recordAuditEvent } from "./auditService.js";
+import { env } from "../config/env.js";
+import { settleBooking } from "./revenueSplit.js";
 
 export interface PaymentOrder {
   id: string;
@@ -86,24 +88,35 @@ export async function listPaymentOrders(filters: { customerId?: string; bookingI
   return result.rows;
 }
 
-export async function verifyPaymentSignature(provider: string, payload: Record<string, unknown>, signature: string): Promise<boolean> {
-  // Provider-specific verification logic would go here
-  // For now, return true - implement based on provider (Razorpay, Stripe, PhonePe, etc.)
-  return true;
+export interface WebhookContext {
+  /** Always true in production: routes/payments.ts rejects unverified webhooks
+   *  before calling this. Recorded for audit. */
+  signatureVerified?: boolean;
+  receivedIp?: string;
 }
 
-export async function processWebhook(provider: string, eventId: string, eventType: string, payload: Record<string, unknown>): Promise<{ processed: boolean; paymentOrderId?: string }> {
+export async function processWebhook(
+  provider: string,
+  eventId: string,
+  eventType: string,
+  payload: Record<string, unknown>,
+  context: WebhookContext = {}
+): Promise<{ processed: boolean; paymentOrderId?: string }> {
   const client = await pool.connect();
   try {
     await client.query("begin");
 
-    const existing = await client.query(`select id from payment_webhook_events where provider = $1 and event_id = $2 for update`, [provider, eventId]);
+    const existing = await client.query(`select 1 from payment_webhook_events where provider = $1 and event_id = $2 for update`, [provider, eventId]);
     if (existing.rows[0]) {
       await client.query("commit");
       return { processed: false };
     }
 
-    await client.query(`insert into payment_webhook_events (provider, event_id, event_type, payload, processed_at) values ($1, $2, $3, $4, now())`, [provider, eventId, eventType, payload]);
+    await client.query(
+      `insert into payment_webhook_events (provider, event_id, event_type, payload, processed_at, signature_verified, received_ip)
+       values ($1, $2, $3, $4, now(), $5, $6)`,
+      [provider, eventId, eventType, payload, context.signatureVerified ?? false, context.receivedIp ?? null]
+    );
 
     let paymentOrderId: string | undefined;
 
@@ -121,11 +134,10 @@ export async function processWebhook(provider: string, eventId: string, eventTyp
         // Update payment ledger
         await appendLedgerEntry(client, orderResult.rows[0].id, "credit", orderResult.rows[0].amount, `Payment received via ${provider}`, providerOrderId);
 
-        // If booking completed, create invoice
-        const booking = await client.query(`select * from bookings where id = $1`, [orderResult.rows[0].booking_id]);
-        if (booking.rows[0] && booking.rows[0].status === "completed") {
-          await createInvoiceForBooking(client, booking.rows[0].id);
-        }
+        // Run the split now that money has actually landed. settleBooking is
+        // idempotent, so a webhook redelivery (or the completion path getting
+        // here first) will not double-credit anyone.
+        await settleBooking(client, orderResult.rows[0].booking_id);
       }
     } else if (eventType === "payment.failed") {
       const providerOrderId = String(payload.order_id ?? payload.payment_id ?? "");
@@ -204,38 +216,17 @@ export async function getReconciliationReport(filters: { fromDate?: Date; toDate
   const values: unknown[] = [];
   let index = 1;
 
-  if (filters.fromDate) { conditions.push(`created_at >= $${index++}`); values.push(filters.fromDate); }
-  if (filters.toDate) { conditions.push(`created_at <= $${index++}`); values.push(filters.toDate); }
-  if (filters.provider) { conditions.push(`provider = $${index++}`); values.push(filters.provider); }
-  if (filters.status) { conditions.push(`status = $${index++}`); values.push(filters.status); }
+  if (filters.fromDate) { conditions.push(`po.created_at >= $${index++}`); values.push(filters.fromDate); }
+  if (filters.toDate) { conditions.push(`po.created_at <= $${index++}`); values.push(filters.toDate); }
+  if (filters.provider) { conditions.push(`po.provider = $${index++}`); values.push(filters.provider); }
+  if (filters.status) { conditions.push(`po.status = $${index++}`); values.push(filters.status); }
 
   const whereClause = conditions.length > 0 ? `where ${conditions.join(" and ")}` : "";
 
-  const summary = await pool.query(`select count(*) as total_orders, sum(amount) as total_amount, status, provider from payment_orders ${whereClause} group by status, provider`, values);
+  const summary = await pool.query(`select count(*) as total_orders, sum(amount) as total_amount, status, provider from payment_orders po ${whereClause} group by status, provider`, values);
   const ledger = await pool.query(`select pl.* from payment_ledger pl join payment_orders po on po.id = pl.payment_order_id ${whereClause} order by pl.created_at asc`, values);
 
   return { summary: summary.rows, ledger: ledger.rows };
-}
-
-async function createInvoiceForBooking(client: PoolClient, bookingId: string) {
-  const booking = await client.query(`select b.*, s.base_price, c.cooperative_id from bookings b join services s on s.id = b.service_id left join workers w on w.id = b.worker_id left join cooperatives c on c.id = w.cooperative_id where b.id = $1`, [bookingId]);
-  if (!booking.rows[0]) return;
-
-  const b = booking.rows[0];
-  const subtotal = Number(b.base_price ?? 0);
-  const platformFee = subtotal * 0.05; // 5% platform fee
-  const cooperativeShare = b.cooperative_id ? subtotal * 0.10 : 0; // 10% cooperative share
-  const workerShare = subtotal - platformFee - cooperativeShare;
-  const tax = subtotal * 0.18; // 18% GST
-  const total = subtotal + tax;
-
-  const invoiceNumber = `INV-${Date.now()}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
-
-  await client.query(
-    `insert into invoices (id, invoice_number, booking_id, customer_id, worker_id, service_id, subtotal, discount, tax, platform_fee, cooperative_share, worker_share, total, payment_status, issued_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'paid', now())`,
-    [crypto.randomUUID(), invoiceNumber, bookingId, b.customer_id, b.worker_id, b.service_id, subtotal, 0, tax, platformFee, cooperativeShare, workerShare, total]
-  );
 }
 
 export async function getInvoice(id: string) {

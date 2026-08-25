@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 import {
   listNotifications,
   markNotificationRead,
@@ -15,6 +16,10 @@ import {
 } from "../services/notificationService.js";
 
 export const notificationsRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+notificationsRouter.param("id", rejectNonUuidParam);
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(50),

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 
-app = FastAPI(title="GET IT NOW AI Engine", version="0.1.0")
+app = FastAPI(title="GET IT DONE AI Engine", version="0.1.0")
 
 
 class DemandForecastRequest(BaseModel):
@@ -45,6 +45,22 @@ class AllocationRecommendation(BaseModel):
     priority: str
     recommendation: str
     workers_needed: int
+    # The backend persists each recommendation for human approval and keys the
+    # row on these. Aliases match the snake_case column names it inserts.
+    recommended_workers: int
+    drivers: List[str] = Field(default_factory=list)
+
+
+class AllocationResponse(BaseModel):
+    """Envelope, not a bare list.
+
+    The endpoint previously declared ``response_model=list[...]``, so the
+    backend's ``Array.isArray(aiData.recommendations)`` check was always false
+    and nothing was ever written to ai_recommendation_records -- the entire
+    human-in-the-loop approval flow was dead on arrival.
+    """
+
+    recommendations: List[AllocationRecommendation]
 
 
 @app.get("/health")
@@ -106,7 +122,7 @@ def forecast_demand(request: DemandForecastRequest):
     return DemandForecastResponse(forecasts=forecasts)
 
 
-@app.post("/allocation/recommend", response_model=list[AllocationRecommendation])
+@app.post("/allocation/recommend", response_model=AllocationResponse)
 def recommend_allocation(request: AllocationRequest):
     forecast = forecast_demand(DemandForecastRequest(days=request.horizonDays, history=request.history)).forecasts
     recommendations: list[AllocationRecommendation] = []
@@ -123,8 +139,11 @@ def recommend_allocation(request: AllocationRequest):
                 priority=priority,
                 recommendation=f"Allocate {item.predicted_shortage} additional {item.service} workers to {item.area}.",
                 workers_needed=item.predicted_shortage,
+                recommended_workers=item.predicted_shortage,
+                drivers=item.drivers,
             )
         )
 
-    return recommendations[:10]
+    recommendations.sort(key=lambda rec: rec.workers_needed, reverse=True)
+    return AllocationResponse(recommendations=recommendations[:10])
 

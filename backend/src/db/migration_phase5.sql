@@ -151,6 +151,35 @@ create table if not exists benefit_eligibility (
   primary key (worker_id, benefit_id)
 );
 
+-- Service variants
+create table if not exists service_variants (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid not null references services(id) on delete cascade,
+  name text not null,
+  description text,
+  base_price numeric(10, 2) not null default 0,
+  duration_minutes int not null default 60 check (duration_minutes > 0),
+  emergency_supported boolean not null default false,
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists service_variants_service_idx on service_variants(service_id);
+
+-- Service requirements
+create table if not exists service_requirements (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid not null references services(id) on delete cascade,
+  skill_id uuid not null references skills(id) on delete cascade,
+  required_level text not null default 'beginner' check (required_level in ('beginner', 'intermediate', 'expert', 'master')),
+  mandatory boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (service_id, skill_id)
+);
+create index if not exists service_requirements_service_idx on service_requirements(service_id);
+create index if not exists service_requirements_skill_idx on service_requirements(skill_id);
+
 -- Materialized views for analytics (after all tables)
 
 -- Surge rules for dynamic pricing

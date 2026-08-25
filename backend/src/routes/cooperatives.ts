@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -166,6 +167,12 @@ import { recordAuditEvent } from "../services/auditService.js";
  */
 
 export const cooperativesRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+cooperativesRouter.param("id", rejectNonUuidParam);
+cooperativesRouter.param("userId", rejectNonUuidParam);
+cooperativesRouter.param("cooperativeId", rejectNonUuidParam);
 
 const federationCreateSchema = z.object({
   name: z.string().trim().min(2).max(200),

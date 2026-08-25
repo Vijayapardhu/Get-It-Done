@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -145,6 +146,10 @@ import { pool } from "../db/pool.js";
 
 export const analyticsRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+analyticsRouter.param("id", rejectNonUuidParam);
+
 const analyticsQuerySchema = z.object({
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
@@ -163,6 +168,226 @@ function addMeta(period: string) {
     calculationVersion: "1.0",
   };
 }
+
+/**
+ * @openapi
+ * /analytics/cooperative/{id}:
+ *   get:
+ *     summary: Local demand, response times and revenue for one society
+ *     tags: [Analytics]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: days
+ *         in: query
+ *         schema: { type: integer, default: 30, minimum: 1, maximum: 365 }
+ *     responses:
+ *       200: { description: Cooperative analytics }
+ *       403: { description: Outside the caller's administrative scope }
+ *       404: { description: Cooperative not found }
+ */
+analyticsRouter.get(
+  "/cooperative/:id",
+  requireAuth,
+  requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"),
+  async (req, res, next) => {
+    try {
+      const cooperativeId = String(req.params.id);
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? 30), 10) || 30, 1), 365);
+
+      const cooperative = await pool.query(
+        `select c.id, c.name, c.federation_id, f.name as federation_name
+           from cooperatives c
+           left join federations f on f.id = c.federation_id
+          where c.id = $1`,
+        [cooperativeId]
+      );
+      if (!cooperative.rows[0]) { res.status(404).json({ error: "Cooperative not found" }); return; }
+
+      // A society admin may only read their own society.
+      if (req.user!.role === "society_admin") {
+        const scope = await pool.query(
+          "select 1 from admin_scopes where user_id = $1 and cooperative_id = $2",
+          [req.user!.id, cooperativeId]
+        );
+        if (!scope.rows[0]) { res.status(403).json({ error: "Outside your administrative scope" }); return; }
+      }
+
+      const window = `$2 || ' days'`;
+      const [workforce, demand, responsiveness, revenue, topServices] = await Promise.all([
+        pool.query(
+          `select count(*)::int                                                as total_workers,
+                  count(*) filter (where verification_status = 'verified')::int as verified_workers,
+                  count(*) filter (where current_status = 'available')::int     as available_now,
+                  round(avg(rating)::numeric, 2)::float8                        as average_rating
+             from workers where cooperative_id = $1`,
+          [cooperativeId]
+        ),
+        pool.query(
+          `select count(*)::int                                            as total_bookings,
+                  count(*) filter (where b.status = 'completed')::int      as completed,
+                  count(*) filter (where b.status = 'cancelled')::int      as cancelled,
+                  count(*) filter (where b.is_emergency)::int              as emergency
+             from bookings b
+             join workers w on w.id = b.worker_id
+            where w.cooperative_id = $1
+              and b.created_at >= now() - (${window})::interval`,
+          [cooperativeId, String(days)]
+        ),
+        pool.query(
+          `select round(avg(extract(epoch from (assigned.created_at - b.created_at)) / 60)::numeric, 1)::float8 as avg_assign_minutes,
+                  round(avg(extract(epoch from (done.created_at - b.created_at)) / 60)::numeric, 1)::float8     as avg_completion_minutes
+             from bookings b
+             join workers w on w.id = b.worker_id
+             left join lateral (
+               select min(created_at) as created_at from booking_status_events
+                where booking_id = b.id and status = 'assigned'
+             ) assigned on true
+             left join lateral (
+               select min(created_at) as created_at from booking_status_events
+                where booking_id = b.id and status = 'completed'
+             ) done on true
+            where w.cooperative_id = $1
+              and b.created_at >= now() - (${window})::interval`,
+          [cooperativeId, String(days)]
+        ),
+        pool.query(
+          `select coalesce(sum(i.subtotal), 0)::float8          as gross_revenue,
+                  coalesce(sum(i.cooperative_share), 0)::float8 as cooperative_share,
+                  coalesce(sum(i.worker_share), 0)::float8      as worker_share,
+                  coalesce(sum(i.platform_fee), 0)::float8      as platform_fee,
+                  coalesce(sum(i.welfare_fund), 0)::float8      as welfare_fund
+             from invoices i
+             join workers w on w.id = i.worker_id
+            where w.cooperative_id = $1
+              and i.issued_at >= now() - (${window})::interval`,
+          [cooperativeId, String(days)]
+        ),
+        pool.query(
+          `select s.id, s.name, count(*)::int as bookings
+             from bookings b
+             join workers w on w.id = b.worker_id
+             join services s on s.id = b.service_id
+            where w.cooperative_id = $1
+              and b.created_at >= now() - (${window})::interval
+            group by s.id, s.name
+            order by bookings desc
+            limit 10`,
+          [cooperativeId, String(days)]
+        ),
+      ]);
+
+      const d = demand.rows[0];
+      const total = Number(d.total_bookings ?? 0);
+
+      res.json({
+        cooperative: cooperative.rows[0],
+        windowDays: days,
+        workforce: workforce.rows[0],
+        demand: {
+          ...d,
+          // Guard the divide: a society with no bookings has no rate to report.
+          completionRate: total > 0 ? Math.round((Number(d.completed) / total) * 1000) / 10 : null,
+          cancellationRate: total > 0 ? Math.round((Number(d.cancelled) / total) * 1000) / 10 : null,
+        },
+        responsiveness: responsiveness.rows[0],
+        revenue: revenue.rows[0],
+        topServices: topServices.rows,
+      });
+    } catch (error) { next(error); }
+  }
+);
+
+/**
+ * @openapi
+ * /analytics/federation:
+ *   get:
+ *     summary: Cross-society benchmark metrics for a federation
+ *     tags: [Analytics]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: federationId
+ *         in: query
+ *         description: Defaults to the caller's own federation scope.
+ *         schema: { type: string, format: uuid }
+ *       - name: days
+ *         in: query
+ *         schema: { type: integer, default: 30, minimum: 1, maximum: 365 }
+ *     responses:
+ *       200: { description: Federation benchmark }
+ *       403: { description: Outside the caller's administrative scope }
+ */
+analyticsRouter.get(
+  "/federation",
+  requireAuth,
+  requireRoles("system_admin", "federation_admin"),
+  async (req, res, next) => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? 30), 10) || 30, 1), 365);
+      let federationId = typeof req.query.federationId === "string" ? req.query.federationId : undefined;
+
+      if (req.user!.role === "federation_admin") {
+        const scope = await pool.query("select federation_id from admin_scopes where user_id = $1", [req.user!.id]);
+        const scoped = scope.rows[0]?.federation_id;
+        if (!scoped) { res.status(403).json({ error: "NO_ADMIN_SCOPE" }); return; }
+        if (federationId && federationId !== scoped) { res.status(403).json({ error: "OUT_OF_SCOPE" }); return; }
+        federationId = scoped;
+      }
+
+      const filter = federationId ? "where c.federation_id = $2" : "";
+      const values: unknown[] = federationId ? [String(days), federationId] : [String(days)];
+
+      // One row per society, so the federation can rank and compare them.
+      const societies = await pool.query(
+        `select c.id,
+                c.name,
+                c.federation_id,
+                count(distinct w.id)::int                                     as workers,
+                count(distinct w.id) filter (where w.verification_status = 'verified')::int as verified_workers,
+                count(b.id)::int                                              as bookings,
+                count(b.id) filter (where b.status = 'completed')::int        as completed,
+                count(b.id) filter (where b.status = 'cancelled')::int        as cancelled,
+                round(avg(w.rating)::numeric, 2)::float8                      as average_rating,
+                coalesce(sum(i.subtotal), 0)::float8                          as gross_revenue,
+                coalesce(sum(i.welfare_fund), 0)::float8                      as welfare_fund
+           from cooperatives c
+           left join workers w on w.cooperative_id = c.id
+           left join bookings b on b.worker_id = w.id and b.created_at >= now() - ($1 || ' days')::interval
+           left join invoices i on i.booking_id = b.id
+           ${filter}
+          group by c.id, c.name, c.federation_id
+          order by bookings desc, c.name`,
+        values
+      );
+
+      const totals = societies.rows.reduce(
+        (acc, row) => ({
+          societies: acc.societies + 1,
+          workers: acc.workers + Number(row.workers ?? 0),
+          bookings: acc.bookings + Number(row.bookings ?? 0),
+          completed: acc.completed + Number(row.completed ?? 0),
+          grossRevenue: acc.grossRevenue + Number(row.gross_revenue ?? 0),
+          welfareFund: acc.welfareFund + Number(row.welfare_fund ?? 0),
+        }),
+        { societies: 0, workers: 0, bookings: 0, completed: 0, grossRevenue: 0, welfareFund: 0 }
+      );
+
+      res.json({
+        federationId: federationId ?? null,
+        windowDays: days,
+        totals: {
+          ...totals,
+          completionRate:
+            totals.bookings > 0 ? Math.round((totals.completed / totals.bookings) * 1000) / 10 : null,
+        },
+        societies: societies.rows,
+      });
+    } catch (error) { next(error); }
+  }
+);
 
 analyticsRouter.get("/overview", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"), async (req, res, next) => {
   try {

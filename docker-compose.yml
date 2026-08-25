@@ -1,29 +1,33 @@
 services:
   postgres:
     image: postgis/postgis:16-3.4
-    container_name: getitnow-postgres
+    container_name: getitdone-postgres
     environment:
-      POSTGRES_USER: getitnow
-      POSTGRES_PASSWORD: getitnow
-      POSTGRES_DB: getitnow
+      POSTGRES_USER: getitdone
+      POSTGRES_PASSWORD: getitdone
+      POSTGRES_DB: getitdone
     ports:
       - "5432:5432"
     volumes:
-      - getitnow-postgres-data:/var/lib/postgresql/data
+      - getitdone-postgres-data:/var/lib/postgresql/data
       - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./backend/src/db/migration_phase1_2.sql:/docker-entrypoint-initdb.d/02-migration_phase1_2.sql:ro
       - ./backend/src/db/migration_phase4.sql:/docker-entrypoint-initdb.d/03-migration_phase4.sql:ro
       - ./backend/src/db/migration_phase5.sql:/docker-entrypoint-initdb.d/04-migration_phase5.sql:ro
-      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/05-seed.sql:ro
+      - ./backend/src/db/migration_phase6.sql:/docker-entrypoint-initdb.d/05-migration_phase6.sql:ro
+      - ./backend/src/db/migration_phase7.sql:/docker-entrypoint-initdb.d/06-migration_phase7.sql:ro
+      - ./backend/src/db/migration_phase8_connected_system.sql:/docker-entrypoint-initdb.d/07-migration_phase8.sql:ro
+      - ./backend/src/db/migration_phase9.sql:/docker-entrypoint-initdb.d/08-migration_phase9.sql:ro
+      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/09-seed.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U getitnow -d getitnow"]
+      test: ["CMD-SHELL", "pg_isready -U getitdone -d getitdone"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: getitnow-redis
+    container_name: getitdone-redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -36,15 +40,22 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: getitnow-backend
+    container_name: getitdone-backend
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgres://getitnow:getitnow@postgres:5432/getitnow
+      DATABASE_URL: postgres://getitdone:getitdone@postgres:5432/getitdone
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-getitnow-super-secret-jwt-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:-getitdone-super-secret-jwt-key-change-in-production}
       AI_SERVICE_URL: http://ai:8001
-      STORAGE_DIR: /var/lib/getitnow/storage
+      STORAGE_DIR: /var/lib/getitdone/storage
+      STORAGE_PROVIDER: minio
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: getitdone
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
     ports:
       - "4000:4000"
     depends_on:
@@ -56,18 +67,45 @@ services:
         condition: service_started
     restart: unless-stopped
     volumes:
-      - getitnow-worker-storage:/var/lib/getitnow/storage
+      - getitdone-worker-storage:/var/lib/getitdone/storage
 
   ai:
     build:
       context: ./ai
       dockerfile: Dockerfile
-    container_name: getitnow-ai
-    expose:
-      - "8001"
+    container_name: getitdone-ai
+    # Published, not just exposed: `expose` only reaches other compose services,
+    # so a backend run on the host (npm run dev) could not reach the forecasting
+    # engine and every /ai/* route returned 502.
+    ports:
+      - "8001:8001"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  minio:
+    image: minio/minio:latest
+    container_name: getitdone-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
 volumes:
-  getitnow-postgres-data:
-  getitnow-worker-storage:
+  getitdone-postgres-data:
+  getitdone-worker-storage:
+  minio-data:
 

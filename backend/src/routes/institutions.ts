@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -68,6 +69,11 @@ import { recordAuditEvent } from "../services/auditService.js";
  *           schema: { type: object, required: [userId], properties: { userId: { type: string, format: uuid }, role: { type: string, enum: [admin, member, viewer] } } }
  *     responses:
  *       201: { description: Member added }
+ */
+
+/**
+ * @openapi
+ * /institutions/{id}/members/{userId}:
  *   delete:
  *     summary: Remove member from organization
  *     tags: [Institutions]
@@ -83,6 +89,10 @@ import { recordAuditEvent } from "../services/auditService.js";
  *         schema: { type: string, format: uuid }
  *     responses:
  *       204: { description: Member removed }
+ */
+
+/**
+ * @openapi
  * /institutions/{id}/addresses:
  *   post:
  *     summary: Add address to organization
@@ -187,6 +197,11 @@ import { recordAuditEvent } from "../services/auditService.js";
 
 export const institutionsRouter = Router();
 
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+institutionsRouter.param("id", rejectNonUuidParam);
+institutionsRouter.param("userId", rejectNonUuidParam);
+
 const orgCreateSchema = z.object({
   name: z.string().trim().min(2).max(200),
   type: z.enum(["school", "apartment", "office", "government", "ngo", "hospital", "hotel", "other"]),
@@ -262,6 +277,83 @@ institutionsRouter.get("/", requireAuth, async (req, res, next) => {
     let query = `SELECT o.*, om.role as user_role FROM organizations o JOIN organization_members om ON om.organization_id = o.id WHERE om.user_id = $1`;
     const result = await pool.query(query, [req.user!.id]);
     res.json({ organizations: result.rows });
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /institutions/me:
+ *   get:
+ *     summary: The caller's institutional dashboard, members and contracts
+ *     description: Also served at /institutions/organizations/me (blueprint spelling).
+ *     tags: [Institutions]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Organization dashboard }
+ *       404: { description: The caller is not a member of any organization }
+ */
+institutionsRouter.get(["/me", "/organizations/me"], requireAuth, async (req, res, next) => {
+  try {
+    const organization = await pool.query(
+      `select o.*, om.role as my_role
+         from organizations o
+         join organization_members om on om.organization_id = o.id
+        where om.user_id = $1
+        order by om.joined_at
+        limit 1`,
+      [req.user!.id]
+    );
+
+    if (!organization.rows[0]) {
+      res.status(404).json({ error: "You are not a member of any organization" });
+      return;
+    }
+
+    const organizationId = organization.rows[0].id;
+
+    const [members, addresses, contracts, plans, bookingStats] = await Promise.all([
+      pool.query(
+        `select om.user_id, om.role, om.joined_at, u.name, u.email, u.phone
+           from organization_members om
+           join users u on u.id = om.user_id
+          where om.organization_id = $1
+          order by om.joined_at`,
+        [organizationId]
+      ),
+      pool.query(
+        "select * from organization_addresses where organization_id = $1 order by is_default desc",
+        [organizationId]
+      ),
+      pool.query(
+        "select * from service_contracts where organization_id = $1 order by created_at desc",
+        [organizationId]
+      ),
+      pool.query(
+        "select * from service_plans where organization_id = $1 order by created_at desc",
+        [organizationId]
+      ),
+      pool.query(
+        `select count(*)::int                                       as total,
+                count(*) filter (where b.status = 'completed')::int as completed,
+                count(*) filter (where b.status not in ('completed', 'cancelled', 'expired'))::int as active,
+                coalesce(sum(i.total), 0)::float8                   as billed_total
+           from bookings b
+           left join invoices i on i.booking_id = b.id
+          where b.customer_id in (
+            select user_id from organization_members where organization_id = $1
+          )`,
+        [organizationId]
+      ),
+    ]);
+
+    res.json({
+      organization: organization.rows[0],
+      members: members.rows,
+      addresses: addresses.rows,
+      contracts: contracts.rows,
+      servicePlans: plans.rows,
+      bookings: bookingStats.rows[0],
+    });
   } catch (error) { next(error); }
 });
 
@@ -358,7 +450,13 @@ institutionsRouter.post("/:id/purchase-orders", requireAuth, async (req, res, ne
     const member = await pool.query(`SELECT role FROM organization_members WHERE organization_id = $1 AND user_id = $2`, [orgId, req.user!.id]);
     if (!member.rows[0] || !["admin"].includes(member.rows[0].role)) { res.status(403).json({ error: "Admin access required" }); return; }
     const input = poSchema.parse(req.body);
-    const result = await pool.query(`INSERT INTO purchase_orders (id, organization_id, contract_id, po_number, amount, status, issued_at, valid_until) VALUES ($1, $2, $3, $4, $5, 'issued', now(), $6) RETURNING *`, [crypto.randomUUID(), orgId, input.contractId ?? null, input.poNumber, input.amount, input.validUntil ?? null]);
+    let result;
+    try {
+      result = await pool.query(`INSERT INTO purchase_orders (id, organization_id, contract_id, po_number, amount, status, issued_at, valid_until) VALUES ($1, $2, $3, $4, $5, 'issued', now(), $6) RETURNING *`, [crypto.randomUUID(), orgId, input.contractId ?? null, input.poNumber, input.amount, input.validUntil ?? null]);
+    } catch (insertError) {
+      if ((insertError as { code?: string })?.code === "23505") { res.status(409).json({ error: "Purchase order number already exists" }); return; }
+      throw insertError;
+    }
     await recordAuditEvent({ actorId: req.user!.id, action: "purchase_order.created", resourceType: "purchase_order", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined, metadata: { organizationId: orgId } }).catch(() => undefined);
     res.status(201).json({ purchaseOrder: result.rows[0] });
   } catch (error) { next(error); }

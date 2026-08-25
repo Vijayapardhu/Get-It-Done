@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
 /**
  * @openapi
@@ -116,6 +117,10 @@ import { recordAuditEvent } from "../services/auditService.js";
  */
 
 export const pricingRouter = Router();
+
+// Malformed ids 404 instead of reaching Postgres, which would raise
+// "invalid input syntax for type uuid" and surface as a 500.
+pricingRouter.param("id", rejectNonUuidParam);
 
 const pricingRuleCreateSchema = z.object({
   name: z.string().trim().min(2).max(100),
@@ -292,7 +297,13 @@ pricingRouter.get("/travel-fees", requireAuth, requireRoles("system_admin", "fed
 pricingRouter.post("/travel-fees", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
   try {
     const input = travelFeeCreateSchema.parse(req.body);
-    const result = await pool.query(`INSERT INTO travel_fees (id, cooperative_id, base_km, base_fee, per_km_rate, max_distance_km) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [crypto.randomUUID(), input.cooperativeId, input.baseKm, input.baseFee, input.perKmRate, input.maxDistanceKm]);
+    let result;
+    try {
+      result = await pool.query(`INSERT INTO travel_fees (id, cooperative_id, base_km, base_fee, per_km_rate, max_distance_km) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [crypto.randomUUID(), input.cooperativeId, input.baseKm, input.baseFee, input.perKmRate, input.maxDistanceKm]);
+    } catch (insertError) {
+      if ((insertError as { code?: string })?.code === "23505") { res.status(409).json({ error: "Travel fee already exists for this cooperative" }); return; }
+      throw insertError;
+    }
     await recordAuditEvent({ actorId: req.user!.id, action: "travel_fee.created", resourceType: "travel_fee", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(201).json({ travelFee: result.rows[0] });
   } catch (error) { next(error); }
