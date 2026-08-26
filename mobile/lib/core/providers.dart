@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api/gid_api.dart';
 import 'auth/google_auth_service.dart';
+import 'models/account_models.dart';
 import 'models/models.dart';
 import 'network/api_client.dart';
 import 'network/api_exception.dart';
@@ -275,6 +276,45 @@ final trustGraphProvider =
 
 final notificationsProvider = FutureProvider.autoDispose<List<AppNotification>>((ref) async {
   return ref.watch(apiProvider).notifications();
+});
+
+// ─────────────────────────────────────────────────── account & settings ──
+
+final notificationPreferencesProvider =
+    FutureProvider.autoDispose<NotificationPreferences>((ref) async {
+  return ref.watch(apiProvider).notificationPreferences();
+});
+
+/// Long-lived: the language list is three rows that never change during a
+/// session, and the profile screen reopens often.
+final languagesProvider = FutureProvider<List<AppLanguage>>((ref) async {
+  return ref.watch(apiProvider).languages();
+});
+
+final supportTicketsProvider = FutureProvider.autoDispose<List<SupportTicket>>((ref) async {
+  return ref.watch(apiProvider).supportTickets();
+});
+
+final supportTicketProvider =
+    FutureProvider.autoDispose.family<SupportTicket, String>((ref, id) async {
+  return ref.watch(apiProvider).supportTicket(id);
+});
+
+final chatsProvider = FutureProvider.autoDispose<List<ChatThread>>((ref) async {
+  return ref.watch(apiProvider).chats();
+});
+
+final chatMessagesProvider =
+    FutureProvider.autoDispose.family<List<ChatMessage>, String>((ref, chatId) async {
+  return ref.watch(apiProvider).chatMessages(chatId);
+});
+
+final recurringPlansProvider = FutureProvider.autoDispose<List<RecurringPlan>>((ref) async {
+  return ref.watch(apiProvider).recurringPlans();
+});
+
+final invoicesProvider = FutureProvider.autoDispose<List<Invoice>>((ref) async {
+  return ref.watch(apiProvider).invoices();
 });
 
 final unreadNotificationCountProvider = Provider.autoDispose<int>((ref) {

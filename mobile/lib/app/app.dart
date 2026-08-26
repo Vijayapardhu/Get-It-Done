@@ -4,14 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/models.dart';
 import '../core/providers.dart';
 import '../design/design_system.dart';
+import '../features/account/profile_tab.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/booking/book_service_screen.dart';
 import '../features/booking/booking_otp_screen.dart';
-import '../features/address/address_screen.dart';
 import '../features/booking/review_screen.dart';
 import '../features/booking/track_booking_screen.dart';
+import '../features/emergency/emergency_screen.dart';
 import '../features/home/home_screen.dart';
 import 'search_screen.dart';
+import 'tabs.dart';
 import 'trust_screen.dart';
 
 /// Root widget.
@@ -183,6 +185,29 @@ class _AppShellState extends ConsumerState<AppShell> {
     ));
   }
 
+  /// Emergency takes its own screen and its own backend path — see
+  /// [EmergencyScreen]. It is not the booking flow with a red button.
+  void _openEmergency(Service service) {
+    _push(EmergencyScreen(
+      service: service,
+      onDispatched: (result) {
+        _navigatorKeys[_tab].currentState?.pushReplacement(
+              MaterialPageRoute<void>(
+                builder: (_) => BookingConfirmedScreen(
+                  result: result,
+                  onViewCodes: () => _push(BookingOtpScreen(
+                    bookingId: result.booking.id,
+                    otps: result.otps,
+                    status: result.booking.status,
+                  )),
+                  onTrack: () => _openBooking(result.booking),
+                ),
+              ),
+            );
+      },
+    ));
+  }
+
   void _openService(Service service) {
     _push(BookServiceScreen(
       service: service,
@@ -234,15 +259,15 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[1],
-              child: _BookingsTab(onOpenBooking: _openBooking),
+              child: BookingsTab(onOpenBooking: _openBooking),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[2],
-              child: const _NotificationsTab(),
+              child: const NotificationsTab(),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[3],
-              child: _ProfileTab(onToggleTheme: widget.onToggleTheme),
+              child: ProfileTab(onToggleTheme: widget.onToggleTheme),
             ),
           ],
         ),
@@ -270,7 +295,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       builder: (sheetContext) => _EmergencySheet(
         onPick: (service) {
           Navigator.of(sheetContext).pop();
-          _openService(service);
+          _openEmergency(service);
         },
       ),
     );
@@ -369,230 +394,6 @@ class _EmergencySheet extends ConsumerWidget {
                 ],
               );
             },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Placeholder tabs, replaced as each feature lands ──────────────────────
-
-class _BookingsTab extends ConsumerWidget {
-  const _BookingsTab({required this.onOpenBooking});
-
-  final ValueChanged<Booking> onOpenBooking;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final bookings = ref.watch(bookingsProvider);
-    final t = context.tokens;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Your bookings')),
-      body: bookings.when(
-        loading: () => const Padding(
-          padding: Space.pageInsets,
-          child: Column(children: [SkeletonCard(), SizedBox(height: Space.x3), SkeletonCard()]),
-        ),
-        error: (error, _) => AppStateView.error(
-          message: 'We could not load your bookings.',
-          onAction: () => ref.invalidate(bookingsProvider),
-        ),
-        data: (list) {
-          if (list.isEmpty) {
-            return const AppStateView.empty(
-              title: 'Nothing here yet',
-              message: 'Your bookings will appear here once you book a service.',
-              icon: AppIcons.bookings,
-            );
-          }
-          return RefreshIndicator(
-            color: t.primary,
-            onRefresh: () async {
-              ref.invalidate(bookingsProvider);
-              await ref.read(bookingsProvider.future);
-            },
-            child: ListView.separated(
-              padding: const EdgeInsets.all(Space.x5),
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(height: Space.x3),
-              itemBuilder: (context, i) {
-                final booking = list[i];
-                return AppCard(
-                  onTap: () => onOpenBooking(booking),
-                  padding: Space.cardInsetsLarge,
-                  child: Row(
-                    children: [
-                      AppIconBadge(
-                        ServiceVisuals.forName(booking.serviceCategory ?? booking.serviceName).icon,
-                        size: 44,
-                      ),
-                      const SizedBox(width: Space.x3),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              booking.serviceName ?? 'Service',
-                              style: context.text.titleMedium,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              booking.address ?? '',
-                              style: context.text.bodySmall?.copyWith(color: t.textTertiary),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: Space.x2),
-                      BookingStatusBadge(booking.status, dense: true),
-                    ],
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _NotificationsTab extends ConsumerWidget {
-  const _NotificationsTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notifications = ref.watch(notificationsProvider);
-    final t = context.tokens;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: notifications.when(
-        loading: () => const Padding(
-          padding: Space.pageInsets,
-          child: SkeletonCard(hasAvatar: false),
-        ),
-        error: (_, __) => AppStateView.error(
-          message: 'We could not load your notifications.',
-          onAction: () => ref.invalidate(notificationsProvider),
-        ),
-        data: (list) {
-          if (list.isEmpty) {
-            return const AppStateView.empty(
-              title: 'All caught up',
-              message: 'Updates about your bookings will appear here.',
-              icon: AppIcons.notifications,
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(Space.x5),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(height: Space.x3),
-            itemBuilder: (context, i) {
-              final item = list[i];
-              return AppCard(
-                elevated: false,
-                background: item.isUnread ? t.primarySoft : null,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppIconBadge(AppIcons.notifications, size: 40),
-                    const SizedBox(width: Space.x3),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(item.title, style: context.text.titleMedium),
-                          if (item.body != null)
-                            Text(
-                              item.body!,
-                              style: context.text.bodySmall?.copyWith(color: t.textSecondary),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _ProfileTab extends ConsumerWidget {
-  const _ProfileTab({required this.onToggleTheme});
-
-  final VoidCallback onToggleTheme;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.tokens;
-    final user = ref.watch(currentUserProvider);
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: ListView(
-        padding: const EdgeInsets.all(Space.x5),
-        children: [
-          Row(
-            children: [
-              WorkerAvatar(name: user?.name ?? 'You', size: Sizes.avatarLg),
-              const SizedBox(width: Space.x4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(user?.name ?? 'You', style: context.text.headlineSmall),
-                    Text(
-                      user?.phone ?? user?.email ?? '',
-                      style: context.text.bodySmall?.copyWith(color: t.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: Space.x8),
-          AppSelectableRow(
-            title: context.isDark ? 'Light theme' : 'Dark theme',
-            icon: context.isDark ? AppIcons.lightMode : AppIcons.darkMode,
-            selected: false,
-            onTap: onToggleTheme,
-            trailing: const SizedBox.shrink(),
-          ),
-          const SizedBox(height: Space.x3),
-          AppSelectableRow(
-            title: 'Saved addresses',
-            icon: AppIcons.location,
-            selected: false,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const AddressListScreen()),
-            ),
-            trailing: const SizedBox.shrink(),
-          ),
-          const SizedBox(height: Space.x3),
-          AppSelectableRow(
-            title: 'Language',
-            subtitle: switch (user?.language) { 'te' => 'తెలుగు', 'hi' => 'हिन्दी', _ => 'English' },
-            icon: AppIcons.language,
-            selected: false,
-            onTap: () {},
-            trailing: const SizedBox.shrink(),
-          ),
-          const SizedBox(height: Space.x8),
-          AppButton(
-            label: 'Sign out',
-            variant: AppButtonVariant.danger,
-            icon: AppIcons.logout,
-            onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
           ),
         ],
       ),

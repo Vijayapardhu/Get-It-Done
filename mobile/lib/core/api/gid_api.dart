@@ -1,3 +1,4 @@
+import '../models/account_models.dart';
 import '../models/models.dart';
 import '../network/api_client.dart';
 import '../network/json.dart';
@@ -321,6 +322,169 @@ class GidApi {
     });
     return BookingCreated.fromJson(json);
   }
+
+
+  // ─────────────────────────────────────────────── notification settings ──
+
+  Future<NotificationPreferences> notificationPreferences() async {
+    final json = await _client.get('/notifications/preferences');
+    return NotificationPreferences.fromJson(json);
+  }
+
+  Future<NotificationPreferences> updateNotificationPreferences(
+    NotificationPreferences preferences,
+  ) async {
+    final json = await _client.patch('/notifications/preferences', body: preferences.toJson());
+    return NotificationPreferences.fromJson(json);
+  }
+
+  /// Register this device for push. Called after FCM hands over a token.
+  Future<void> registerDevice({required String token, required String platform}) =>
+      _client.post('/notifications/devices', body: {'token': token, 'platform': platform});
+
+  // ─────────────────────────────────────────────────────────────── i18n ──
+
+  Future<List<AppLanguage>> languages() async {
+    final json = await _client.get('/i18n/languages');
+    return parseList(pick(json, 'languages'), AppLanguage.fromJson);
+  }
+
+  /// Persist the language on the user, so it follows them across devices.
+  ///
+  /// Two endpoints do this; PATCH /i18n/user/language is the one that also
+  /// updates `preferred_language`, which is what /auth/me reads back.
+  Future<void> setPreferredLanguage(String code) =>
+      _client.patch('/i18n/user/language', body: {'language': code});
+
+  // ──────────────────────────────────────────────────────────── profile ──
+
+  Future<AppUser> updateProfile({String? name, String? displayName}) async {
+    final json = await _client.patch('/users/me', body: {
+      if (name != null) 'name': name,
+      if (displayName != null) 'displayName': displayName,
+    });
+    return AppUser.fromJson(asJson(pick(json, 'user')) ?? json);
+  }
+
+  // ──────────────────────────────────────────────────────────── support ──
+
+  Future<List<SupportTicket>> supportTickets() async {
+    final json = await _client.get('/support/tickets');
+    return parseList(pick(json, 'tickets'), SupportTicket.fromJson);
+  }
+
+  Future<SupportTicket> supportTicket(String id) async {
+    final json = await _client.get('/support/tickets/$id');
+    return SupportTicket.fromJson(json);
+  }
+
+  /// Raise a ticket.
+  ///
+  /// [subject] is accepted by the route but the complaints table has no column
+  /// for it, so it is prefixed onto the description instead of being silently
+  /// dropped.
+  Future<SupportTicket> createSupportTicket({
+    required String subject,
+    required String description,
+    String category = 'other',
+    String? bookingId,
+  }) async {
+    final body = subject.trim().isEmpty ? description : '${subject.trim()}\n\n$description';
+    final json = await _client.post('/support/tickets', body: {
+      'subject': subject,
+      'description': body,
+      'category': category,
+      if (bookingId != null) 'bookingId': bookingId,
+    });
+    return SupportTicket.fromJson(json);
+  }
+
+  Future<TicketComment> addTicketComment(String ticketId, String comment) async {
+    final json = await _client.post('/support/tickets/$ticketId/comments', body: {
+      'comment': comment,
+    });
+    return TicketComment.fromJson(asJson(pick(json, 'comment')) ?? json);
+  }
+
+  // ─────────────────────────────────────────────────────────────── chat ──
+
+  Future<List<ChatThread>> chats() async {
+    final json = await _client.get('/chats');
+    return parseList(pick(json, 'chats'), ChatThread.fromJson);
+  }
+
+  Future<List<ChatMessage>> chatMessages(String chatId) async {
+    final json = await _client.get('/chats/$chatId/messages');
+    return parseList(pick(json, 'messages'), ChatMessage.fromJson);
+  }
+
+  Future<ChatMessage> sendChatMessage(String chatId, String body) async {
+    final json = await _client.post('/chats/$chatId/messages', body: {'message': body});
+    return ChatMessage.fromJson(asJson(pick(json, 'message')) ?? json);
+  }
+
+  /// Open (or reuse) the thread for a booking.
+  Future<ChatThread> startChat({required String bookingId}) async {
+    final json = await _client.post('/chats', body: {'bookingId': bookingId});
+    return ChatThread.fromJson(asJson(pick(json, 'chat')) ?? json);
+  }
+
+  // ────────────────────────────────────────────────────────── recurring ──
+
+  Future<List<RecurringPlan>> recurringPlans() async {
+    final json = await _client.get('/recurring/plans');
+    return parseList(pick(json, 'recurringBookings'), RecurringPlan.fromJson);
+  }
+
+  Future<RecurringPlan> createRecurringPlan({
+    required String serviceId,
+    required String frequency,
+    required DateTime startDate,
+    List<int> daysOfWeek = const [],
+    String? addressId,
+    DateTime? endDate,
+  }) async {
+    final json = await _client.post('/recurring/plans', body: {
+      'serviceId': serviceId,
+      'frequency': frequency,
+      'daysOfWeek': daysOfWeek,
+      // The API takes a date, not a timestamp.
+      'startDate': startDate.toIso8601String().split('T').first,
+      if (endDate != null) 'endDate': endDate.toIso8601String().split('T').first,
+      if (addressId != null) 'addressId': addressId,
+    });
+    return RecurringPlan.fromJson(asJson(pick(json, 'recurringBooking')) ?? json);
+  }
+
+  Future<void> pauseRecurringPlan(String id) => _client.post('/recurring/plans/$id/pause');
+
+  Future<void> resumeRecurringPlan(String id) => _client.post('/recurring/plans/$id/resume');
+
+  Future<void> cancelRecurringPlan(String id) => _client.delete('/recurring/plans/$id');
+
+  // ─────────────────────────────────────────────────────────── invoices ──
+
+  Future<List<Invoice>> invoices() async {
+    final json = await _client.get('/payments/invoices');
+    return parseList(pick(json, 'invoices'), Invoice.fromJson);
+  }
+
+  Future<Invoice?> invoiceForBooking(String bookingId) async {
+    try {
+      final json = await _client.get('/payments/invoices/booking/$bookingId');
+      return Invoice.fromJson(asJson(pick(json, 'invoice')) ?? json);
+    } catch (_) {
+      // A booking with no invoice yet is normal, not an error.
+      return null;
+    }
+  }
+
+  /// Signed URL for the invoice PDF. The endpoint streams binary, so this is
+  /// handed to the platform browser rather than fetched.
+  /// The rendered receipt. Behind `requireAuth`, so it is downloaded with the
+  /// bearer token rather than handed to the browser as a URL.
+  Future<List<int>> invoicePdf(String invoiceId) =>
+      _client.getBytes('/invoices/$invoiceId/pdf');
 
   // ─────────────────────────────────────────────────────────────── maps ──
 

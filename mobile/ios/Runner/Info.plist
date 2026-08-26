@@ -45,5 +45,13 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- url_launcher canLaunchUrl returns false for these schemes unless they
+	     are declared. The dialler is how a customer reaches the worker who is
+	     standing outside their door. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>https</string>
+	</array>
 </dict>
 </plist>

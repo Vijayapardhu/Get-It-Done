@@ -52,6 +52,10 @@ class ApiClient {
   final Dio _dio;
   final TokenStore tokenStore;
 
+  /// For endpoints handed to the platform rather than fetched — the
+  /// invoice PDF streams binary and is opened in a browser.
+  String get baseUrl => _dio.options.baseUrl;
+
   /// In-flight refresh, shared by every request that 401s while it runs.
   Future<String?>? _refreshing;
 
@@ -109,6 +113,44 @@ class ApiClient {
 
   Future<Json> delete(String path, {Object? body, bool auth = true}) =>
       _send('DELETE', path, body: body, auth: auth);
+
+  /// Fetch a binary body (the invoice PDF) with the bearer token attached.
+  ///
+  /// The PDF route is behind `requireAuth`, so handing the URL to the system
+  /// browser would return 401 — it has to be downloaded through this client
+  /// and written to a file the platform can open.
+  Future<List<int>> getBytes(String path) async {
+    late Response<List<int>> response;
+    try {
+      response = await _dio.get<List<int>>(
+        path,
+        options: Options(responseType: ResponseType.bytes),
+      );
+    } on DioException catch (e) {
+      throw ApiException.from(e);
+    }
+
+    if ((response.statusCode ?? 0) == 401) {
+      final refreshed = await _refreshOnce();
+      if (refreshed == null) {
+        onSessionExpired?.call();
+      } else {
+        response = await _dio.get<List<int>>(
+          path,
+          options: Options(responseType: ResponseType.bytes),
+        );
+      }
+    }
+
+    if ((response.statusCode ?? 0) >= 400 || response.data == null) {
+      throw ApiException.from(DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        type: DioExceptionType.badResponse,
+      ));
+    }
+    return response.data!;
+  }
 
   Future<Json> _send(
     String method,

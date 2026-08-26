@@ -58,6 +58,7 @@ abstract final class AppIcons {
   static const call = HugeIcons.strokeRoundedCall02;
   static const message = HugeIcons.strokeRoundedMessage01;
   static const chat = HugeIcons.strokeRoundedChatting01;
+  static const send = HugeIcons.strokeRoundedSent;
   static const camera = HugeIcons.strokeRoundedCamera01;
   static const photo = HugeIcons.strokeRoundedImage01;
   static const home_ = HugeIcons.strokeRoundedHome03;

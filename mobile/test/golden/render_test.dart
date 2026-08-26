@@ -47,6 +47,12 @@ void main() {
     await _loadFonts();
   });
 
+  // Note when reviewing these PNGs: flutter_test forces `debugDisableShadows`
+  // and paints Material elevation as a hard black outline. The heavy ring
+  // around the FAB and other elevated surfaces is that artifact, not the
+  // design — it cannot be turned off, because the binding asserts the flag is
+  // still set when each test ends.
+
   Future<void> shoot(
     WidgetTester tester,
     String name,

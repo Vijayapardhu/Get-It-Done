@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../core/realtime/realtime_service.dart';
 import '../../design/design_system.dart';
+import '../../core/network/api_exception.dart';
+import '../chat/chat_screens.dart';
 
 /// Live booking tracking.
 ///
@@ -127,6 +130,10 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
                   etaMinutes: data.etaMinutes,
                   onOpenProfile: () => widget.onOpenWorker(data.worker!.workerId),
                 ),
+                const SizedBox(height: Space.x3),
+                // Reaching the worker matters most while they are on the way —
+                // gate codes, which floor, where to park.
+                _ContactRow(bookingId: widget.bookingId, phone: data.booking.workerPhone),
                 const SizedBox(height: Space.x4),
               ],
 
@@ -324,6 +331,79 @@ class _WorkerPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Call and message actions for the assigned worker.
+///
+/// The chat thread is created lazily: the backend only opens one on demand, so
+/// tapping Message is what brings it into existence.
+class _ContactRow extends ConsumerStatefulWidget {
+  const _ContactRow({required this.bookingId, required this.phone});
+
+  final String bookingId;
+  final String? phone;
+
+  @override
+  ConsumerState<_ContactRow> createState() => _ContactRowState();
+}
+
+class _ContactRowState extends ConsumerState<_ContactRow> {
+  bool _opening = false;
+
+  Future<void> _openChat() async {
+    setState(() => _opening = true);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final chat = await ref.read(apiProvider).startChat(bookingId: widget.bookingId);
+      ref.invalidate(chatsProvider);
+      await navigator.push(MaterialPageRoute<void>(builder: (_) => ChatScreen(chat: chat)));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  Future<void> _call() async {
+    final phone = widget.phone;
+    if (phone == null) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (!await launchUrl(uri)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not start the call.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        if (widget.phone != null) ...[
+          Expanded(
+            child: AppButton.secondary(
+              label: 'Call',
+              icon: AppIcons.call,
+              size: AppButtonSize.medium,
+              onPressed: _call,
+            ),
+          ),
+          const SizedBox(width: Space.x2),
+        ],
+        Expanded(
+          child: AppButton(
+            label: 'Message',
+            variant: AppButtonVariant.soft,
+            icon: AppIcons.chat,
+            size: AppButtonSize.medium,
+            loading: _opening,
+            onPressed: _opening ? null : _openChat,
+          ),
+        ),
+      ],
     );
   }
 }
