@@ -37,6 +37,7 @@ export const MIGRATIONS = [
   "migration_phase12_security_events.sql",// anonymous failed-login records
   "migration_phase13_artwork.sql",         // service/category PNG + Lottie artwork
   "migration_phase14_catalogue.sql",       // list price for promotions, service index for ratings
+  "migration_phase15_service_detail.sql",  // includes/excludes/steps/faqs for the detail page
 ] as const;
 
 const CREATE_TRACKING_TABLE = `

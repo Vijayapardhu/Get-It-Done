@@ -34,6 +34,43 @@ export type Service = {
   ratingCount: number;
 };
 
+/** One thing that happens while the job is being done. */
+export type ServiceStep = {
+  title: string;
+  description: string;
+  /** Optional small illustration; the app falls back to a numbered marker. */
+  imageUrl?: string | null;
+};
+
+export type ServiceFaq = {
+  question: string;
+  answer: string;
+};
+
+/**
+ * A service with the editorial content its own page needs.
+ *
+ * Separate from [Service] because these lists are long and the catalogue
+ * endpoint returns every service at once: sending each one's FAQs to render a
+ * grid of cards would be several kilobytes nobody reads.
+ */
+export type ServiceDetail = Service & {
+  /** Full-bleed photograph for the top of the page. */
+  heroImageUrl: string | null;
+
+  includes: string[];
+
+  /**
+   * What this service is NOT. Empty is legitimate but rarely correct: a
+   * customer who discovers on the doorstep that something was never included
+   * is a dispute and a refund, and saying so here costs nothing.
+   */
+  excludes: string[];
+
+  steps: ServiceStep[];
+  faqs: ServiceFaq[];
+};
+
 export type ServiceCategory = {
   category: string;
   services: Service[];

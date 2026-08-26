@@ -351,6 +351,15 @@ final bookingPaymentProvider =
 /// A failure here is NOT fatal. [AppConfig] still carries build-time values as
 /// a development fallback, so a dev machine with the backend down keeps
 /// working — see `effectiveConfigProvider`.
+/// One service's detail page content, keyed by id.
+///
+/// autoDispose so browsing a dozen services does not keep a dozen payloads
+/// alive for a page the user has left.
+final serviceDetailProvider =
+    FutureProvider.autoDispose.family<ServiceDetail, String>((ref, id) async {
+  return ref.watch(apiProvider).serviceDetail(id);
+});
+
 final remoteConfigProvider = FutureProvider<RemoteConfig>((ref) async {
   return ref.watch(apiProvider).mobileConfig();
 });

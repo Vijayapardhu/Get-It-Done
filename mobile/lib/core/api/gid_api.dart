@@ -120,6 +120,12 @@ class GidApi {
 
   // ────────────────────────────────────────────────────────── catalogue ──
 
+  /// One service with its editorial content, for the detail page.
+  Future<ServiceDetail> serviceDetail(String id) async {
+    final json = await _client.get('/services/$id');
+    return ServiceDetail.fromJson(asJson(pick(json, 'service')) ?? const {});
+  }
+
   Future<List<Service>> services() async {
     final json = await _client.get('/services');
     return parseList(pick(json, 'services'), Service.fromJson);
@@ -128,11 +134,6 @@ class GidApi {
   Future<List<ServiceCategory>> serviceCategories() async {
     final json = await _client.get('/services/categories');
     return parseList(pick(json, 'categories'), ServiceCategory.fromJson);
-  }
-
-  Future<Service> service(String id) async {
-    final json = await _client.get('/services/$id');
-    return Service.fromJson(asJson(pick(json, 'service')) ?? json);
   }
 
   /// Catalogue search scoped to a location, so results carry worker

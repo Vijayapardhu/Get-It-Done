@@ -22,6 +22,7 @@ import 'package:getitdone_customer/features/account/profile_tab.dart';
 import 'package:getitdone_customer/features/account/settings_screens.dart';
 import 'package:getitdone_customer/features/chat/chat_screens.dart';
 import 'package:getitdone_customer/core/models/payment_models.dart';
+import 'package:getitdone_customer/features/catalogue/service_detail_screen.dart';
 import 'package:getitdone_customer/features/emergency/emergency_screen.dart';
 import 'package:getitdone_customer/features/home/home_screen.dart';
 import 'package:getitdone_customer/features/payment/payment_screen.dart';
@@ -113,6 +114,34 @@ final _services = <Service>[
     'categoryAccentColor': '#E8A317',
   }),
 ];
+
+final _detail = ServiceDetail(
+  service: _services.first,
+  includes: const [
+    'Diagnosing the fault and explaining what is wrong',
+    'Tap, mixer and shower fitting repair or replacement',
+    'Clearing blocked sinks, basins and floor drains',
+  ],
+  excludes: const [
+    'Replacement parts and fittings, which are billed separately at cost',
+    'Concealed pipe work requiring wall or floor breaking',
+  ],
+  steps: const [
+    ServiceStep(title: 'Find the fault', description: 'The worker traces the leak rather than guessing.'),
+    ServiceStep(title: 'Agree the fix', description: 'You are told what any parts cost before work starts.'),
+    ServiceStep(title: 'Test and clean up', description: 'Run under pressure to confirm it holds.'),
+  ],
+  faqs: const [
+    ServiceFaq(
+      question: 'Are parts included in the price?',
+      answer: 'No. The booking covers the visit and the labour; parts are billed at cost on the invoice.',
+    ),
+    ServiceFaq(
+      question: 'What if the leak comes back?',
+      answer: 'Report it from the same booking within 30 days and the return visit is free.',
+    ),
+  ],
+);
 
 final _bookings = <Booking>[
   Booking.fromJson({
@@ -376,6 +405,18 @@ void main() {
         servicesProvider.overrideWith((ref) async => _services),
         dashboardProvider.overrideWith((ref) async => CustomerDashboard(upcoming: _bookings)),
         addressesProvider.overrideWith((ref) async => const <SavedAddress>[]),
+      ],
+    );
+  });
+
+  testWidgets('service detail', (tester) async {
+    await shoot(
+      tester,
+      'service_detail_light',
+      ServiceDetailScreen(service: _services.first),
+      size: const Size(390, 1900),
+      overrides: [
+        serviceDetailProvider(_services.first.id).overrideWith((ref) async => _detail),
       ],
     );
   });

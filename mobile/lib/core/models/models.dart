@@ -182,6 +182,74 @@ class Service {
       );
 }
 
+/// One thing that happens while the job is being done.
+class ServiceStep {
+  const ServiceStep({required this.title, this.description = '', this.imageUrl});
+
+  final String title;
+  final String description;
+  final String? imageUrl;
+
+  factory ServiceStep.fromJson(Json json) => ServiceStep(
+        title: asString(pick(json, 'title')),
+        description: asString(pick(json, 'description')),
+        imageUrl: asStringOrNull(pick(json, 'imageUrl')),
+      );
+}
+
+class ServiceFaq {
+  const ServiceFaq({required this.question, required this.answer});
+
+  final String question;
+  final String answer;
+
+  factory ServiceFaq.fromJson(Json json) => ServiceFaq(
+        question: asString(pick(json, 'question')),
+        answer: asString(pick(json, 'answer')),
+      );
+}
+
+/// A service plus the editorial content its own page needs.
+///
+/// Comes from `GET /services/:id`; the catalogue endpoint does not carry these
+/// lists, because sending every service's FAQs to render a grid of cards is
+/// several kilobytes nobody reads.
+class ServiceDetail {
+  const ServiceDetail({
+    required this.service,
+    this.heroImageUrl,
+    this.includes = const [],
+    this.excludes = const [],
+    this.steps = const [],
+    this.faqs = const [],
+  });
+
+  final Service service;
+  final String? heroImageUrl;
+
+  final List<String> includes;
+
+  /// What the service is NOT. Empty is legitimate, and the section is hidden
+  /// rather than shown empty — but an operator leaving it blank is the usual
+  /// cause of a doorstep argument.
+  final List<String> excludes;
+
+  final List<ServiceStep> steps;
+  final List<ServiceFaq> faqs;
+
+  bool get hasContent =>
+      includes.isNotEmpty || excludes.isNotEmpty || steps.isNotEmpty || faqs.isNotEmpty;
+
+  factory ServiceDetail.fromJson(Json json) => ServiceDetail(
+        service: Service.fromJson(json),
+        heroImageUrl: asStringOrNull(pick(json, 'heroImageUrl')),
+        includes: asStringList(pick(json, 'includes')),
+        excludes: asStringList(pick(json, 'excludes')),
+        steps: parseList(pick(json, 'steps'), ServiceStep.fromJson),
+        faqs: parseList(pick(json, 'faqs'), ServiceFaq.fromJson),
+      );
+}
+
 class ServiceCategory {
   const ServiceCategory({
     required this.name,

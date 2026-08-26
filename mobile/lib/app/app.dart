@@ -12,7 +12,9 @@ import '../features/booking/booking_otp_screen.dart';
 import '../features/booking/review_screen.dart';
 import '../features/booking/track_booking_screen.dart';
 import '../features/emergency/emergency_screen.dart';
+import '../core/cart/cart.dart';
 import '../features/cart/cart_bar.dart';
+import '../features/catalogue/service_detail_screen.dart';
 import '../features/cart/cart_screen.dart';
 import '../features/home/home_screen.dart';
 import 'search_screen.dart';
@@ -217,7 +219,16 @@ class _AppShellState extends ConsumerState<AppShell> {
     ));
   }
 
+  /// Tapping a service opens its page, not the booking form.
+  ///
+  /// The form asks when and where before the customer has decided whether they
+  /// want the thing at all. The detail page answers that first, and adds to the
+  /// cart; scheduling happens once at checkout for everything in it.
   void _openService(Service service) {
+    _push(ServiceDetailScreen(service: service));
+  }
+
+  void _openBookingForm(Service service) {
     _push(BookServiceScreen(
       service: service,
       onBooked: (result) {
@@ -312,7 +323,54 @@ class _AppShellState extends ConsumerState<AppShell> {
   /// The cart is app-level state, so it opens over the current tab rather than
   /// sending the user back to Home to find it.
   void _openCart() {
-    _push(CartScreen(onCheckout: null));
+    _push(CartScreen(onCheckout: _checkout));
+  }
+
+  /// Checkout, as far as it goes today.
+  ///
+  /// One service goes through the existing booking flow, which is complete and
+  /// works. Several cannot yet: a booking row holds a single service_id, so
+  /// multi-service checkout is a schema change and the next piece of work.
+  ///
+  /// Until then this says so rather than silently booking only the first
+  /// thing in the cart, which is the failure mode that loses someone's order
+  /// and their trust in one step.
+  void _checkout() {
+    final cart = ref.read(cartProvider);
+    if (cart.lines.isEmpty) return;
+
+    if (cart.lines.length == 1) {
+      final service = cart.lines.single.service;
+      Navigator.of(context).pop();
+      _openBookingForm(service);
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('One service at a time, for now'),
+        content: Text(
+          'Booking several services in one go is still being built. You can '
+          'book ${cart.lines.first.service.name} now and come back for the '
+          'rest, and your cart will still be here.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Not now'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).pop();
+              _openBookingForm(cart.lines.first.service);
+            },
+            child: Text('Book ${cart.lines.first.service.name}'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Profile is reached from the avatar in the home header rather than a tab.

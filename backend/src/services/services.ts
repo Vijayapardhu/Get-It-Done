@@ -1,5 +1,14 @@
 import { pool } from "../db/pool.js";
-import type { Service, ServiceCategory, CreateService, UpdateService, ServiceListParams } from "../types/services.js";
+import type {
+  Service,
+  ServiceCategory,
+  ServiceDetail,
+  ServiceStep,
+  ServiceFaq,
+  CreateService,
+  UpdateService,
+  ServiceListParams
+} from "../types/services.js";
 
 interface ServiceRow {
   id: string;
@@ -17,6 +26,11 @@ interface ServiceRow {
   list_price?: string | number | null;
   rating_average?: string | number | null;
   rating_count?: string | number | null;
+  hero_image_url?: string | null;
+  includes?: unknown;
+  excludes?: unknown;
+  steps?: unknown;
+  faqs?: unknown;
 }
 
 /**
@@ -148,10 +162,50 @@ export async function getServicesByCategory(): Promise<ServiceCategory[]> {
   });
 }
 
-export async function getServiceById(id: string): Promise<Service | null> {
+/**
+ * Reference copy arrives from jsonb, which is to say from whatever an admin
+ * payload put there. Anything that is not the expected shape is dropped rather
+ * than rendered: a malformed FAQ should cost one FAQ, not the whole page.
+ */
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+}
+
+function asSteps(value: unknown): ServiceStep[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const step = item as Record<string, unknown>;
+    if (typeof step.title !== "string" || step.title.trim() === "") return [];
+    return [{
+      title: step.title,
+      description: typeof step.description === "string" ? step.description : "",
+      imageUrl: typeof step.imageUrl === "string" ? step.imageUrl : null
+    }];
+  });
+}
+
+function asFaqs(value: unknown): ServiceFaq[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const faq = item as Record<string, unknown>;
+    if (typeof faq.question !== "string" || typeof faq.answer !== "string") return [];
+    if (faq.question.trim() === "" || faq.answer.trim() === "") return [];
+    return [{ question: faq.question, answer: faq.answer }];
+  });
+}
+
+export async function getServiceById(id: string): Promise<ServiceDetail | null> {
   const result = await pool.query<ServiceRow>(
     `
-      select ${SERVICE_COLUMNS}
+      select ${SERVICE_COLUMNS},
+             s.hero_image_url as "hero_image_url",
+             s.includes       as "includes",
+             s.excludes       as "excludes",
+             s.steps          as "steps",
+             s.faqs           as "faqs"
       from services s
       ${SERVICE_JOINS}
       where s.id = $1
@@ -163,7 +217,15 @@ export async function getServiceById(id: string): Promise<Service | null> {
     return null;
   }
 
-  return mapServiceRow(result.rows[0]);
+  const row = result.rows[0];
+  return {
+    ...mapServiceRow(row),
+    heroImageUrl: row.hero_image_url ?? null,
+    includes: asStringList(row.includes),
+    excludes: asStringList(row.excludes),
+    steps: asSteps(row.steps),
+    faqs: asFaqs(row.faqs)
+  };
 }
 
 export async function createService(input: CreateService): Promise<Service> {
