@@ -164,6 +164,16 @@ class GidApi {
     return PlacedOrder.fromJson(json);
   }
 
+  /// One order and its bookings.
+  ///
+  /// Reuses PlacedOrder: the checkout response and this one describe the same
+  /// thing, and the OTP list is simply absent here because the server issues
+  /// those exactly once.
+  Future<PlacedOrder> order(String id) async {
+    final json = await _client.get('/orders/$id');
+    return PlacedOrder.fromJson(json);
+  }
+
   Future<List<Service>> services() async {
     final json = await _client.get('/services');
     return parseList(pick(json, 'services'), Service.fromJson);

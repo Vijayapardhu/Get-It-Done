@@ -166,4 +166,78 @@ void main() {
       expect(s.rating, isNull);
     });
   });
+
+  group('PlacedOrder', () {
+    final json = {
+      'order': {
+        'id': 'o1',
+        'mode': 'scheduled',
+        'total': 764.64,
+        'scheduledAt': '2026-08-28T10:00:00.000Z',
+        'address': 'Flat 402',
+        'bookingCount': 2,
+      },
+      'bookings': [
+        {'id': 'b1', 'status': 'requested', 'serviceName': 'Plumbing', 'price': 352.82},
+        {'id': 'b2', 'status': 'requested', 'serviceName': 'Electrical', 'price': 411.82},
+      ],
+      'otps': [
+        {'bookingId': 'b1', 'startOtp': '111111', 'completionOtp': '222222'},
+        {'bookingId': 'b2', 'startOtp': '333333', 'completionOtp': '444444'},
+      ],
+    };
+
+    test('keeps the handshake codes', () {
+      // The regression this exists for: the field was not parsed at all, and
+      // the server issues these EXACTLY once — only hashes are kept — so the
+      // codes were gone for good and the customer could not verify the worker
+      // who turned up.
+      final order = PlacedOrder.fromJson(json);
+      expect(order.otps, hasLength(2));
+      expect(order.otpsFor('b1')!.startOtp, '111111');
+      expect(order.otpsFor('b2')!.completionOtp, '444444');
+    });
+
+    test('matches codes to bookings by id, never by position', () {
+      // Reading the wrong pair to the wrong worker fails the check, and an
+      // order's bookings and otps need not arrive in the same order.
+      final shuffled = PlacedOrder.fromJson({
+        ...json,
+        'otps': [
+          {'bookingId': 'b2', 'startOtp': '333333', 'completionOtp': '444444'},
+          {'bookingId': 'b1', 'startOtp': '111111', 'completionOtp': '222222'},
+        ],
+      });
+      expect(shuffled.otpsFor('b1')!.startOtp, '111111');
+    });
+
+    test('is null for a booking the server issued no codes for', () {
+      expect(PlacedOrder.fromJson(json).otpsFor('nope'), isNull);
+    });
+
+    test('the total is the server figure, not a local sum', () {
+      expect(PlacedOrder.fromJson(json).total, 764.64);
+    });
+
+    test('an order fetched later has no codes, and that is not an error', () {
+      // GET /orders/:id cannot return them; the page must cope rather than
+      // render a broken card.
+      final fetched = PlacedOrder.fromJson({...json}..remove('otps'));
+      expect(fetched.otps, isEmpty);
+      expect(fetched.bookings, hasLength(2));
+    });
+  });
+
+  group('Booking', () {
+    test('carries the order it was placed in', () {
+      final booking = Booking.fromJson(
+        {'id': 'b1', 'status': 'requested', 'orderId': 'o1'},
+      );
+      expect(booking.orderId, 'o1');
+    });
+
+    test('has none when booked on its own', () {
+      expect(Booking.fromJson({'id': 'b1', 'status': 'requested'}).orderId, isNull);
+    });
+  });
 }

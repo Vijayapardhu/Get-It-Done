@@ -338,6 +338,7 @@ class PlacedOrder {
     required this.mode,
     required this.total,
     required this.bookings,
+    this.otps = const [],
     this.scheduledAt,
     this.address,
   });
@@ -353,7 +354,22 @@ class PlacedOrder {
   final DateTime? scheduledAt;
   final String? address;
 
+  /// One pair of handshake codes per booking.
+  ///
+  /// The server returns these EXACTLY ONCE — only SHA-256 hashes are kept —
+  /// so anything that drops them here cannot get them back. They are what
+  /// stops a worker billing for a job they never attended.
+  final List<OrderOtps> otps;
+
   int get bookingCount => bookings.length;
+
+  /// The codes for one booking, or null if the server sent none for it.
+  OrderOtps? otpsFor(String bookingId) {
+    for (final entry in otps) {
+      if (entry.bookingId == bookingId) return entry;
+    }
+    return null;
+  }
 
   factory PlacedOrder.fromJson(Json json) {
     final order = asJson(pick(json, 'order')) ?? const {};
@@ -364,8 +380,35 @@ class PlacedOrder {
       scheduledAt: asDateOrNull(pick(order, 'scheduledAt')),
       address: asStringOrNull(pick(order, 'address')),
       bookings: parseList(pick(json, 'bookings'), Booking.fromJson),
+      otps: parseList(pick(json, 'otps'), OrderOtps.fromJson),
     );
   }
+}
+
+/// A booking's handshake codes, tagged with which booking they belong to.
+///
+/// An order of three produces three pairs, and reading the wrong one to the
+/// wrong worker fails the check — so they travel with their booking id rather
+/// than as a bare list the UI has to index by position.
+class OrderOtps {
+  const OrderOtps({
+    required this.bookingId,
+    required this.startOtp,
+    required this.completionOtp,
+  });
+
+  final String bookingId;
+  final String startOtp;
+  final String completionOtp;
+
+  BookingOtps get pair =>
+      BookingOtps(startOtp: startOtp, completionOtp: completionOtp);
+
+  factory OrderOtps.fromJson(Json json) => OrderOtps(
+        bookingId: asString(pick(json, 'bookingId')),
+        startOtp: asString(pick(json, 'startOtp')),
+        completionOtp: asString(pick(json, 'completionOtp')),
+      );
 }
 
 class SavedAddress {
@@ -418,6 +461,7 @@ class Booking {
     this.isEmergency = false,
     this.scheduledAt,
     this.createdAt,
+    this.orderId,
   });
 
   final String id;
@@ -434,6 +478,12 @@ class Booking {
   final bool isEmergency;
   final DateTime? scheduledAt;
   final DateTime? createdAt;
+
+  /// The order this visit was booked as part of, if any.
+  ///
+  /// Null for a booking made before multi-service checkout existed, and for
+  /// the emergency path, which places one booking directly.
+  final String? orderId;
 
   /// Still moving — belongs on the home screen's active card.
   bool get isActive =>
@@ -464,6 +514,7 @@ class Booking {
         isEmergency: asBool(pick(json, 'isEmergency')),
         scheduledAt: asDateOrNull(pick(json, 'scheduledAt')),
         createdAt: asDateOrNull(pick(json, 'createdAt')),
+        orderId: asStringOrNull(pick(json, 'orderId')),
       );
 }
 

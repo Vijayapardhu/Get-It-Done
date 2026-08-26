@@ -11,20 +11,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // Riverpod 3 — it lives in misc.dart.
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:getitdone_customer/app/tabs.dart';
+import 'package:getitdone_customer/features/bookings/bookings_tab.dart';
 import 'package:getitdone_customer/core/api/gid_api.dart';
 import 'package:getitdone_customer/core/models/account_models.dart';
 import 'package:getitdone_customer/core/models/models.dart';
 import 'package:getitdone_customer/core/providers.dart';
 import 'package:getitdone_customer/design/design_system.dart';
-import 'package:getitdone_customer/features/account/plans_and_invoices.dart';
+import 'package:getitdone_customer/features/account/invoices_screen.dart';
+import 'package:getitdone_customer/features/account/recurring_plans_screen.dart';
 import 'package:getitdone_customer/features/account/profile_tab.dart';
-import 'package:getitdone_customer/features/account/settings_screens.dart';
+import 'package:getitdone_customer/features/account/language_screen.dart';
+import 'package:getitdone_customer/features/account/notification_settings_screen.dart';
 import 'package:getitdone_customer/features/chat/chat_screens.dart';
 import 'package:getitdone_customer/core/models/payment_models.dart';
 import 'package:getitdone_customer/core/cart/cart.dart';
 import 'package:getitdone_customer/core/cart/checkout.dart';
 import 'package:getitdone_customer/features/cart/cart_screen.dart';
+import 'package:getitdone_customer/features/orders/order_confirmed_screen.dart';
 import 'package:getitdone_customer/features/catalogue/service_detail_screen.dart';
 import 'package:getitdone_customer/features/emergency/emergency_screen.dart';
 import 'package:getitdone_customer/features/home/home_screen.dart';
@@ -170,6 +173,24 @@ class _StubCheckout extends CheckoutController {
   @override
   CheckoutState build() => _state;
 }
+
+final _placedOrder = PlacedOrder.fromJson({
+  'order': {
+    'id': 'o1',
+    'mode': 'scheduled',
+    'total': 764.64,
+    'scheduledAt': '2026-08-28T10:30:00.000Z',
+    'address': 'Flat 402, Sai Enclave, Benz Circle, Vijayawada 520010',
+  },
+  'bookings': [
+    {'id': 'b1', 'status': 'assigned', 'serviceName': 'Plumbing', 'price': 352.82},
+    {'id': 'b2', 'status': 'requested', 'serviceName': 'Electrical', 'price': 411.82},
+  ],
+  'otps': [
+    {'bookingId': 'b1', 'startOtp': '482915', 'completionOtp': '730164'},
+    {'bookingId': 'b2', 'startOtp': '215907', 'completionOtp': '648302'},
+  ],
+});
 
 final _bookings = <Booking>[
   Booking.fromJson({
@@ -490,6 +511,15 @@ void main() {
               ),
             )),
       ],
+    );
+  });
+
+  testWidgets('order confirmed', (tester) async {
+    await shoot(
+      tester,
+      'order_confirmed_light',
+      OrderConfirmedScreen(order: _placedOrder, onTrack: (_) {}, onDone: () {}),
+      size: const Size(390, 1400),
     );
   });
 

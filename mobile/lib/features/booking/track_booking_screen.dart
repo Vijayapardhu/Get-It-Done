@@ -30,12 +30,16 @@ class TrackBookingScreen extends ConsumerStatefulWidget {
     required this.onOpenCodes,
     required this.onOpenWorker,
     required this.onReview,
+    required this.onOpenOrder,
   });
 
   final String bookingId;
   final VoidCallback onOpenCodes;
   final ValueChanged<String> onOpenWorker;
   final ValueChanged<Booking> onReview;
+
+  /// Open the order this visit was booked in, when it was part of one.
+  final ValueChanged<String> onOpenOrder;
 
   @override
   ConsumerState<TrackBookingScreen> createState() => _TrackBookingScreenState();
@@ -168,6 +172,31 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
                         size: AppButtonSize.medium,
                         onPressed: widget.onOpenCodes,
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: Space.x4),
+              ],
+
+              // Part of a larger order. Without this the customer has no way
+              // back to everything they booked in one go, and no way to tell
+              // whether the second visit ever found anybody.
+              if (data.booking.orderId != null) ...[
+                AppCard(
+                  onTap: () => widget.onOpenOrder(data.booking.orderId!),
+                  elevated: false,
+                  padding: const EdgeInsets.all(Space.x4),
+                  child: Row(
+                    children: [
+                      AppIcon(AppIcons.bookings, size: Sizes.iconMd, color: t.textTertiary),
+                      const SizedBox(width: Space.x3),
+                      Expanded(
+                        child: Text(
+                          'Booked with other services',
+                          style: context.text.bodyMedium,
+                        ),
+                      ),
+                      AppIcon(AppIcons.chevronRight, size: Sizes.iconSm, color: t.textTertiary),
                     ],
                   ),
                 ),

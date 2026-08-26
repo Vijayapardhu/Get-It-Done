@@ -14,10 +14,12 @@ import '../features/emergency/emergency_screen.dart';
 import '../features/cart/cart_bar.dart';
 import '../features/catalogue/service_detail_screen.dart';
 import '../features/cart/cart_screen.dart';
-import '../features/cart/slot_picker_screen.dart';
+import '../features/orders/order_confirmed_screen.dart';
+import '../features/orders/order_detail_screen.dart';
 import '../features/home/home_screen.dart';
 import 'search_screen.dart';
-import 'tabs.dart';
+import '../features/bookings/bookings_tab.dart';
+import '../features/notifications/notifications_tab.dart';
 import 'trust_screen.dart';
 
 /// Root widget.
@@ -192,6 +194,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       )),
       onOpenWorker: (workerId) => _push(TrustScreen(workerId: workerId)),
       onReview: (completed) => _push(ReviewScreen(booking: completed)),
+      onOpenOrder: _openOrder,
     ));
   }
 
@@ -304,28 +307,27 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   /// An order is several bookings, so there is no single booking to open.
   ///
-  /// Land on the bookings tab with the cart dropped from the stack: going
-  /// "back" into a cart that has just been emptied and checked out is a dead
-  /// end, and what the customer wants next is to see what they booked.
+  /// It goes to the confirmation page rather than a snackbar, because that page
+  /// carries the handshake codes and the server issues those exactly once.
+  /// Pushed with a replacement so "back" cannot return to the emptied cart.
   void _onOrderPlaced(PlacedOrder order) {
-    _navigatorKeys[_tab].currentState?.popUntil((route) => route.isFirst);
-    setState(() => _tab = 1);
+    _navigatorKeys[_tab].currentState?.pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => OrderConfirmedScreen(
+              order: order,
+              onTrack: (booking) => _openBooking(booking),
+              onDone: () {
+                _navigatorKeys[_tab].currentState?.popUntil((route) => route.isFirst);
+                setState(() => _tab = 1);
+              },
+            ),
+          ),
+        );
+  }
 
-    final scheduled = order.scheduledAt;
-    final when = scheduled == null
-        ? 'We are finding workers now.'
-        : 'Scheduled for ${formatSlot(scheduled)}.';
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          order.bookingCount == 1
-              ? 'Booking confirmed. $when'
-              : '${order.bookingCount} bookings confirmed. $when',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  /// Everything booked together, and how the whole order is going.
+  void _openOrder(String orderId) {
+    _push(OrderDetailScreen(orderId: orderId, onOpenBooking: _openBooking));
   }
 
   /// Profile is reached from the avatar in the home header rather than a tab.

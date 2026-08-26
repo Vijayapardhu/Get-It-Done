@@ -261,7 +261,7 @@ export async function getBookingForUser(id: string, userId: string, role: string
   const result = await pool.query(
     `SELECT b.id, b.customer_id as "customerId", b.worker_id as "workerId", b.service_id as "serviceId",
             b.status, b.scheduled_at as "scheduledAt", b.is_emergency as "isEmergency",
-            b.address, b.description, b.price, b.created_at as "createdAt", b.updated_at as "updatedAt",
+            b.address, b.description, b.price, b.order_id as "orderId", b.created_at as "createdAt", b.updated_at as "updatedAt",
             b.start_otp_hash, b.completion_otp_hash,
             b.start_verified_at as "startVerifiedAt", b.completion_verified_at as "completionVerifiedAt"
      FROM bookings b
@@ -309,7 +309,7 @@ export async function transitionBooking(id: string, actorId: string, role: strin
 }
 
 export async function listBookingsForUser(userId: string, role: string) {
-  const result = await pool.query(`select distinct b.id, b.customer_id as "customerId", b.worker_id as "workerId", b.service_id as "serviceId", b.status, b.scheduled_at as "scheduledAt", b.is_emergency as "isEmergency", b.address, b.price, b.created_at as "createdAt" from bookings b left join workers w on w.id = b.worker_id where $1 in ('society_admin', 'federation_admin', 'system_admin', 'support_staff') or b.customer_id = $2 or w.user_id = $2 order by b.created_at desc limit 100`, [role, userId]);
+  const result = await pool.query(`select distinct b.id, b.customer_id as "customerId", b.worker_id as "workerId", b.service_id as "serviceId", b.status, b.scheduled_at as "scheduledAt", b.is_emergency as "isEmergency", b.address, b.price, b.order_id as "orderId", b.created_at as "createdAt" from bookings b left join workers w on w.id = b.worker_id where $1 in ('society_admin', 'federation_admin', 'system_admin', 'support_staff') or b.customer_id = $2 or w.user_id = $2 order by b.created_at desc limit 100`, [role, userId]);
   return result.rows;
 }
 

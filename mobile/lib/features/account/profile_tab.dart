@@ -5,8 +5,11 @@ import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../address/address_screen.dart';
 import '../support/support_screens.dart';
-import 'plans_and_invoices.dart';
-import 'settings_screens.dart';
+import 'invoices_screen.dart';
+import 'recurring_plans_screen.dart';
+import 'edit_profile_screen.dart';
+import 'language_screen.dart';
+import 'notification_settings_screen.dart';
 
 /// Profile and settings.
 ///

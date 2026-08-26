@@ -351,6 +351,12 @@ final bookingPaymentProvider =
 /// A failure here is NOT fatal. [AppConfig] still carries build-time values as
 /// a development fallback, so a dev machine with the backend down keeps
 /// working — see `effectiveConfigProvider`.
+/// One order and its bookings, keyed by order id.
+final orderProvider =
+    FutureProvider.autoDispose.family<PlacedOrder, String>((ref, id) async {
+  return ref.watch(apiProvider).order(id);
+});
+
 /// One service's detail page content, keyed by id.
 ///
 /// autoDispose so browsing a dozen services does not keep a dozen payloads
