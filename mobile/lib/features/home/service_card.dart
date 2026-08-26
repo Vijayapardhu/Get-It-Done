@@ -96,6 +96,14 @@ class _Artwork extends ConsumerWidget {
               // tinted field, so it carries the whole square.
               size: double.infinity,
               radius: BorderRadius.zero,
+              // Full bleed. Catalogue artwork is a background-removed subject,
+              // and the default proportional inset shrank it to about half the
+              // square with a ring of empty tint around it.
+              padding: EdgeInsets.zero,
+              // Never animated. These tiles are the app's densest surface, and
+              // a grid of looping Lottie files is a battery drain that reads as
+              // noise; the catalogue is a still picture per service.
+              animate: false,
             ),
           ),
 

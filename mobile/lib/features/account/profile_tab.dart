@@ -28,8 +28,17 @@ class ProfileTab extends ConsumerWidget {
         );
 
     return Scaffold(
+      // Profile is a pushed route now rather than a tab, so it carries a back
+      // affordance. Transparent and titleless: the identity block below is the
+      // heading, and an app bar saying "Profile" above a name and a photo is
+      // a label on a label.
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
       body: ListView(
-        padding: const EdgeInsets.only(top: Space.x8, bottom: Space.x20),
+        padding: const EdgeInsets.only(top: Space.x4, bottom: Space.x20),
         children: [
           // ── Identity ──────────────────────────────────────────────────
           Padding(

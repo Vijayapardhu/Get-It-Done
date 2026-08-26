@@ -23,10 +23,16 @@ class AppNavItem {
 
 /// Bottom navigation.
 ///
-/// Active state is colour plus a soft-filled pill behind the icon — NOT a
-/// heavier icon weight. The free Hugeicons set is stroke-only, and swapping
-/// weights would shift glyph width and make the bar jitter as you navigate.
-/// The pill is steadier and reads as more deliberate.
+/// A floating pill rather than a full-width bar welded to the bottom edge. Two
+/// reasons beyond the look: content scrolls visibly underneath it, so the page
+/// reads as continuing rather than stopping at a wall; and the bar no longer
+/// has to span the screen, which stops three destinations from being stretched
+/// across a width meant for five.
+///
+/// Only the active destination carries its label. The icons alone are not
+/// self-evident — "Alerts" and "Bookings" are a bell and a calendar, which
+/// could be either — so the label appears where you are, and the pill animates
+/// between destinations. That keeps the bar quiet without making it a rebus.
 class AppBottomNav extends StatelessWidget {
   const AppBottomNav({
     super.key,
@@ -43,29 +49,34 @@ class AppBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: t.surface,
-        border: Border(top: BorderSide(color: t.border)),
-        boxShadow: t.raisedShadow,
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: Sizes.bottomNavHeight,
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Space.x5, 0, Space.x5, Space.x3),
+        child: Container(
+          padding: const EdgeInsets.all(Space.x1),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: Radii.rPill,
+            border: Border.all(color: t.border),
+            boxShadow: t.raisedShadow,
+          ),
+          // Sized to content, NOT Flexible. Flexible gives every destination an
+          // equal share, which is precisely wrong here: the active one is
+          // wider because it carries a label, and equal shares clipped it to
+          // "Ho…". spaceEvenly then distributes what is left over.
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: _NavButton(
-                    item: items[i],
-                    active: i == currentIndex,
-                    onTap: () {
-                      if (i == currentIndex) return;
-                      HapticFeedback.selectionClick();
-                      onTap(i);
-                    },
-                  ),
+                _NavButton(
+                  item: items[i],
+                  active: i == currentIndex,
+                  onTap: () {
+                    if (i == currentIndex) return;
+                    HapticFeedback.selectionClick();
+                    onTap(i);
+                  },
                 ),
             ],
           ),
@@ -85,7 +96,7 @@ class _NavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final color = active ? t.primary : t.textTertiary;
+    final color = active ? t.textOnPrimary : t.textTertiary;
 
     return Semantics(
       button: true,
@@ -94,41 +105,62 @@ class _NavButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AnimatedContainer(
-                  duration: Motion.base,
-                  curve: Motion.curve,
-                  padding: const EdgeInsets.symmetric(horizontal: Space.x4, vertical: Space.x1),
-                  decoration: BoxDecoration(
-                    color: active ? t.primarySoft : Colors.transparent,
-                    borderRadius: Radii.rPill,
-                  ),
-                  child: AppIcon(item.icon, size: Sizes.iconMd, color: color, bold: active),
-                ),
-                if (item.badgeCount != null && item.badgeCount! > 0)
-                  Positioned(
-                    right: Space.x2,
-                    top: -2,
-                    child: _CountDot(count: item.badgeCount!),
-                  ),
-              ],
-            ),
-            const SizedBox(height: Space.x1),
-            AnimatedDefaultTextStyle(
-              duration: Motion.base,
-              style: context.text.labelSmall!.copyWith(
-                color: color,
-                letterSpacing: 0,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+        child: AnimatedContainer(
+          duration: Motion.base,
+          curve: Motion.curveEmphasis,
+          height: 48,
+          padding: EdgeInsets.symmetric(horizontal: active ? Space.x4 : Space.x3),
+          decoration: BoxDecoration(
+            color: active ? t.primary : Colors.transparent,
+            borderRadius: Radii.rPill,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AppIcon(item.icon, size: Sizes.iconMd, color: color, bold: active),
+                  if (item.badgeCount != null && item.badgeCount! > 0)
+                    Positioned(
+                      right: -6,
+                      top: -4,
+                      child: _CountDot(count: item.badgeCount!),
+                    ),
+                ],
               ),
-              child: Text(item.label),
-            ),
-          ],
+              // The label grows out of the pill rather than fading in place, so
+              // the eye follows one moving shape instead of watching text
+              // appear and disappear in three positions.
+              // Flexible, so the pill compresses instead of overflowing. Four
+              // destinations at a large text scale do not fit a phone at the
+              // label's natural width, and a nav bar is the one component that
+              // must survive being given more items than it was designed for.
+              Flexible(
+                child: AnimatedSize(
+                  duration: Motion.base,
+                  curve: Motion.curveEmphasis,
+                  alignment: Alignment.centerLeft,
+                  child: active
+                      ? Padding(
+                          padding: const EdgeInsets.only(left: Space.x2),
+                          child: Text(
+                            item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.fade,
+                            softWrap: false,
+                            style: context.text.labelMedium?.copyWith(
+                              color: color,
+                              letterSpacing: 0,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -168,9 +200,9 @@ class _CountDot extends StatelessWidget {
 /// The floating emergency CTA.
 ///
 /// Sits ABOVE the navigation bar rather than merging into it — the emergency
-/// path is a different mode, and burying it as a fifth tab makes it read as
-/// just another destination. Danger-toned so it is unmistakable, and small
-/// enough that it does not dominate a screen the user is only browsing.
+/// path is a different mode, and burying it as a tab makes it read as just
+/// another destination. Danger-toned so it is unmistakable, and small enough
+/// that it does not dominate a screen the user is only browsing.
 class EmergencyFab extends StatefulWidget {
   const EmergencyFab({
     super.key,

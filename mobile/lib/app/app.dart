@@ -151,7 +151,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   /// Each tab keeps its own navigator, so switching tabs does not discard a
   /// half-finished booking flow.
-  final _navigatorKeys = List.generate(4, (_) => GlobalKey<NavigatorState>());
+  final _navigatorKeys = List.generate(3, (_) => GlobalKey<NavigatorState>());
 
   Future<bool> _onWillPop() async {
     final navigator = _navigatorKeys[_tab].currentState;
@@ -267,7 +267,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 // "Get it done now" opens the same emergency picker as the FAB,
                 // rather than a second instant path that would diverge from it.
                 onStartEmergency: () => _showEmergencySheet(context),
-                onOpenProfile: () => setState(() => _tab = 3),
+                onOpenProfile: _openProfile,
               ),
             ),
             _TabNavigator(
@@ -278,15 +278,14 @@ class _AppShellState extends ConsumerState<AppShell> {
               navigatorKey: _navigatorKeys[2],
               child: const NotificationsTab(),
             ),
-            _TabNavigator(
-              navigatorKey: _navigatorKeys[3],
-              child: ProfileTab(onToggleTheme: widget.onToggleTheme),
-            ),
           ],
         ),
-        floatingActionButton: _tab == 0
-            ? EmergencyFab(onPressed: () => _showEmergencySheet(context))
-            : null,
+        // No emergency FAB. It floated over the catalogue grid, covering the
+        // third card in the first row, and it duplicated a path that already
+        // has a home: "Get it done now" in the header opens the same picker.
+        // The feature is unchanged — only the second, overlapping doorway to
+        // it is gone.
+        //
         // The cart bar sits above the navigation rather than on the home
         // screen, so someone who added two services and then wandered into
         // Bookings can still see what they were in the middle of. It collapses
@@ -302,7 +301,6 @@ class _AppShellState extends ConsumerState<AppShell> {
             const AppNavItem(icon: AppIcons.home, label: 'Home'),
             const AppNavItem(icon: AppIcons.bookings, label: 'Bookings'),
             AppNavItem(icon: AppIcons.notifications, label: 'Alerts', badgeCount: unread),
-            const AppNavItem(icon: AppIcons.profile, label: 'Profile'),
           ],
         ),
           ],
@@ -315,6 +313,16 @@ class _AppShellState extends ConsumerState<AppShell> {
   /// sending the user back to Home to find it.
   void _openCart() {
     _push(CartScreen(onCheckout: null));
+  }
+
+  /// Profile is reached from the avatar in the home header rather than a tab.
+  ///
+  /// It is a place you visit occasionally to change something, not one of the
+  /// three things this app is for; a permanent tab spent a quarter of the bar
+  /// on settings. Pushed as a route, so the back gesture returns you to what
+  /// you were doing.
+  void _openProfile() {
+    _push(ProfileTab(onToggleTheme: widget.onToggleTheme));
   }
 
   void _showEmergencySheet(BuildContext context) {

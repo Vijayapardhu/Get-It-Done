@@ -21,6 +21,7 @@ class ServiceArtwork extends ConsumerWidget {
     this.size = 44,
     this.animate = false,
     this.radius,
+    this.padding,
   })  : _name = null,
         _imageUrl = null,
         _animationUrl = null,
@@ -37,6 +38,7 @@ class ServiceArtwork extends ConsumerWidget {
     this.size = 44,
     this.animate = false,
     this.radius,
+    this.padding,
   })  : service = null,
         _name = name,
         _imageUrl = imageUrl,
@@ -51,6 +53,14 @@ class ServiceArtwork extends ConsumerWidget {
   final bool animate;
 
   final BorderRadius? radius;
+
+  /// Inset between the tile edge and the artwork.
+  ///
+  /// Defaults to AppArtwork's proportional breathing room, which suits a line
+  /// glyph. Pass [EdgeInsets.zero] for a catalogue card, where the artwork is a
+  /// background-removed subject that should fill its square rather than float
+  /// in the middle of one.
+  final EdgeInsets? padding;
 
   final String? _name;
   final String? _imageUrl;
@@ -86,6 +96,7 @@ class ServiceArtwork extends ConsumerWidget {
           : null,
       size: size,
       radius: radius,
+      padding: padding,
       background: background,
       foreground: foreground,
       animate: animate,

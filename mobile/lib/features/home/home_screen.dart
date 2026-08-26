@@ -108,7 +108,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               data: (list) => Padding(
-                padding: Space.pageInsets,
+                padding: _ServiceGrid.insets,
                 child: _ServiceGrid(
                   services: list,
                   onOpenService: onOpenService,
@@ -398,8 +398,14 @@ class _ServiceGrid extends StatelessWidget {
   final List<Service> services;
   final ValueChanged<Service> onOpenService;
 
-  static const _gap = Space.x3;
+  // Tighter than the page's own rhythm on purpose. Three columns on a phone
+  // leave the tile width fixed by arithmetic, so every point taken out of the
+  // gutters goes straight into the artwork.
+  static const _gap = Space.x2;
   static const _minTile = 104.0;
+
+  /// The grid runs closer to the screen edge than the prose around it.
+  static const insets = EdgeInsets.symmetric(horizontal: Space.x4);
 
   static int columnsFor(double width, double textScale) {
     final target = _minTile * (textScale > 1.3 ? 1.4 : 1);
@@ -522,7 +528,7 @@ class _ServiceGridSkeletons extends StatelessWidget {
     // Same geometry as the loaded grid. A placeholder of a different shape
     // makes the page jump at the moment the user is deciding where to tap.
     return Padding(
-      padding: Space.pageInsets,
+      padding: _ServiceGrid.insets,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final columns = _ServiceGrid.columnsFor(
@@ -537,10 +543,10 @@ class _ServiceGridSkeletons extends StatelessWidget {
             itemCount: columns * 2,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
-              crossAxisSpacing: Space.x3,
-              mainAxisSpacing: Space.x3,
+              crossAxisSpacing: Space.x2,
+              mainAxisSpacing: Space.x2,
               mainAxisExtent:
-                  (constraints.maxWidth - Space.x3 * (columns - 1)) / columns +
+                  (constraints.maxWidth - Space.x2 * (columns - 1)) / columns +
                       _ServiceGrid.footerHeight(context),
             ),
             itemBuilder: (_, __) => const _ServiceCardSkeleton(),
