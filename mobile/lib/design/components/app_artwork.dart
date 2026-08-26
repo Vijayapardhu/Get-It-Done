@@ -63,24 +63,50 @@ class AppArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // `size: double.infinity` means "fill whatever box you are given" — a grid
+    // cell, an aspect-ratio square. The glyph, the inset and the corner radius
+    // are all proportional to the tile, so in that case they have to come from
+    // the constraints instead; multiplying infinity by 0.18 is an infinite
+    // padding and a layout assertion rather than a big tile.
+    if (!size.isFinite) {
+      return LayoutBuilder(
+        builder: (context, constraints) => _paint(
+          context,
+          _edgeOf(constraints, MediaQuery.sizeOf(context)),
+          expand: true,
+        ),
+      );
+    }
+    return _paint(context, size, expand: false);
+  }
+
+  /// The shorter finite edge of the box, which is what a square tile's
+  /// proportions should key off.
+  static double _edgeOf(BoxConstraints constraints, Size screen) {
+    final width = constraints.hasBoundedWidth ? constraints.maxWidth : screen.width;
+    final height = constraints.hasBoundedHeight ? constraints.maxHeight : screen.height;
+    return width < height ? width : height;
+  }
+
+  Widget _paint(BuildContext context, double edge, {required bool expand}) {
     final t = context.tokens;
     final resolvedBackground = background ?? t.primarySoft;
     final resolvedForeground = foreground ?? t.primary;
-    final resolvedRadius = radius ?? BorderRadius.circular(size * 0.32);
+    final resolvedRadius = radius ?? BorderRadius.circular(edge * 0.32);
 
     return Container(
-      width: size,
-      height: size,
+      width: expand ? null : edge,
+      height: expand ? null : edge,
       decoration: BoxDecoration(color: resolvedBackground, borderRadius: resolvedRadius),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: padding ?? EdgeInsets.all(size * 0.18),
-        child: _content(context, resolvedForeground),
+        padding: padding ?? EdgeInsets.all(edge * 0.18),
+        child: _content(context, resolvedForeground, edge),
       ),
     );
   }
 
-  Widget _content(BuildContext context, Color foreground) {
+  Widget _content(BuildContext context, Color foreground, double edge) {
     final animation = animationUrl;
     if (animation != null && animation.isNotEmpty) {
       return Lottie.network(
@@ -89,36 +115,36 @@ class AppArtwork extends StatelessWidget {
         fit: BoxFit.contain,
         // Lottie has no error callback that can rebuild, so the frame builder
         // carries the fallback for both the loading and the failed case.
-        errorBuilder: (context, error, stack) => _image(context, foreground),
+        errorBuilder: (context, error, stack) => _image(context, foreground, edge),
         frameBuilder: (context, child, composition) {
-          if (composition == null) return _image(context, foreground);
+          if (composition == null) return _image(context, foreground, edge);
           return child;
         },
       );
     }
-    return _image(context, foreground);
+    return _image(context, foreground, edge);
   }
 
-  Widget _image(BuildContext context, Color foreground) {
+  Widget _image(BuildContext context, Color foreground, double edge) {
     final image = imageUrl;
-    if (image == null || image.isEmpty) return _glyph(foreground);
+    if (image == null || image.isEmpty) return _glyph(foreground, edge);
 
     return CachedNetworkImage(
       imageUrl: image,
       fit: BoxFit.contain,
       // No spinner. A 44px tile with a spinner in it reads as broken; the
       // glyph is a complete, correct rendering that happens to be replaced.
-      placeholder: (context, _) => _glyph(foreground),
-      errorWidget: (context, _, __) => _glyph(foreground),
+      placeholder: (context, _) => _glyph(foreground, edge),
+      errorWidget: (context, _, __) => _glyph(foreground, edge),
       fadeInDuration: Motion.base,
       // The tile is small and fixed; decoding at full resolution wastes
       // memory across a long list.
-      memCacheWidth: (size * MediaQuery.devicePixelRatioOf(context) * 2).round(),
+      memCacheWidth: (edge * MediaQuery.devicePixelRatioOf(context) * 2).round(),
     );
   }
 
-  Widget _glyph(Color foreground) => Center(
-        child: AppIcon(fallbackIcon, size: iconSize ?? size * 0.5, color: foreground),
+  Widget _glyph(Color foreground, double edge) => Center(
+        child: AppIcon(fallbackIcon, size: iconSize ?? edge * 0.5, color: foreground),
       );
 }
 

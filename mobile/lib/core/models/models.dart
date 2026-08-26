@@ -36,6 +36,17 @@ class AppUser {
   bool get isWorker => role == 'worker';
   String get shortName => name.trim().split(RegExp(r'\s+')).first;
 
+  /// One or two letters for an avatar with no photo behind it.
+  ///
+  /// Empty rather than a placeholder glyph-in-text when there is no usable
+  /// name, so the caller can fall back to an icon instead of drawing "?".
+  String get initials {
+    final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return '';
+    if (words.length == 1) return words.first.substring(0, 1).toUpperCase();
+    return (words.first.substring(0, 1) + words.last.substring(0, 1)).toUpperCase();
+  }
+
   /// Handles both `/auth/me` (camelCase) and `/users/me` (snake_case), which
   /// return the same resource in two different shapes.
   factory AppUser.fromJson(Json json) => AppUser(
@@ -87,6 +98,7 @@ class Service {
     this.categoryImageUrl,
     this.categoryAnimationUrl,
     this.categoryAccentColor,
+    this.listPrice,
   });
 
   final String id;
@@ -122,6 +134,19 @@ class Service {
   /// Hex accent (`#3B63F5`) from the category, if it defines one.
   final String? categoryAccentColor;
 
+  /// The "was" price a promotion is struck through against.
+  ///
+  /// Null is the normal case, and the card then shows one price and claims no
+  /// discount. See [hasDiscount] — a list price equal to or below the charge is
+  /// treated as no promotion at all rather than rendered as a saving of zero.
+  final double? listPrice;
+
+  bool get hasDiscount => listPrice != null && listPrice! > basePrice;
+
+  /// Whole-percent saving, for the badge. Null when there is no promotion.
+  int? get discountPercent =>
+      hasDiscount ? (100 - (basePrice / listPrice! * 100)).round() : null;
+
   /// The best artwork available, most specific first. Null means the client
   /// falls back to its built-in glyph.
   String? get artworkImage => imageUrl ?? categoryImageUrl;
@@ -137,8 +162,14 @@ class Service {
         description: asStringOrNull(pick(json, 'description')),
         emergencySupported: asBool(pick(json, 'emergencySupported')),
         availableWorkers: asIntOrNull(pick(json, 'availableWorkers')),
-        rating: asDoubleOrNull(pick(json, 'avgRating', aliases: ['rating'])),
-        reviewCount: asIntOrNull(pick(json, 'reviewCount')),
+        // `/services` sends ratingAverage/ratingCount aggregated from real
+        // reviews; `/services/discovery/*` sends avgRating/reviewCount.
+        rating: asDoubleOrNull(
+          pick(json, 'ratingAverage', aliases: ['avgRating', 'rating']),
+        ),
+        reviewCount: asIntOrNull(
+          pick(json, 'ratingCount', aliases: ['reviewCount']),
+        ),
         distanceKm: asDoubleOrNull(
           pick(json, 'distanceKm', aliases: ['min_distance_km', 'minDistanceKm']),
         ),
@@ -147,6 +178,7 @@ class Service {
         categoryImageUrl: asStringOrNull(pick(json, 'categoryImageUrl')),
         categoryAnimationUrl: asStringOrNull(pick(json, 'categoryAnimationUrl')),
         categoryAccentColor: asStringOrNull(pick(json, 'categoryAccentColor')),
+        listPrice: asDoubleOrNull(pick(json, 'listPrice')),
       );
 }
 

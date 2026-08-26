@@ -16,7 +16,11 @@ const noArtwork = {
   animationUrl: null,
   categoryImageUrl: null,
   categoryAnimationUrl: null,
-  categoryAccentColor: null
+  categoryAccentColor: null,
+  /** No promotion and no reviews: the cards render one price and no stars. */
+  listPrice: null,
+  ratingAverage: null,
+  ratingCount: 0
 } as const;
 
 export const demoServices: Service[] = [

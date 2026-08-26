@@ -82,6 +82,10 @@ final _services = <Service>[
     'name': 'Plumbing',
     'category': 'Home Repair',
     'basePrice': 299,
+    // Rated, and on promotion: exercises both conditional bits of the card.
+    'ratingAverage': 4.7,
+    'ratingCount': 7,
+    'listPrice': 399,
     'imageUrl': '/media/artwork/plumbing.png',
     'animationUrl': '/media/artwork/plumbing.json',
     'categoryAccentColor': '#2FA0A0',
@@ -91,6 +95,9 @@ final _services = <Service>[
     'name': 'Electrical',
     'category': 'Home Repair',
     'basePrice': 349,
+    // Rated but not discounted.
+    'ratingAverage': 4.9,
+    'ratingCount': 42,
     'imageUrl': '/media/artwork/electrical.png',
     'animationUrl': '/media/artwork/electrical.json',
     'categoryAccentColor': '#2FA0A0',
@@ -336,8 +343,35 @@ void main() {
           onOpenBooking: (_) {},
           onOpenSearch: () {},
           onOpenWorker: (_) {},
+          onStartEmergency: () {},
+          onOpenProfile: () {},
         ),
       ),
+      overrides: [
+        servicesProvider.overrideWith((ref) async => _services),
+        dashboardProvider.overrideWith((ref) async => CustomerDashboard(upcoming: _bookings)),
+        addressesProvider.overrideWith((ref) async => const <SavedAddress>[]),
+      ],
+    );
+  });
+
+  // A tall render of the whole page, for reviewing the catalogue below the
+  // fold. 844 shows the hero and the first row of cards and nothing else.
+  testWidgets('home full', (tester) async {
+    await shoot(
+      tester,
+      'home_screen_full_light',
+      Scaffold(
+        body: HomeScreen(
+          onOpenService: (_) {},
+          onOpenBooking: (_) {},
+          onOpenSearch: () {},
+          onOpenWorker: (_) {},
+          onStartEmergency: () {},
+          onOpenProfile: () {},
+        ),
+      ),
+      size: const Size(390, 1700),
       overrides: [
         servicesProvider.overrideWith((ref) async => _services),
         dashboardProvider.overrideWith((ref) async => CustomerDashboard(upcoming: _bookings)),

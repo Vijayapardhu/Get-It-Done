@@ -28,6 +28,7 @@ export 'components/service_tile.dart';
 export 'components/worker_card.dart';
 export 'icons/app_icons.dart';
 export 'icons/service_icons.dart';
+export 'tokens/money.dart';
 export 'theme/app_theme.dart';
 export 'tokens/colors.dart';
 export 'tokens/motion.dart';

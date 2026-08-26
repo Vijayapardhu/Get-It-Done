@@ -12,6 +12,8 @@ import '../features/booking/booking_otp_screen.dart';
 import '../features/booking/review_screen.dart';
 import '../features/booking/track_booking_screen.dart';
 import '../features/emergency/emergency_screen.dart';
+import '../features/cart/cart_bar.dart';
+import '../features/cart/cart_screen.dart';
 import '../features/home/home_screen.dart';
 import 'search_screen.dart';
 import 'tabs.dart';
@@ -262,6 +264,10 @@ class _AppShellState extends ConsumerState<AppShell> {
                 onOpenSearch: () => _push(SearchScreen(onOpenService: _openService)),
                 onOpenBooking: _openBooking,
                 onOpenWorker: (workerId) => _push(TrustScreen(workerId: workerId)),
+                // "Get it done now" opens the same emergency picker as the FAB,
+                // rather than a second instant path that would diverge from it.
+                onStartEmergency: () => _showEmergencySheet(context),
+                onOpenProfile: () => setState(() => _tab = 3),
               ),
             ),
             _TabNavigator(
@@ -281,7 +287,15 @@ class _AppShellState extends ConsumerState<AppShell> {
         floatingActionButton: _tab == 0
             ? EmergencyFab(onPressed: () => _showEmergencySheet(context))
             : null,
-        bottomNavigationBar: AppBottomNav(
+        // The cart bar sits above the navigation rather than on the home
+        // screen, so someone who added two services and then wandered into
+        // Bookings can still see what they were in the middle of. It collapses
+        // to nothing when the cart is empty.
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CartBar(onOpenCart: _openCart),
+            AppBottomNav(
           currentIndex: _tab,
           onTap: (i) => setState(() => _tab = i),
           items: [
@@ -291,8 +305,16 @@ class _AppShellState extends ConsumerState<AppShell> {
             const AppNavItem(icon: AppIcons.profile, label: 'Profile'),
           ],
         ),
+          ],
+        ),
       ),
     );
+  }
+
+  /// The cart is app-level state, so it opens over the current tab rather than
+  /// sending the user back to Home to find it.
+  void _openCart() {
+    _push(CartScreen(onCheckout: null));
   }
 
   void _showEmergencySheet(BuildContext context) {

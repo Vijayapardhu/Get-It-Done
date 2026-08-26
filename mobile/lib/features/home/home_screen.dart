@@ -6,15 +6,8 @@ import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../../core/ui/service_artwork.dart';
-
-/// Edge of the artwork square in the "popular services" strip.
-///
-/// Was 60, sized for the line glyph. The backend now serves illustrated
-/// artwork, and an illustration is a scene rather than a single stroke: at 60
-/// the two figures in it are three pixels wide and the tile reads as a smudge.
-/// 108 is the smallest size at which the subject is recognisable, so the strip
-/// is built around that and the label sits under a card rather than a bead.
-const double _railArtwork = 108;
+import 'home_hero.dart';
+import 'service_card.dart';
 
 /// Home.
 ///
@@ -29,12 +22,20 @@ class HomeScreen extends ConsumerWidget {
     required this.onOpenBooking,
     required this.onOpenSearch,
     required this.onOpenWorker,
+    required this.onStartEmergency,
+    required this.onOpenProfile,
   });
 
   final ValueChanged<Service> onOpenService;
   final ValueChanged<Booking> onOpenBooking;
   final VoidCallback onOpenSearch;
   final ValueChanged<String> onOpenWorker;
+
+  /// "Get it done now" — the instant path, which is the emergency flow.
+  final VoidCallback onStartEmergency;
+
+  /// The avatar in the hero.
+  final VoidCallback onOpenProfile;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,30 +52,14 @@ class HomeScreen extends ConsumerWidget {
         await ref.read(dashboardProvider.future);
       },
       child: ListView(
-        padding: const EdgeInsets.only(top: Space.x4, bottom: Space.x20),
+        padding: const EdgeInsets.only(bottom: Space.x20),
         children: [
-          _LocationHeader(),
-          const SizedBox(height: Space.x5),
-
-          Padding(
-            padding: Space.pageInsets,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _greeting(user?.shortName),
-                  style: context.text.bodyMedium?.copyWith(color: t.textSecondary),
-                ),
-                const SizedBox(height: Space.x1),
-                Text('What do you need\nhelp with?', style: context.text.displayLarge),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: Space.x5),
-          Padding(
-            padding: Space.pageInsets,
-            child: AppSearchField(readOnly: true, onTap: onOpenSearch),
+          HomeHero(
+            greeting: _greeting(user?.shortName),
+            onOpenSearch: onOpenSearch,
+            onInstant: onStartEmergency,
+            onSchedule: onOpenSearch,
+            onOpenProfile: onOpenProfile,
           ),
 
           // ── Active booking ────────────────────────────────────────────
@@ -103,13 +88,16 @@ class HomeScreen extends ConsumerWidget {
 
           const SizedBox(height: Space.section),
 
-          // ── Popular services ──────────────────────────────────────────
+          // ── The catalogue ────────────────────────────────
+          // Every service, as pictures, rather than eight of them in a strip
+          // with the rest behind a "see all". The catalogue is small enough to
+          // show whole, and a customer who can see everything on offer does not
+          // have to guess whether the thing they want exists.
           Section(
-            title: 'Popular services',
-            actionLabel: 'See all',
-            onAction: onOpenSearch,
+            title: 'All home services',
+            subtitle: 'Add what you need, then book in one go.',
             child: services.when(
-              loading: () => const _ServiceChipSkeletons(),
+              loading: () => const _ServiceGridSkeletons(),
               error: (error, _) => Padding(
                 padding: Space.pageInsets,
                 child: AppBanner(
@@ -119,27 +107,11 @@ class HomeScreen extends ConsumerWidget {
                   onAction: () => ref.invalidate(servicesProvider),
                 ),
               ),
-              data: (list) => SizedBox(
-                height: ServiceChip.artworkHeight(_railArtwork),
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: Space.pageInsets,
-                  itemCount: list.length.clamp(0, 8),
-                  separatorBuilder: (_, __) => const SizedBox(width: Space.x3),
-                  itemBuilder: (context, i) => ServiceChip(
-                    name: list[i].name,
-                    category: list[i].category,
-                    artworkSize: _railArtwork,
-                    // The one place motion is on: a short horizontal strip of
-                    // featured services, where an animated tile draws the eye
-                    // to the primary action rather than competing with a grid.
-                    artwork: ServiceArtwork(
-                      service: list[i],
-                      size: _railArtwork,
-                      animate: true,
-                    ),
-                    onTap: () => onOpenService(list[i]),
-                  ),
+              data: (list) => Padding(
+                padding: Space.pageInsets,
+                child: _ServiceGrid(
+                  services: list,
+                  onOpenService: onOpenService,
                 ),
               ),
             ),
@@ -274,42 +246,6 @@ class HomeScreen extends ConsumerWidget {
             ? 'Good afternoon'
             : 'Good evening';
     return name == null || name.isEmpty ? part : '$part, $name';
-  }
-}
-
-class _LocationHeader extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = context.tokens;
-    final addresses = ref.watch(addressesProvider);
-
-    final label = addresses.maybeWhen(
-      data: (list) {
-        if (list.isEmpty) return 'Set your location';
-        final preferred = list.firstWhere((a) => a.isDefault, orElse: () => list.first);
-        return preferred.address;
-      },
-      orElse: () => 'Locating…',
-    );
-
-    return Padding(
-      padding: Space.pageInsets,
-      child: Row(
-        children: [
-          AppIcon(AppIcons.locationPin, size: Sizes.iconSm, color: t.primary, bold: true),
-          const SizedBox(width: Space.x1),
-          Flexible(
-            child: Text(
-              label,
-              style: context.text.labelMedium,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          AppIcon(AppIcons.chevronDown, size: Sizes.iconXs, color: t.textTertiary),
-        ],
-      ),
-    );
   }
 }
 
@@ -450,36 +386,168 @@ class _PastBookingRow extends StatelessWidget {
   }
 }
 
-class _ServiceChipSkeletons extends StatelessWidget {
-  const _ServiceChipSkeletons();
+/// The catalogue grid.
+///
+/// Three columns on a phone, more on anything wider. Derived from the
+/// available width rather than hardcoded, so the same grid serves a tablet
+/// without a second layout — and so a large accessibility text scale gets
+/// fewer, wider cards instead of three columns of clipped words.
+class _ServiceGrid extends StatelessWidget {
+  const _ServiceGrid({required this.services, required this.onOpenService});
+
+  final List<Service> services;
+  final ValueChanged<Service> onOpenService;
+
+  static const _gap = Space.x3;
+  static const _minTile = 104.0;
+
+  static int columnsFor(double width, double textScale) {
+    final target = _minTile * (textScale > 1.3 ? 1.4 : 1);
+    final fits = ((width + _gap) / (target + _gap)).floor();
+    return fits.clamp(2, 4);
+  }
+
+  /// Height of everything below the artwork square: the inset, two lines of
+  /// name, the gap, and the price row.
+  ///
+  /// Measured rather than expressed as a childAspectRatio. A ratio has to be
+  /// guessed against the worst case — the longest name at the largest text
+  /// scale — and a guess that is slightly small does not clip quietly, it
+  /// throws a layout overflow. Sizing the cell as "the square, plus this"
+  /// makes the arithmetic exact at any text scale.
+  static double footerHeight(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final title = context.text.titleSmall;
+    final price = context.text.titleSmall;
+
+    double lineHeight(TextStyle? style) {
+      final size = scaler.scale(style?.fontSize ?? 14);
+      return size * (style?.height ?? 1.35);
+    }
+
+    return Space.x3 + Space.x4 + (lineHeight(title) * 2) + Space.x2 + lineHeight(price);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Every measurement here mirrors the loaded strip. A skeleton that is a
-    // different size than what replaces it makes the page jump at the moment
-    // the user is deciding where to tap.
-    return SizedBox(
-      height: ServiceChip.artworkHeight(_railArtwork),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: Space.pageInsets,
-        itemCount: 4,
-        separatorBuilder: (_, __) => const SizedBox(width: Space.x3),
-        itemBuilder: (_, __) => const SizedBox(
-          width: _railArtwork + 16,
-          child: Column(
-            children: [
-              Skeleton(
-                width: _railArtwork,
-                height: _railArtwork,
-                radius: _railArtwork * 0.32,
-              ),
-              SizedBox(height: Space.x2),
-              Skeleton.text(width: 64),
-            ],
+    if (services.isEmpty) {
+      return AppStateView.empty(
+        title: 'No services yet',
+        message: 'The catalogue for your area is still being set up.',
+        icon: AppIcons.home,
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = columnsFor(
+          constraints.maxWidth,
+          MediaQuery.textScalerOf(context).scale(1),
+        );
+
+        return GridView.builder(
+          padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: services.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: _gap,
+            mainAxisSpacing: _gap,
+            // The square of artwork is as wide as the cell, so the cell is that
+            // square plus the text block underneath it.
+            mainAxisExtent:
+                (constraints.maxWidth - _gap * (columns - 1)) / columns +
+                    footerHeight(context),
           ),
-        ),
+          itemBuilder: (context, i) => ServiceCard(
+            service: services[i],
+            onOpen: () => onOpenService(services[i]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A grid cell's worth of skeleton.
+///
+/// SkeletonCard is row-shaped — an avatar beside two lines of text — which is
+/// right for a list and overflows a 110px grid cell. This mirrors the real
+/// card instead: a square of artwork, a title line, a price line.
+class _ServiceCardSkeleton extends StatelessWidget {
+  const _ServiceCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(Radii.xl),
+        border: Border.all(color: t.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AspectRatio(
+            aspectRatio: 1,
+            child: Skeleton(width: double.infinity, height: double.infinity, radius: 0),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.x3, Space.x3, Space.x3, Space.x4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Skeleton.text(width: 68),
+                SizedBox(height: Space.x2),
+                Skeleton.text(width: 44),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
+class _ServiceGridSkeletons extends StatelessWidget {
+  const _ServiceGridSkeletons();
+
+  @override
+  Widget build(BuildContext context) {
+    // Same geometry as the loaded grid. A placeholder of a different shape
+    // makes the page jump at the moment the user is deciding where to tap.
+    return Padding(
+      padding: Space.pageInsets,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = _ServiceGrid.columnsFor(
+            constraints.maxWidth,
+            MediaQuery.textScalerOf(context).scale(1),
+          );
+
+          return GridView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: columns * 2,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: Space.x3,
+              mainAxisSpacing: Space.x3,
+              mainAxisExtent:
+                  (constraints.maxWidth - Space.x3 * (columns - 1)) / columns +
+                      _ServiceGrid.footerHeight(context),
+            ),
+            itemBuilder: (_, __) => const _ServiceCardSkeleton(),
+          );
+        },
+      ),
+    );
+  }
+}
+

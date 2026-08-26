@@ -14,7 +14,51 @@ interface ServiceRow {
   category_image_url?: string | null;
   category_animation_url?: string | null;
   category_accent_color?: string | null;
+  list_price?: string | number | null;
+  rating_average?: string | number | null;
+  rating_count?: string | number | null;
 }
+
+/**
+ * The catalogue projection, in one place.
+ *
+ * getServiceById used to carry its own shorter select and had quietly fallen
+ * behind: it returned no artwork at all, so every service fetched by id came
+ * back with imageUrl null however much artwork was attached to it. Sharing the
+ * columns is what stops the list and the detail view disagreeing about what a
+ * service is.
+ */
+const SERVICE_COLUMNS = `
+  s.id, s.name, s.category, s.description,
+  s.base_price          as "base_price",
+  s.emergency_supported as "emergency_supported",
+  s.created_at          as "created_at",
+  s.image_url           as "image_url",
+  s.animation_url       as "animation_url",
+  s.list_price          as "list_price",
+  c.image_url           as "category_image_url",
+  c.animation_url       as "category_animation_url",
+  c.accent_color        as "category_accent_color",
+  r.rating_average      as "rating_average",
+  r.rating_count        as "rating_count"
+`;
+
+/**
+ * Ratings are reviews of real jobs, reached through the booking that was
+ * reviewed. Aggregated in a subquery rather than joined onto the outer query,
+ * so a service with fifty reviews still yields one row.
+ */
+const SERVICE_JOINS = `
+  left join service_categories c on c.name = s.category
+  left join (
+    select b.service_id,
+           round(avg(rv.rating)::numeric, 1) as rating_average,
+           count(*)                          as rating_count
+      from reviews rv
+      join bookings b on b.id = rv.booking_id
+     group by b.service_id
+  ) r on r.service_id = s.id
+`;
 
 function mapServiceRow(row: ServiceRow): Service {
   return {
@@ -30,6 +74,11 @@ function mapServiceRow(row: ServiceRow): Service {
     categoryImageUrl: row.category_image_url ?? null,
     categoryAnimationUrl: row.category_animation_url ?? null,
     categoryAccentColor: row.category_accent_color ?? null,
+    // Only a real promotion produces a struck-through price. Absent that, the
+    // card shows one price and claims no discount.
+    listPrice: row.list_price == null ? null : Number(row.list_price),
+    ratingAverage: row.rating_average == null ? null : Number(row.rating_average),
+    ratingCount: Number(row.rating_count ?? 0),
   };
 }
 
@@ -57,18 +106,9 @@ export async function getAllServices(params: ServiceListParams = {}): Promise<Se
 
   const result = await pool.query<ServiceRow>(
     `
-      select
-        s.id, s.name, s.category, s.description,
-        s.base_price          as "base_price",
-        s.emergency_supported as "emergency_supported",
-        s.created_at          as "created_at",
-        s.image_url           as "image_url",
-        s.animation_url       as "animation_url",
-        c.image_url           as "category_image_url",
-        c.animation_url       as "category_animation_url",
-        c.accent_color        as "category_accent_color"
+      select ${SERVICE_COLUMNS}
       from services s
-      left join service_categories c on c.name = s.category
+      ${SERVICE_JOINS}
       ${whereClause}
       order by s.category, s.name
     `,
@@ -111,13 +151,10 @@ export async function getServicesByCategory(): Promise<ServiceCategory[]> {
 export async function getServiceById(id: string): Promise<Service | null> {
   const result = await pool.query<ServiceRow>(
     `
-      select
-        id, name, category, description,
-        base_price as "base_price",
-        emergency_supported as "emergency_supported",
-        created_at as "created_at"
-      from services
-      where id = $1
+      select ${SERVICE_COLUMNS}
+      from services s
+      ${SERVICE_JOINS}
+      where s.id = $1
     `,
     [id]
   );
@@ -130,20 +167,21 @@ export async function getServiceById(id: string): Promise<Service | null> {
 }
 
 export async function createService(input: CreateService): Promise<Service> {
-  const result = await pool.query<ServiceRow>(
+  // RETURNING cannot reach the category and rating joins, so it would hand back
+  // a service whose artwork and rating are null purely because of how it was
+  // fetched. Read it back through the one projection instead.
+  const result = await pool.query<{ id: string }>(
     `
       insert into services (name, category, description, base_price, emergency_supported)
       values ($1, $2, $3, $4, $5)
-      returning
-        id, name, category, description,
-        base_price as "base_price",
-        emergency_supported as "emergency_supported",
-        created_at as "created_at"
+      returning id
     `,
     [input.name, input.category, input.description ?? null, input.basePrice, input.emergencySupported ?? false]
   );
 
-  return mapServiceRow(result.rows[0]);
+  const created = await getServiceById(result.rows[0].id);
+  if (!created) throw new Error("SERVICE_CREATE_READBACK_FAILED");
+  return created;
 }
 
 export async function updateService(id: string, input: UpdateService): Promise<Service | null> {
@@ -178,16 +216,12 @@ export async function updateService(id: string, input: UpdateService): Promise<S
 
   values.push(id);
 
-  const result = await pool.query<ServiceRow>(
+  const result = await pool.query<{ id: string }>(
     `
       update services
       set ${fields.join(", ")}
       where id = $${paramIndex}
-      returning
-        id, name, category, description,
-        base_price as "base_price",
-        emergency_supported as "emergency_supported",
-        created_at as "created_at"
+      returning id
     `,
     values
   );
@@ -196,7 +230,7 @@ export async function updateService(id: string, input: UpdateService): Promise<S
     return null;
   }
 
-  return mapServiceRow(result.rows[0]);
+  return getServiceById(result.rows[0].id);
 }
 
 export async function deleteService(id: string): Promise<"deleted" | "not_found" | "in_use"> {

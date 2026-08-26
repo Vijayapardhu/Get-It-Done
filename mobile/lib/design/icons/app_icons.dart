@@ -27,6 +27,7 @@ abstract final class AppIcons {
   static const filter = HugeIcons.strokeRoundedFilter;
   static const sort = HugeIcons.strokeRoundedSortByDown01;
   static const add = HugeIcons.strokeRoundedAdd01;
+  static const remove = HugeIcons.strokeRoundedMinusSign;
   static const close = HugeIcons.strokeRoundedCancel01;
   static const edit = HugeIcons.strokeRoundedEdit02;
   static const delete = HugeIcons.strokeRoundedDelete02;

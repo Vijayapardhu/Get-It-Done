@@ -41,8 +41,15 @@ String _toCamel(String key) {
 dynamic pick(Json? json, String key, {List<String> aliases = const []}) {
   if (json == null) return null;
 
-  for (final candidate in [key, _toSnake(key), _toCamel(key), ...aliases]) {
-    if (json.containsKey(candidate) && json[candidate] != null) return json[candidate];
+  // Both casings are tried for the aliases too, not only the primary key.
+  // Without that, whether `avg_rating` was found depended on whether someone
+  // had written the alias as `avgRating` or `avg_rating` — so moving a name
+  // from the primary position into the alias list silently stopped matching
+  // the endpoint that sends the other casing.
+  for (final candidate in [key, ...aliases]) {
+    for (final form in [candidate, _toSnake(candidate), _toCamel(candidate)]) {
+      if (json.containsKey(form) && json[form] != null) return json[form];
+    }
   }
   return null;
 }

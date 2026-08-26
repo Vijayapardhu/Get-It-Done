@@ -17,6 +17,21 @@ export type Service = {
   categoryImageUrl: string | null;
   categoryAnimationUrl: string | null;
   categoryAccentColor: string | null;
+
+  /**
+   * The "was" price a promotion is struck through against, or null when the
+   * service is simply priced at basePrice. Null is the normal case: a
+   * struck-through figure that was never charged is a lie printed on the card.
+   */
+  listPrice: number | null;
+
+  /**
+   * Mean of real reviews of real jobs for this service, to one decimal, or null
+   * when it has never been reviewed. Never a default like 4.5 — an invented
+   * rating is the one number on a card nobody can check.
+   */
+  ratingAverage: number | null;
+  ratingCount: number;
 };
 
 export type ServiceCategory = {
