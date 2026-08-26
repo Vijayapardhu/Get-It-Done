@@ -141,4 +141,42 @@ describe("Error Handling", () => {
     expect(res.status).toBe(404);
     expect(res.body).toHaveProperty("code", "NOT_FOUND");
   });
+
+  // body-parser rejects the body before any route runs and tags the reason on
+  // `err.type`. Without a branch for that it falls through to the catch-all
+  // and an oversized upload is reported as a 500 — the caller is told to retry
+  // something that can never succeed.
+  it("Returns 413, not 500, when the body exceeds the parser limit", async () => {
+    const res = await request(baseUrl())
+      .post("/auth/login")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ padding: "x".repeat(400 * 1024) }));
+
+    expect(res.status).toBe(413);
+    expect(res.body).toHaveProperty("code", "FILE_TOO_LARGE");
+  });
+
+  it("Returns 400, not 500, for malformed JSON", async () => {
+    const res = await request(baseUrl())
+      .post("/auth/login")
+      .set("Content-Type", "application/json")
+      .send('{"email": ');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("code", "VALIDATION_ERROR");
+  });
+
+  // The artwork routes carry a larger limit than the rest of the API, because
+  // artwork travels as base64 and the route itself enforces 2MB image / 1MB
+  // animation caps. A body under that limit must reach the route (and be
+  // turned away by auth) rather than being killed by the parser.
+  it("Accepts an artwork-sized body on the artwork route", async () => {
+    const res = await request(baseUrl())
+      .put("/services/categories/Home%20Repair/artwork")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ imageBase64: "x".repeat(600 * 1024) }));
+
+    expect(res.status).not.toBe(413);
+    expect(res.status).toBe(401);
+  });
 });

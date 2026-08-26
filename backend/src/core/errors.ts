@@ -84,6 +84,11 @@ export class AppError extends Error {
     return new AppError(ErrorCode.FILE_TOO_LARGE, "File exceeds maximum size", 400, { size, maxSize }, requestId);
   }
 
+  /** The request body itself was rejected by the parser, before any route ran. */
+  static payloadTooLarge(limit?: string, requestId?: string) {
+    return new AppError(ErrorCode.FILE_TOO_LARGE, "Request body exceeds maximum size", 413, { limit }, requestId);
+  }
+
   static malwareDetected(requestId?: string) {
     return new AppError(ErrorCode.MALWARE_DETECTED, "File failed malware scan", 400, undefined, requestId);
   }
@@ -137,6 +142,22 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
   if (err instanceof AppError) {
     logger.warn({ err, path: req.path }, "Application error");
     return res.status(err.statusCode).json(err.toJSON());
+  }
+
+  // body-parser rejects an oversized or unparseable body before any route
+  // runs, and tags the reason on `type`. Without this it falls through to the
+  // catch-all and an upload that is simply too big is reported as a 500 — the
+  // caller is told to retry something that can never succeed.
+  const parserType = (err as { type?: string }).type;
+  if (parserType === "entity.too.large") {
+    const appErr = AppError.payloadTooLarge((err as { limit?: number }).limit?.toString(), requestId);
+    logger.warn({ err, path: req.path }, "Request body too large");
+    return res.status(appErr.statusCode).json(appErr.toJSON());
+  }
+  if (parserType === "entity.parse.failed" || parserType === "encoding.unsupported") {
+    const appErr = AppError.validationError("Malformed request body", { type: parserType }, requestId);
+    logger.warn({ err, path: req.path }, "Malformed request body");
+    return res.status(appErr.statusCode).json(appErr.toJSON());
   }
 
   if (err.name === "UnauthorizedError" || err.message.includes("jwt")) {

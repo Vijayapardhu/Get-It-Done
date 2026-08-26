@@ -392,7 +392,7 @@ class _EmergencySheet extends ConsumerWidget {
                     AppSelectableRow(
                       title: service.name,
                       subtitle: service.description,
-                      icon: ServiceVisuals.forName(service.category).icon,
+                      icon: ServiceVisuals.forNames([service.name, service.category]).icon,
                       leading: ServiceArtwork(service: service, size: 40),
                       selected: false,
                       onTap: () => onPick(service),

@@ -129,11 +129,32 @@ abstract final class ServiceVisuals {
 
   /// Resolve a service or category name to its visual, falling back to a
   /// neutral tool icon rather than rendering nothing.
-  static ServiceVisual forName(String? name) {
-    if (name == null || name.trim().isEmpty) return other;
+  static ServiceVisual forName(String? name) => matchOrNull(name) ?? other;
+
+  /// As [forName], but null when nothing in the table matches.
+  ///
+  /// Callers usually hold two names — a service and its category — and need to
+  /// know which one the table actually recognised. See [forNames].
+  static ServiceVisual? matchOrNull(String? name) {
+    if (name == null || name.trim().isEmpty) return null;
     final needle = '${name.toLowerCase().trim()} ';
     for (final entry in _byKeyword.entries) {
       if (needle.contains(entry.key)) return entry.value;
+    }
+    return null;
+  }
+
+  /// The first name the table recognises, most specific first.
+  ///
+  /// Categories are a grouping, not a synonym: "Plumbing" and "Electrical"
+  /// both sit under "Home Repair", and resolving by category alone hands them
+  /// the same neutral tool glyph. Trying the service name first keeps them
+  /// distinct while still letting an unrecognised service inherit its
+  /// category's look.
+  static ServiceVisual forNames(Iterable<String?> names) {
+    for (final name in names) {
+      final match = matchOrNull(name);
+      if (match != null) return match;
     }
     return other;
   }

@@ -7,6 +7,15 @@ import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../../core/ui/service_artwork.dart';
 
+/// Edge of the artwork square in the "popular services" strip.
+///
+/// Was 60, sized for the line glyph. The backend now serves illustrated
+/// artwork, and an illustration is a scene rather than a single stroke: at 60
+/// the two figures in it are three pixels wide and the tile reads as a smudge.
+/// 108 is the smallest size at which the subject is recognisable, so the strip
+/// is built around that and the label sits under a card rather than a bead.
+const double _railArtwork = 108;
+
 /// Home.
 ///
 /// Editorial rather than dense: a greeting, one question, search, then sections
@@ -111,7 +120,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               data: (list) => SizedBox(
-                height: 108,
+                height: ServiceChip.artworkHeight(_railArtwork),
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: Space.pageInsets,
@@ -120,12 +129,13 @@ class HomeScreen extends ConsumerWidget {
                   itemBuilder: (context, i) => ServiceChip(
                     name: list[i].name,
                     category: list[i].category,
+                    artworkSize: _railArtwork,
                     // The one place motion is on: a short horizontal strip of
                     // featured services, where an animated tile draws the eye
                     // to the primary action rather than competing with a grid.
                     artwork: ServiceArtwork(
                       service: list[i],
-                      size: 60,
+                      size: _railArtwork,
                       animate: true,
                     ),
                     onTap: () => onOpenService(list[i]),
@@ -445,20 +455,27 @@ class _ServiceChipSkeletons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Every measurement here mirrors the loaded strip. A skeleton that is a
+    // different size than what replaces it makes the page jump at the moment
+    // the user is deciding where to tap.
     return SizedBox(
-      height: 108,
+      height: ServiceChip.artworkHeight(_railArtwork),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: Space.pageInsets,
         itemCount: 4,
         separatorBuilder: (_, __) => const SizedBox(width: Space.x3),
         itemBuilder: (_, __) => const SizedBox(
-          width: 76,
+          width: _railArtwork + 16,
           child: Column(
             children: [
-              Skeleton(width: 60, height: 60, radius: Radii.xl),
+              Skeleton(
+                width: _railArtwork,
+                height: _railArtwork,
+                radius: _railArtwork * 0.32,
+              ),
               SizedBox(height: Space.x2),
-              Skeleton.text(width: 52),
+              Skeleton.text(width: 64),
             ],
           ),
         ),

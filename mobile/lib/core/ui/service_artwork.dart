@@ -62,8 +62,10 @@ class ServiceArtwork extends ConsumerWidget {
     final base = ref.watch(apiClientProvider).baseUrl;
     final brightness = Theme.of(context).brightness;
 
-    final name = service?.category ?? service?.name ?? _name;
-    final visual = ServiceVisuals.forName(name);
+    // Name before category. "Plumbing" and "Electrical" both sit under "Home
+    // Repair", so resolving by category alone would hand every tile in the
+    // group the same neutral tool glyph.
+    final visual = ServiceVisuals.forNames([service?.name ?? _name, service?.category]);
 
     // A backend accent overrides the built-in palette, so a new category
     // arrives with its own colour rather than borrowing whichever one the

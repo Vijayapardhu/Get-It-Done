@@ -63,6 +63,39 @@ void main() {
     });
   });
 
+  group('ServiceVisuals.forNames', () {
+    test('prefers the service name over its category', () {
+      // The regression this exists for: Plumbing and Electrical both sit under
+      // "Home Repair", and resolving by category alone gave both the neutral
+      // tool glyph, so a rail of services was three identical tiles.
+      expect(
+        ServiceVisuals.forNames(['Plumbing', 'Home Repair']).icon,
+        ServiceVisuals.plumbing.icon,
+      );
+      expect(
+        ServiceVisuals.forNames(['Electrical', 'Home Repair']).icon,
+        ServiceVisuals.electrical.icon,
+      );
+    });
+
+    test('falls back to the category when the name is unknown', () {
+      expect(
+        ServiceVisuals.forNames(['Ravi Special Combo', 'Deep Cleaning']).icon,
+        ServiceVisuals.cleaning.icon,
+      );
+    });
+
+    test('lands on the neutral visual when nothing matches', () {
+      expect(ServiceVisuals.forNames(['Zzz', null, '']).icon, ServiceVisuals.other.icon);
+      expect(ServiceVisuals.forNames(const []).icon, ServiceVisuals.other.icon);
+    });
+
+    test('matchOrNull reports a miss rather than guessing', () {
+      expect(ServiceVisuals.matchOrNull('Home Repair'), isNull);
+      expect(ServiceVisuals.matchOrNull('Plumbing'), isNotNull);
+    });
+  });
+
   group('Service artwork resolution', () {
     Service service(Map<String, dynamic> json) => Service.fromJson({
           'id': 's1',

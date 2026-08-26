@@ -53,7 +53,7 @@ class _ServiceTileState extends State<ServiceTile> {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final brightness = Theme.of(context).brightness;
-    final visual = ServiceVisuals.forName(widget.category ?? widget.name);
+    final visual = ServiceVisuals.forNames([widget.name, widget.category]);
 
     final accent = visual.accentFor(brightness);
     final soft = visual.softFor(brightness);
@@ -128,8 +128,8 @@ class _ServiceTileState extends State<ServiceTile> {
   }
 }
 
-/// Compact circular variant for the "popular services" strip, where a row of
-/// full tiles would dominate the screen.
+/// Compact variant for the "popular services" strip, where a row of full tiles
+/// would dominate the screen.
 class ServiceChip extends StatelessWidget {
   const ServiceChip({
     super.key,
@@ -137,6 +137,7 @@ class ServiceChip extends StatelessWidget {
     this.category,
     this.onTap,
     this.artwork,
+    this.artworkSize = 60,
   });
 
   final String name;
@@ -146,10 +147,22 @@ class ServiceChip extends StatelessWidget {
   /// Backend-supplied artwork; falls back to the glyph. See [ServiceTile].
   final Widget? artwork;
 
+  /// Edge of the artwork square.
+  ///
+  /// 60 suits a glyph, which is a single stroked shape and stays legible at
+  /// any size. Real artwork is a scene — two figures, a tool, a background —
+  /// and below roughly 100 it collapses into a smudge. Callers that pass
+  /// artwork should size up; [artworkHeight] gives the strip height to match.
+  final double artworkSize;
+
+  /// Height a horizontal strip needs to hold a chip of this artwork size:
+  /// the square, the gap, and two lines of label.
+  static double artworkHeight(double artworkSize) => artworkSize + 48;
+
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
-    final visual = ServiceVisuals.forName(category ?? name);
+    final visual = ServiceVisuals.forNames([name, category]);
 
     return GestureDetector(
       onTap: onTap == null
@@ -160,13 +173,13 @@ class ServiceChip extends StatelessWidget {
             },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 76,
+        width: artworkSize + 16,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 60,
-              height: 60,
+              width: artworkSize,
+              height: artworkSize,
               child: artwork ??
                   Container(
                     decoration: BoxDecoration(
@@ -176,7 +189,10 @@ class ServiceChip extends StatelessWidget {
                     alignment: Alignment.center,
                     child: AppIcon(
                       visual.icon,
-                      size: 28,
+                      // Rounded so the default 60 keeps its long-standing 28
+                      // rather than landing on 28.2 and churning every golden
+                      // that contains a chip.
+                      size: (artworkSize * 0.47).roundToDouble(),
                       color: visual.accentFor(brightness),
                       bold: true,
                     ),

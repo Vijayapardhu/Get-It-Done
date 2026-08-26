@@ -73,15 +73,29 @@ export function createApp(): Express {
   // Payment gateways sign the RAW body. Re-serialising the parsed object never
   // reproduces it byte-for-byte, so stash the untouched Buffer on the request
   // for the webhook routes before the JSON parser discards it.
-  app.use(
-    express.json({
-      limit: "256kb",
-      verify: (req, _res, buf) => {
-        if (req.url?.startsWith("/payments/webhooks")) {
-          (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
-        }
-      },
-    })
+  const jsonParser = express.json({
+    limit: "256kb",
+    verify: (req, _res, buf) => {
+      if (req.url?.startsWith("/payments/webhooks")) {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      }
+    },
+  });
+
+  // Artwork arrives as base64 in the JSON body, so 256kb caps it far below the
+  // 2MB image / 1MB animation the route documents and enforces: a legal upload
+  // would be rejected by the parser before the route ever saw it. Base64
+  // inflates by 4/3 and an image and an animation can be sent together, so 5mb
+  // clears both caps combined.
+  //
+  // This has to be chosen HERE rather than mounted on the artwork router: the
+  // first parser to see the request is the one that reads the stream, and a
+  // route-level parser mounted later never gets the chance.
+  const artworkJsonParser = express.json({ limit: "5mb" });
+  const artworkUpload = /^\/services\/(categories\/)?[^/]+\/artwork\/?$/;
+
+  app.use((req, res, next) =>
+    artworkUpload.test(req.path) ? artworkJsonParser(req, res, next) : jsonParser(req, res, next)
   );
 
   app.use((req, res, next) => {

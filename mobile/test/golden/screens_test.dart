@@ -1,6 +1,8 @@
 @Tags(['golden'])
 library;
 
+import 'dart:io';
+
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +23,7 @@ import 'package:getitdone_customer/features/account/settings_screens.dart';
 import 'package:getitdone_customer/features/chat/chat_screens.dart';
 import 'package:getitdone_customer/core/models/payment_models.dart';
 import 'package:getitdone_customer/features/emergency/emergency_screen.dart';
+import 'package:getitdone_customer/features/home/home_screen.dart';
 import 'package:getitdone_customer/features/payment/payment_screen.dart';
 import 'package:getitdone_customer/features/support/support_screens.dart';
 
@@ -66,6 +69,43 @@ const _user = AppUser(
   phone: '+919876543210',
   email: 'anitha@example.com',
 );
+
+/// The catalogue as the backend actually serves it, artwork URLs included.
+///
+/// Nothing fetches those URLs here — a widget test has no network — and that is
+/// deliberate: the golden then shows the strip in its WORST case, every tile
+/// fallen back to the glyph. If the layout holds there it holds when the
+/// artwork arrives, because the artwork box is a fixed size either way.
+final _services = <Service>[
+  Service.fromJson({
+    'id': 's1',
+    'name': 'Plumbing',
+    'category': 'Home Repair',
+    'basePrice': 299,
+    'imageUrl': '/media/artwork/plumbing.png',
+    'animationUrl': '/media/artwork/plumbing.json',
+    'categoryAccentColor': '#2FA0A0',
+  }),
+  Service.fromJson({
+    'id': 's2',
+    'name': 'Electrical',
+    'category': 'Home Repair',
+    'basePrice': 349,
+    'imageUrl': '/media/artwork/electrical.png',
+    'animationUrl': '/media/artwork/electrical.json',
+    'categoryAccentColor': '#2FA0A0',
+  }),
+  // No artwork of its own: it inherits the category's, exactly as Cleaning
+  // does against the real database.
+  Service.fromJson({
+    'id': 's3',
+    'name': 'Cleaning',
+    'category': 'Household',
+    'basePrice': 499,
+    'categoryImageUrl': '/media/artwork/household.png',
+    'categoryAccentColor': '#E8A317',
+  }),
+];
 
 final _bookings = <Booking>[
   Booking.fromJson({
@@ -211,6 +251,18 @@ void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     await _loadFonts();
+
+    // A tile with an image URL sends cached_network_image looking for the
+    // platform's cache directory, and a widget test has no platform: the
+    // channel call throws and takes the whole render down. Answering it with a
+    // temp directory keeps the artwork URLs in the fixtures, which is the
+    // point — the golden should exercise the path the app really takes, then
+    // show the glyph because the fetch itself fails.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (call) async => Directory.systemTemp.createTempSync('gid_golden').path,
+    );
   });
 
   // Note when reviewing these PNGs: flutter_test forces `debugDisableShadows`
@@ -271,6 +323,28 @@ void main() {
       () => render(tester, name, child, overrides, brightness, settle),
     );
   }
+
+  testWidgets('home', (tester) async {
+    await shoot(
+      tester,
+      'home_screen_light',
+      // HomeScreen is a tab body, not a route: the Scaffold belongs to the
+      // shell that hosts it, so the golden has to supply one.
+      Scaffold(
+        body: HomeScreen(
+          onOpenService: (_) {},
+          onOpenBooking: (_) {},
+          onOpenSearch: () {},
+          onOpenWorker: (_) {},
+        ),
+      ),
+      overrides: [
+        servicesProvider.overrideWith((ref) async => _services),
+        dashboardProvider.overrideWith((ref) async => CustomerDashboard(upcoming: _bookings)),
+        addressesProvider.overrideWith((ref) async => const <SavedAddress>[]),
+      ],
+    );
+  });
 
   testWidgets('profile', (tester) async {
     await shoot(tester, 'profile_light', ProfileTab(onToggleTheme: () {}));
