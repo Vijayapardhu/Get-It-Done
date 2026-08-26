@@ -17,6 +17,7 @@ import '../features/cart/cart_screen.dart';
 import '../features/orders/order_confirmed_screen.dart';
 import '../features/orders/order_detail_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/instant/instant_service_screen.dart';
 import 'search_screen.dart';
 import '../features/bookings/bookings_tab.dart';
 import '../features/notifications/notifications_tab.dart';
@@ -278,9 +279,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                 onOpenSearch: () => _push(SearchScreen(onOpenService: _openService)),
                 onOpenBooking: _openBooking,
                 onOpenWorker: (workerId) => _push(TrustScreen(workerId: workerId)),
-                // "Get it done now" opens the same emergency picker as the FAB,
-                // rather than a second instant path that would diverge from it.
-                onStartEmergency: () => _showEmergencySheet(context),
+                // Instant is its own path: pick a trade, then confirm. It is
+                // NOT the emergency flow, which has its own screen, endpoint
+                // and surcharge — routing here through that would quietly
+                // charge emergency rates for a dripping tap.
+                onStartEmergency: _startInstant,
                 onOpenProfile: _openProfile,
               ),
             ),
@@ -342,6 +345,22 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   /// The cart is app-level state, so it opens over the current tab rather than
   /// sending the user back to Home to find it.
+  /// "Get Instant Service": ask which trade, then straight to confirming.
+  void _startInstant() {
+    _push(InstantServiceScreen(
+      onEmergency: () => _showEmergencySheet(context),
+      onContinue: () {
+        // Replace, not push. Going "back" from confirming into the picker that
+        // filled the cart would offer to fill it again.
+        _navigatorKeys[_tab].currentState?.pushReplacement(
+              MaterialPageRoute<void>(
+                builder: (_) => CartScreen(onPlaced: _onOrderPlaced),
+              ),
+            );
+      },
+    ));
+  }
+
   void _openCart() {
     _push(CartScreen(onPlaced: _onOrderPlaced));
   }

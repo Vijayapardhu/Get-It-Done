@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/cart/checkout.dart';
+import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
+import '../address/address_picker.dart';
 
 /// The home screen's coloured header.
 ///
@@ -36,14 +39,25 @@ class HomeHero extends ConsumerWidget {
     final addresses = ref.watch(addressesProvider);
     final user = ref.watch(currentUserProvider);
 
-    final address = addresses.maybeWhen(
-      data: (list) {
-        if (list.isEmpty) return null;
-        final preferred = list.firstWhere((a) => a.isDefault, orElse: () => list.first);
-        return preferred;
-      },
-      orElse: () => null,
+    final chosen = ref.watch(checkoutProvider).addressId;
+
+    final list = addresses.maybeWhen(
+      data: (value) => value,
+      orElse: () => const <SavedAddress>[],
     );
+
+    // Default the choice as soon as the addresses land, so the header and
+    // checkout start from the same place instead of each picking their own.
+    if (list.isNotEmpty && chosen == null) {
+      Future.microtask(() => ref.read(checkoutProvider.notifier).ensureAddress(list));
+    }
+
+    // What is shown IS what the next booking will use. Falling back to the
+    // default only until a choice exists.
+    final address = list.where((a) => a.id == chosen).firstOrNull ??
+        (list.isEmpty
+            ? null
+            : list.firstWhere((a) => a.isDefault, orElse: () => list.first));
 
     return Container(
       decoration: BoxDecoration(
@@ -72,6 +86,7 @@ class HomeHero extends ConsumerWidget {
                 detail: address?.address,
                 initials: user?.initials,
                 onOpenProfile: onOpenProfile,
+                onChangeAddress: () => showAddressPicker(context, ref),
               ),
               const SizedBox(height: Space.x6),
 
@@ -127,6 +142,7 @@ class _AddressRow extends StatelessWidget {
     required this.detail,
     required this.initials,
     required this.onOpenProfile,
+    required this.onChangeAddress,
   });
 
   final String label;
@@ -134,12 +150,19 @@ class _AddressRow extends StatelessWidget {
   final String? initials;
   final VoidCallback onOpenProfile;
 
+  /// The chevron beside the address is not decoration: this is where the
+  /// location is chosen, and checkout then uses it rather than asking again.
+  final VoidCallback onChangeAddress;
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: Column(
+          child: GestureDetector(
+            onTap: onChangeAddress,
+            behavior: HitTestBehavior.opaque,
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -170,7 +193,8 @@ class _AddressRow extends StatelessWidget {
                     style: context.text.bodySmall?.copyWith(color: AppColors.blue200),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(width: Space.x3),

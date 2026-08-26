@@ -32,6 +32,7 @@ import 'package:getitdone_customer/features/orders/order_confirmed_screen.dart';
 import 'package:getitdone_customer/features/catalogue/service_detail_screen.dart';
 import 'package:getitdone_customer/features/emergency/emergency_screen.dart';
 import 'package:getitdone_customer/features/home/home_screen.dart';
+import 'package:getitdone_customer/features/instant/instant_service_screen.dart';
 import 'package:getitdone_customer/features/payment/payment_screen.dart';
 import 'package:getitdone_customer/features/support/support_screens.dart';
 
@@ -589,6 +590,16 @@ void main() {
       'order_confirmed_light',
       OrderConfirmedScreen(order: _placedOrder, onTrack: (_) {}, onDone: () {}),
       size: const Size(390, 1400),
+    );
+  });
+
+  testWidgets('instant service', (tester) async {
+    await shoot(
+      tester,
+      'instant_service_light',
+      InstantServiceScreen(onContinue: () {}, onEmergency: () {}),
+      size: const Size(390, 900),
+      overrides: [servicesProvider.overrideWith((ref) async => _services)],
     );
   });
 

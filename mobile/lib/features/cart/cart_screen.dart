@@ -8,6 +8,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../core/ui/service_artwork.dart';
 import '../../design/design_system.dart';
+import '../address/address_picker.dart';
 import 'slot_picker_screen.dart';
 
 /// The cart, and checkout.
@@ -207,10 +208,13 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                   ),
                 _DetailRow(
                   icon: AppIcons.location,
+                  // Prefilled from the home header. The customer chose this
+                  // once; the job here is to show it and offer a change, not to
+                  // ask the same question twice.
                   label: 'Where',
                   value: selected?.address ?? 'Choose an address',
                   missing: selected == null,
-                  onTap: list.isEmpty ? null : () => _chooseAddress(list),
+                  onTap: () => showAddressPicker(context, ref),
                 ),
               ],
             ),
@@ -249,35 +253,6 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     );
   }
 
-  Future<void> _chooseAddress(List<SavedAddress> addresses) async {
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Space.x5, 0, Space.x5, Space.x3),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Where should we come?',
-                    style: Theme.of(sheetContext).textTheme.titleLarge),
-              ),
-            ),
-            for (final address in addresses)
-              ListTile(
-                title: Text(address.name),
-                subtitle: Text(address.address, maxLines: 2, overflow: TextOverflow.ellipsis),
-                onTap: () => Navigator.of(sheetContext).pop(address.id),
-              ),
-            const SizedBox(height: Space.x4),
-          ],
-        ),
-      ),
-    );
-    if (picked != null) ref.read(checkoutProvider.notifier).setAddress(picked);
-  }
 }
 
 class _SectionHeading extends StatelessWidget {
