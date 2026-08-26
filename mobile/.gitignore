@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Golden-test scratch output. Written by flutter_test on every mismatch;
+# it is a debugging aid, not a checked-in artefact.
+test/**/failures/
