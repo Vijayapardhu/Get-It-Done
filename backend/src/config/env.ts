@@ -27,6 +27,9 @@ const envSchema = z.object({
   AI_SERVICE_URL: z.string().default("http://localhost:8001"),
   USE_MOCK_DB: booleanFromEnv.default(false),
   GOOGLE_CLIENT_ID: z.string().default(""),
+  /** iOS needs its own OAuth client id; Android uses the web one above. Both
+   *  are public identifiers, served to the app by GET /config/mobile. */
+  GOOGLE_IOS_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_CALLBACK_URL: z.string().default("http://localhost:4000/auth/google/callback"),
 

@@ -35,6 +35,12 @@ COPY --from=builder /app/swagger.json ./swagger.json
 # `npm run db:migrate` has to be run from a checkout instead.
 COPY --from=builder /app/src/db/*.sql ./dist/db/
 
+# The storage root must exist and be owned by `node` BEFORE privileges are
+# dropped. A named volume mounted at this path inherits the ownership of the
+# directory underneath it, so creating it here is what makes uploads work — the
+# container cannot mkdir inside a root-owned mount point once it is `node`.
+RUN mkdir -p /var/lib/getitdone/storage/public/artwork  && chown -R node:node /var/lib/getitdone/storage
+
 # Drop privileges. The node image ships an unprivileged `node` user; running as
 # root is the default only because nothing changes it.
 USER node

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/config/app_config.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
@@ -132,7 +131,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               const SizedBox(height: Space.x8),
 
               // ── Google, first and primary ────────────────────────────
-              if (AppConfig.googleSignInEnabled) ...[
+              if (ref.watch(effectiveConfigProvider).googleSignInEnabled) ...[
                 AppButton.primary(
                   label: 'Continue with Google',
                   icon: AppIcons.user,
@@ -204,7 +203,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 label: 'Sign in',
                 // Secondary when Google is on screen, so there is exactly one
                 // primary action. Primary when it is the only way in.
-                variant: AppConfig.googleSignInEnabled
+                variant: ref.watch(effectiveConfigProvider).googleSignInEnabled
                     ? AppButtonVariant.secondary
                     : AppButtonVariant.primary,
                 loading: _busy,

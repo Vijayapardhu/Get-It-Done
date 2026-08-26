@@ -10,6 +10,7 @@ import '../../core/models/account_models.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
+import '../../core/ui/service_artwork.dart';
 
 /// Recurring service plans.
 ///
@@ -130,8 +131,6 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final plan = widget.plan;
-    final brightness = Theme.of(context).brightness;
-    final visual = ServiceVisuals.forName(plan.serviceName);
 
     return AppCard(
       padding: Space.cardInsetsLarge,
@@ -140,12 +139,7 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
         children: [
           Row(
             children: [
-              AppIconBadge(
-                visual.icon,
-                size: 44,
-                background: visual.softFor(brightness),
-                foreground: visual.accentFor(brightness),
-              ),
+              ServiceArtwork.raw(name: plan.serviceName, size: 44),
               const SizedBox(width: Space.x3),
               Expanded(
                 child: Column(

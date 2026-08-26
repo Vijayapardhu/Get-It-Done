@@ -9,6 +9,16 @@ export const demoIds = {
   electricalServiceId: "00000000-0000-0000-0000-000000000202"
 };
 
+/** The mock store has no object storage behind it, so it serves no artwork and
+ *  the client falls back to its built-in glyphs. */
+const noArtwork = {
+  imageUrl: null,
+  animationUrl: null,
+  categoryImageUrl: null,
+  categoryAnimationUrl: null,
+  categoryAccentColor: null
+} as const;
+
 export const demoServices: Service[] = [
   {
     id: demoIds.plumbingServiceId,
@@ -17,7 +27,8 @@ export const demoServices: Service[] = [
     description: "Leak fixes, pipe repairs, taps and fittings",
     basePrice: 299,
     emergencySupported: true,
-    createdAt: "2026-01-01T00:00:00.000Z"
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...noArtwork
   },
   {
     id: demoIds.electricalServiceId,
@@ -26,7 +37,8 @@ export const demoServices: Service[] = [
     description: "Switches, wiring, power failures and fixtures",
     basePrice: 349,
     emergencySupported: true,
-    createdAt: "2026-01-01T00:00:00.000Z"
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...noArtwork
   }
 ];
 

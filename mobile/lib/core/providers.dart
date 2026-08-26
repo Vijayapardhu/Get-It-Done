@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api/gid_api.dart';
 import 'auth/google_auth_service.dart';
+import 'config/app_config.dart';
+import 'config/remote_config.dart';
 import 'models/account_models.dart';
 import 'models/payment_models.dart';
 import 'models/models.dart';
@@ -331,4 +333,36 @@ final unreadNotificationCountProvider = Provider.autoDispose<int>((ref) {
 final bookingPaymentProvider =
     FutureProvider.autoDispose.family<PaymentOrder?, String>((ref, bookingId) async {
   return ref.watch(apiProvider).paymentOrderForBooking(bookingId);
+});
+
+/// Deployment configuration, fetched once at launch.
+///
+/// Kept alive for the session: the OAuth client id and the payment key are
+/// needed at unpredictable moments, and re-fetching them on every screen that
+/// reads a flag would be pointless traffic.
+///
+/// A failure here is NOT fatal. [AppConfig] still carries build-time values as
+/// a development fallback, so a dev machine with the backend down keeps
+/// working — see `effectiveConfigProvider`.
+final remoteConfigProvider = FutureProvider<RemoteConfig>((ref) async {
+  return ref.watch(apiProvider).mobileConfig();
+});
+
+/// The configuration the app should actually act on.
+///
+/// Server values win. Where the server has not answered yet — or could not —
+/// the compiled-in defaults stand in, which is what keeps sign-in working on a
+/// developer's machine before the backend is up.
+final effectiveConfigProvider = Provider<RemoteConfig>((ref) {
+  final remote = ref.watch(remoteConfigProvider);
+  return remote.maybeWhen(
+    data: (config) => config,
+    orElse: () => RemoteConfig(
+      googleServerClientId:
+          AppConfig.googleServerClientId.isEmpty ? null : AppConfig.googleServerClientId,
+      googleIosClientId: AppConfig.googleClientId.isEmpty ? null : AppConfig.googleClientId,
+      googleSignInEnabled: AppConfig.googleSignInEnabled,
+      supportedLanguages: AppConfig.supportedLanguages,
+    ),
+  );
 });

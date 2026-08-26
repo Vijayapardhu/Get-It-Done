@@ -17,6 +17,7 @@
 ///  * Animation communicates change. Durations and curves come from [Motion].
 library;
 
+export 'components/app_artwork.dart';
 export 'components/app_badges.dart';
 export 'components/app_bottom_nav.dart';
 export 'components/app_button.dart';

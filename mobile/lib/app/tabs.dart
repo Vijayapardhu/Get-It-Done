@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/models.dart';
 import '../core/providers.dart';
 import '../design/design_system.dart';
+import '../core/ui/service_artwork.dart';
 import '../features/account/settings_screens.dart';
 import '../features/chat/chat_screens.dart';
 import '../features/payment/payment_screen.dart';
@@ -166,8 +167,6 @@ class BookingListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final isLive = _live.contains(booking.status);
-    final brightness = Theme.of(context).brightness;
-    final visual = ServiceVisuals.forName(booking.serviceCategory ?? booking.serviceName);
 
     return AppCard(
       onTap: onTap,
@@ -178,11 +177,9 @@ class BookingListCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              AppIconBadge(
-                visual.icon,
+              ServiceArtwork.raw(
+                name: booking.serviceCategory ?? booking.serviceName,
                 size: 44,
-                background: visual.softFor(brightness),
-                foreground: visual.accentFor(brightness),
               ),
               const SizedBox(width: Space.x3),
               Expanded(

@@ -1,4 +1,5 @@
 import cors from "cors";
+import path from "node:path";
 import express, { type Express } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -18,6 +19,8 @@ import { workersRouter } from "./routes/workers.js";
 import trustRouter from "./routes/trust.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { filesRouter } from "./routes/files.js";
+import { configRouter } from "./routes/config.js";
+import { serviceArtworkRouter } from "./routes/serviceArtwork.js";
 import { usersRouter } from "./routes/users.js";
 import { cooperativesRouter } from "./routes/cooperatives.js";
 import { skillsRouter } from "./routes/skills.js";
@@ -108,7 +111,35 @@ export function createApp(): Express {
     const health = await getReadiness();
     res.status(health.status === "healthy" ? 200 : health.status === "degraded" ? 200 : 503).json(health);
   });
+  // Public artwork (service/category PNGs and Lottie files).
+  //
+  // Unauthenticated on purpose — the app renders these before sign-in. Served
+  // from the `public/` subtree ONLY, which is why this points at that prefix
+  // and not at STORAGE_DIR: worker identity documents live as siblings and
+  // must never be reachable over HTTP.
+  //
+  // `index: false` and `dotfiles: "deny"` stop directory listings and hidden
+  // files; `immutable` is safe because filenames are content-addressed uuids
+  // that are never rewritten in place.
+  app.use(
+    "/media/artwork",
+    express.static(path.resolve(env.STORAGE_DIR, "public/artwork"), {
+      index: false,
+      dotfiles: "deny",
+      maxAge: "365d",
+      immutable: true,
+      setHeaders: (res) => {
+        // These are images, never documents to be interpreted.
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Content-Disposition", "inline");
+      },
+    })
+  );
+
   app.use("/health", healthRouter);
+  // Unauthenticated by necessity: the app reads this before anyone signs in.
+  // Public identifiers only — see routes/config.ts.
+  app.use("/config", configRouter);
   app.get("/metrics", async (_req, res) => { res.set("Content-Type", getMetricsContentType()).send(await getMetrics()); });
   app.get("/version", (_req, res) => { res.json({ version: process.env.npm_package_version ?? "0.1.0", env: env.NODE_ENV }); });
 
@@ -137,6 +168,8 @@ export function createApp(): Express {
   app.use("/support", requireAuth, supportRouter);
   // Mounted before "/services" so servicesRouter's GET /:id cannot swallow it.
   app.use("/services/discovery", requireAuth, serviceDiscoveryRouter);
+  // Before servicesRouter: its `/:id` would otherwise capture "categories".
+  app.use("/services", serviceArtworkRouter);
   app.use("/services", servicesRouter);
   app.use("/workers", requireAuth, workersRouter);
   app.use("/bookings", requireAuth, bookingsRouter);

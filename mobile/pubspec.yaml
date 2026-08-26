@@ -55,6 +55,8 @@ dependencies:
   # gateway is not configured.
   razorpay_flutter: ^1.4.5
   clock: ^1.1.2
+  lottie: ^3.3.1
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/models.dart';
 import '../core/providers.dart';
 import '../design/design_system.dart';
+import '../core/ui/service_artwork.dart';
 
 /// Service discovery.
 ///
@@ -135,6 +136,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                     name: service.name,
                                     description: service.description,
                                     category: service.category,
+                                    artwork: ServiceArtwork(service: service, size: 52),
                                     onTap: () => widget.onOpenService(service),
                                   ),
                               ],
@@ -173,20 +175,13 @@ class _ServiceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final brightness = Theme.of(context).brightness;
-    final visual = ServiceVisuals.forName(service.category);
 
     return AppCard(
       onTap: onTap,
       padding: const EdgeInsets.all(Space.x3),
       child: Row(
         children: [
-          AppIconBadge(
-            visual.icon,
-            size: 48,
-            background: visual.softFor(brightness),
-            foreground: visual.accentFor(brightness),
-          ),
+          ServiceArtwork(service: service, size: 48),
           const SizedBox(width: Space.x3),
           Expanded(
             child: Column(

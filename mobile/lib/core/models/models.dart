@@ -82,6 +82,11 @@ class Service {
     this.rating,
     this.reviewCount,
     this.distanceKm,
+    this.imageUrl,
+    this.animationUrl,
+    this.categoryImageUrl,
+    this.categoryAnimationUrl,
+    this.categoryAccentColor,
   });
 
   final String id;
@@ -100,6 +105,28 @@ class Service {
   final int? reviewCount;
   final double? distanceKm;
 
+  // ── Artwork ───────────────────────────────────────────────────────────────
+  // Served by the backend so a new service arrives with its own look instead
+  // of falling back to a glyph until the app is rebuilt.
+
+  /// Raster artwork for this specific service.
+  final String? imageUrl;
+
+  /// Lottie JSON for this specific service.
+  final String? animationUrl;
+
+  /// Artwork for the service's category, used when the service has none.
+  final String? categoryImageUrl;
+  final String? categoryAnimationUrl;
+
+  /// Hex accent (`#3B63F5`) from the category, if it defines one.
+  final String? categoryAccentColor;
+
+  /// The best artwork available, most specific first. Null means the client
+  /// falls back to its built-in glyph.
+  String? get artworkImage => imageUrl ?? categoryImageUrl;
+  String? get artworkAnimation => animationUrl ?? categoryAnimationUrl;
+
   bool get hasWorkers => (availableWorkers ?? 1) > 0;
 
   factory Service.fromJson(Json json) => Service(
@@ -115,18 +142,40 @@ class Service {
         distanceKm: asDoubleOrNull(
           pick(json, 'distanceKm', aliases: ['min_distance_km', 'minDistanceKm']),
         ),
+        imageUrl: asStringOrNull(pick(json, 'imageUrl')),
+        animationUrl: asStringOrNull(pick(json, 'animationUrl')),
+        categoryImageUrl: asStringOrNull(pick(json, 'categoryImageUrl')),
+        categoryAnimationUrl: asStringOrNull(pick(json, 'categoryAnimationUrl')),
+        categoryAccentColor: asStringOrNull(pick(json, 'categoryAccentColor')),
       );
 }
 
 class ServiceCategory {
-  const ServiceCategory({required this.name, required this.services});
+  const ServiceCategory({
+    required this.name,
+    required this.services,
+    this.imageUrl,
+    this.animationUrl,
+    this.accentColor,
+  });
 
   final String name;
   final List<Service> services;
 
+  /// Category-level artwork, so a category tile renders without having to pick
+  /// a representative service.
+  final String? imageUrl;
+  final String? animationUrl;
+
+  /// Hex accent (`#3B63F5`) set by the backend.
+  final String? accentColor;
+
   factory ServiceCategory.fromJson(Json json) => ServiceCategory(
         name: asString(pick(json, 'category'), fallback: 'Services'),
         services: parseList(pick(json, 'services'), Service.fromJson),
+        imageUrl: asStringOrNull(pick(json, 'imageUrl')),
+        animationUrl: asStringOrNull(pick(json, 'animationUrl')),
+        accentColor: asStringOrNull(pick(json, 'accentColor')),
       );
 }
 

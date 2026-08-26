@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import '../config/app_config.dart';
+import '../providers.dart';
 
 /// Google Sign-In.
 ///
@@ -44,25 +44,39 @@ class GoogleAuthFailure extends GoogleAuthResult {
 }
 
 class GoogleAuthService {
+  /// Client ids come from the SERVER (`GET /config/mobile`), not from the
+  /// build. Rotating an OAuth client is then a backend config change rather
+  /// than an app-store release, and the shipped binary carries no ids at all.
+  GoogleAuthService({required this.serverClientId, this.iosClientId});
+
+  final String? serverClientId;
+  final String? iosClientId;
+
   bool _initialised = false;
+
+  /// The ids the SDK was initialised with. Re-initialising with different ones
+  /// is not possible in-process, so a config change that arrives mid-session
+  /// is detected and reported rather than silently ignored.
+  String? _initialisedWith;
 
   /// Whether Google sign-in can be offered at all.
   ///
   /// Without a server client id the resulting token would be audienced to the
   /// platform client and the backend would reject it, so the button is hidden
   /// rather than shown and guaranteed to fail.
-  bool get isConfigured => AppConfig.googleServerClientId.isNotEmpty;
+  bool get isConfigured => (serverClientId ?? '').isNotEmpty;
 
   Future<void> _ensureInitialised() async {
-    if (_initialised) return;
+    if (_initialised && _initialisedWith == serverClientId) return;
     await GoogleSignIn.instance.initialize(
       // Android reads the client id from google-services.json; iOS needs it
       // explicitly. serverClientId is what makes the ID token audienced to the
       // backend's web client.
-      serverClientId: AppConfig.googleServerClientId,
-      clientId: AppConfig.googleClientId.isEmpty ? null : AppConfig.googleClientId,
+      serverClientId: serverClientId,
+      clientId: (iosClientId ?? '').isEmpty ? null : iosClientId,
     );
     _initialised = true;
+    _initialisedWith = serverClientId;
   }
 
   /// Interactive sign-in. Must be called from a user gesture.
@@ -144,4 +158,13 @@ class GoogleAuthService {
   }
 }
 
-final googleAuthServiceProvider = Provider<GoogleAuthService>((ref) => GoogleAuthService());
+/// Built from whatever configuration is currently in force — server values
+/// when they have arrived, build-time defaults until then. Watching means a
+/// late config response rebuilds the service with the real ids.
+final googleAuthServiceProvider = Provider<GoogleAuthService>((ref) {
+  final config = ref.watch(effectiveConfigProvider);
+  return GoogleAuthService(
+    serverClientId: config.googleServerClientId,
+    iosClientId: config.googleIosClientId,
+  );
+});

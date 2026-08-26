@@ -10,6 +10,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
+import '../../core/ui/service_artwork.dart';
 
 /// Pay for a booking.
 ///
@@ -354,10 +355,9 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                   padding: Space.cardInsetsLarge,
                   child: Row(
                     children: [
-                      AppIconBadge(
-                        ServiceVisuals.forName(
-                          widget.booking.serviceCategory ?? widget.booking.serviceName,
-                        ).icon,
+                      ServiceArtwork.raw(
+                        name: widget.booking.serviceCategory ??
+                            widget.booking.serviceName,
                         size: 44,
                       ),
                       const SizedBox(width: Space.x3),

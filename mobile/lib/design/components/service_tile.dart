@@ -21,6 +21,7 @@ class ServiceTile extends StatefulWidget {
     this.category,
     this.onTap,
     this.selected = false,
+    this.artwork,
   });
 
   final String name;
@@ -33,6 +34,13 @@ class ServiceTile extends StatefulWidget {
 
   final VoidCallback? onTap;
   final bool selected;
+
+  /// Backend-supplied artwork for this service.
+  ///
+  /// A slot rather than a URL, because the design system has no Riverpod and
+  /// no knowledge of the API host. Callers pass a `ServiceArtwork`, which
+  /// resolves both and falls back to the same glyph this tile draws itself.
+  final Widget? artwork;
 
   @override
   State<ServiceTile> createState() => _ServiceTileState();
@@ -80,17 +88,21 @@ class _ServiceTileState extends State<ServiceTile> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // The glyph field. Larger than a list icon on purpose — this is
-              // the tile's visual anchor.
-              Container(
+              // The artwork field. Larger than a list icon on purpose — this
+              // is the tile's visual anchor. Falls back to the glyph when the
+              // catalogue has no artwork for this service.
+              SizedBox(
                 width: 52,
                 height: 52,
-                decoration: BoxDecoration(
-                  color: soft,
-                  borderRadius: BorderRadius.circular(Radii.lg),
-                ),
-                alignment: Alignment.center,
-                child: AppIcon(visual.icon, size: 26, color: accent, bold: true),
+                child: widget.artwork ??
+                    Container(
+                      decoration: BoxDecoration(
+                        color: soft,
+                        borderRadius: BorderRadius.circular(Radii.lg),
+                      ),
+                      alignment: Alignment.center,
+                      child: AppIcon(visual.icon, size: 26, color: accent, bold: true),
+                    ),
               ),
               const SizedBox(height: Space.x3),
               Text(
@@ -124,11 +136,15 @@ class ServiceChip extends StatelessWidget {
     required this.name,
     this.category,
     this.onTap,
+    this.artwork,
   });
 
   final String name;
   final String? category;
   final VoidCallback? onTap;
+
+  /// Backend-supplied artwork; falls back to the glyph. See [ServiceTile].
+  final Widget? artwork;
 
   @override
   Widget build(BuildContext context) {
@@ -148,15 +164,23 @@ class ServiceChip extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
+            SizedBox(
               width: 60,
               height: 60,
-              decoration: BoxDecoration(
-                color: visual.softFor(brightness),
-                borderRadius: BorderRadius.circular(Radii.xl),
-              ),
-              alignment: Alignment.center,
-              child: AppIcon(visual.icon, size: 28, color: visual.accentFor(brightness), bold: true),
+              child: artwork ??
+                  Container(
+                    decoration: BoxDecoration(
+                      color: visual.softFor(brightness),
+                      borderRadius: BorderRadius.circular(Radii.xl),
+                    ),
+                    alignment: Alignment.center,
+                    child: AppIcon(
+                      visual.icon,
+                      size: 28,
+                      color: visual.accentFor(brightness),
+                      bold: true,
+                    ),
+                  ),
             ),
             const SizedBox(height: Space.x2),
             Text(

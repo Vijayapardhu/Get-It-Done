@@ -1,5 +1,6 @@
 import '../models/account_models.dart';
 import '../models/models.dart';
+import '../config/remote_config.dart';
 import '../models/payment_models.dart';
 import '../network/api_client.dart';
 import '../network/json.dart';
@@ -462,6 +463,17 @@ class GidApi {
   Future<void> resumeRecurringPlan(String id) => _client.post('/recurring/plans/$id/resume');
 
   Future<void> cancelRecurringPlan(String id) => _client.delete('/recurring/plans/$id');
+
+  // ───────────────────────────────────────────────────────────── config ──
+
+  /// Deployment configuration: OAuth client ids, the publishable gateway key,
+  /// feature flags and supported languages.
+  ///
+  /// Unauthenticated — the app needs this before anyone can sign in.
+  Future<RemoteConfig> mobileConfig() async {
+    final json = await _client.get('/config/mobile', auth: false);
+    return RemoteConfig.fromJson(json);
+  }
 
   // ─────────────────────────────────────────────────────────── payments ──
 

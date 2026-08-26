@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
+import '../../core/ui/service_artwork.dart';
 
 /// Home.
 ///
@@ -119,6 +120,14 @@ class HomeScreen extends ConsumerWidget {
                   itemBuilder: (context, i) => ServiceChip(
                     name: list[i].name,
                     category: list[i].category,
+                    // The one place motion is on: a short horizontal strip of
+                    // featured services, where an animated tile draws the eye
+                    // to the primary action rather than competing with a grid.
+                    artwork: ServiceArtwork(
+                      service: list[i],
+                      size: 60,
+                      animate: true,
+                    ),
                     onTap: () => onOpenService(list[i]),
                   ),
                 ),
@@ -393,8 +402,6 @@ class _PastBookingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final visual = ServiceVisuals.forName(booking.serviceCategory ?? booking.serviceName);
-    final brightness = Theme.of(context).brightness;
 
     return AppCard(
       onTap: onTap,
@@ -402,11 +409,9 @@ class _PastBookingRow extends StatelessWidget {
       padding: const EdgeInsets.all(Space.x3),
       child: Row(
         children: [
-          AppIconBadge(
-            visual.icon,
+          ServiceArtwork.raw(
+            name: booking.serviceCategory ?? booking.serviceName,
             size: 44,
-            background: visual.softFor(brightness),
-            foreground: visual.accentFor(brightness),
           ),
           const SizedBox(width: Space.x3),
           Expanded(

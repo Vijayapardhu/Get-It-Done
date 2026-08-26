@@ -9,6 +9,11 @@ interface ServiceRow {
   base_price: string | number;
   emergency_supported: boolean;
   created_at: string;
+  image_url?: string | null;
+  animation_url?: string | null;
+  category_image_url?: string | null;
+  category_animation_url?: string | null;
+  category_accent_color?: string | null;
 }
 
 function mapServiceRow(row: ServiceRow): Service {
@@ -20,6 +25,11 @@ function mapServiceRow(row: ServiceRow): Service {
     basePrice: Number(row.base_price),
     emergencySupported: row.emergency_supported,
     createdAt: row.created_at,
+    imageUrl: row.image_url ?? null,
+    animationUrl: row.animation_url ?? null,
+    categoryImageUrl: row.category_image_url ?? null,
+    categoryAnimationUrl: row.category_animation_url ?? null,
+    categoryAccentColor: row.category_accent_color ?? null,
   };
 }
 
@@ -48,13 +58,19 @@ export async function getAllServices(params: ServiceListParams = {}): Promise<Se
   const result = await pool.query<ServiceRow>(
     `
       select
-        id, name, category, description,
-        base_price as "base_price",
-        emergency_supported as "emergency_supported",
-        created_at as "created_at"
-      from services
+        s.id, s.name, s.category, s.description,
+        s.base_price          as "base_price",
+        s.emergency_supported as "emergency_supported",
+        s.created_at          as "created_at",
+        s.image_url           as "image_url",
+        s.animation_url       as "animation_url",
+        c.image_url           as "category_image_url",
+        c.animation_url       as "category_animation_url",
+        c.accent_color        as "category_accent_color"
+      from services s
+      left join service_categories c on c.name = s.category
       ${whereClause}
-      order by category, name
+      order by s.category, s.name
     `,
     values
   );
@@ -65,6 +81,14 @@ export async function getAllServices(params: ServiceListParams = {}): Promise<Se
 export async function getServicesByCategory(): Promise<ServiceCategory[]> {
   const services = await getAllServices();
 
+  // Category artwork in one query rather than one per group.
+  const artwork = await pool.query(
+    `select name, image_url, animation_url, accent_color from service_categories`
+  );
+  const byName = new Map<string, { image_url: string | null; animation_url: string | null; accent_color: string | null }>(
+    artwork.rows.map((row) => [row.name, row])
+  );
+
   const categories = new Map<string, Service[]>();
   for (const service of services) {
     const existing = categories.get(service.category) ?? [];
@@ -72,10 +96,16 @@ export async function getServicesByCategory(): Promise<ServiceCategory[]> {
     categories.set(service.category, existing);
   }
 
-  return Array.from(categories.entries()).map(([category, services]) => ({
-    category,
-    services: services.sort((a, b) => a.name.localeCompare(b.name)),
-  }));
+  return Array.from(categories.entries()).map(([category, services]) => {
+    const art = byName.get(category);
+    return {
+      category,
+      services: services.sort((a, b) => a.name.localeCompare(b.name)),
+      imageUrl: art?.image_url ?? null,
+      animationUrl: art?.animation_url ?? null,
+      accentColor: art?.accent_color ?? null,
+    };
+  });
 }
 
 export async function getServiceById(id: string): Promise<Service | null> {

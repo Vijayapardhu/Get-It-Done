@@ -7,6 +7,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../address/address_screen.dart';
 import '../../design/design_system.dart';
+import '../../core/ui/service_artwork.dart';
 
 /// The booking journey.
 ///
@@ -476,8 +477,6 @@ class _ConfirmStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final brightness = Theme.of(context).brightness;
-    final visual = ServiceVisuals.forName(service.category);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(Space.x5, Space.x6, Space.x5, Space.x5),
@@ -491,12 +490,7 @@ class _ConfirmStep extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  AppIconBadge(
-                    visual.icon,
-                    size: 48,
-                    background: visual.softFor(brightness),
-                    foreground: visual.accentFor(brightness),
-                  ),
+                  ServiceArtwork(service: service, size: 48),
                   const SizedBox(width: Space.x3),
                   Expanded(
                     child: Column(

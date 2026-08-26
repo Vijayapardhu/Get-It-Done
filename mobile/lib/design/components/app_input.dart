@@ -279,6 +279,7 @@ class AppSelectableRow extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.icon,
+    this.leading,
     this.trailing,
   });
 
@@ -287,6 +288,11 @@ class AppSelectableRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final List<List<dynamic>>? icon;
+
+  /// Takes the place of [icon] when supplied — a service's artwork, say.
+  /// Sized by the caller, because a picture and a glyph want different boxes.
+  final Widget? leading;
+
   final Widget? trailing;
 
   @override
@@ -312,7 +318,10 @@ class AppSelectableRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            if (icon != null) ...[
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: Space.x3),
+            ] else if (icon != null) ...[
               AppIcon(icon!, size: Sizes.iconMd, color: selected ? t.primary : t.textSecondary, bold: selected),
               const SizedBox(width: Space.x3),
             ],

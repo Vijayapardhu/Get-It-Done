@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/models.dart';
 import '../core/providers.dart';
 import '../design/design_system.dart';
+import '../core/ui/service_artwork.dart';
 import '../features/account/profile_tab.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/booking/book_service_screen.dart';
@@ -71,6 +72,12 @@ class _RootGate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
+
+    // Start the config fetch here so the OAuth client id and payment key are
+    // in hand by the time anything needs them. Its result is never awaited —
+    // a slow or failed config must not hold the app on a splash screen, and
+    // effectiveConfigProvider falls back to the build-time values meanwhile.
+    ref.watch(remoteConfigProvider);
 
     // Hold on the splash while the stored session is validated, so an
     // authenticated user never sees sign-in flash past on launch.
@@ -386,6 +393,7 @@ class _EmergencySheet extends ConsumerWidget {
                       title: service.name,
                       subtitle: service.description,
                       icon: ServiceVisuals.forName(service.category).icon,
+                      leading: ServiceArtwork(service: service, size: 40),
                       selected: false,
                       onTap: () => onPick(service),
                     ),
