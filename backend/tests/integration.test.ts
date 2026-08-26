@@ -205,3 +205,168 @@ describe("Error Handling", () => {
     expect(res.status).toBe(401);
   });
 });
+describe("Multi-service checkout", () => {
+  let authToken: string;
+  let serviceIds: string[] = [];
+
+  beforeAll(async () => {
+    const email = `orderuser${Date.now()}@example.com`;
+    await request(baseUrl()).post("/auth/register").send({ name: "Order User", email, password: "password123", role: "customer" });
+    const login = await request(baseUrl()).post("/auth/login").send({ email, password: "password123" });
+    authToken = login.body.accessToken;
+
+    const services = await request(baseUrl()).get("/services");
+    serviceIds = (services.body.services as Array<{ id: string }>).map((s) => s.id);
+  });
+
+  const key = () => `order-test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  const place = (body: unknown, idempotencyKey = key()) =>
+    request(baseUrl())
+      .post("/orders")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("Idempotency-Key", idempotencyKey)
+      .send(body);
+
+  const validOrder = (lines: Array<{ serviceId: string; quantity: number }>) => ({
+    lines,
+    mode: "instant",
+    latitude: 16.5062,
+    longitude: 80.648,
+    address: "Flat 402, Sai Enclave, Benz Circle"
+  });
+
+  it("turns a cart of two services into two bookings under one order", async () => {
+    // A booking is assigned to ONE worker, and two trades cannot share one.
+    // The whole point of the order is that it fans out.
+    const res = await place(validOrder([
+      { serviceId: serviceIds[0], quantity: 1 },
+      { serviceId: serviceIds[1], quantity: 1 }
+    ]));
+
+    expect(res.status).toBe(201);
+    expect(res.body.order.bookingCount).toBe(2);
+    expect(res.body.bookings).toHaveLength(2);
+
+    const orderIds = new Set(res.body.bookings.map((b: { id: string }) => b.id));
+    expect(orderIds.size).toBe(2);
+  });
+
+  it("books each unit of a quantity as its own visit", async () => {
+    // Two hours of cleaning is two workers, not one booking with a multiplier:
+    // that is what actually has to happen for the work to get done.
+    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 2 }]));
+
+    expect(res.status).toBe(201);
+    expect(res.body.bookings).toHaveLength(2);
+  });
+
+  it("prices come from the server, one per booking", async () => {
+    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+
+    expect(res.status).toBe(201);
+    const price = Number(res.body.bookings[0].price);
+    expect(price).toBeGreaterThan(0);
+    // The order total is the sum of what the server froze, not anything the
+    // client sent.
+    expect(Number(res.body.order.total)).toBeCloseTo(price, 2);
+  });
+
+  it("issues one OTP pair per booking", async () => {
+    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 2 }]));
+
+    expect(res.body.otps).toHaveLength(2);
+    for (const otp of res.body.otps) {
+      expect(otp.startOtp).toMatch(/^\d{6}$/);
+      expect(otp.completionOtp).toMatch(/^\d{6}$/);
+      expect(otp.startOtp).not.toBe(otp.completionOtp);
+    }
+  });
+
+  it("rolls the whole order back when one line is bad", async () => {
+    // Half an order is worse than a clear failure: the customer believes both
+    // are coming and finds out only when one does not arrive.
+    const before = await request(baseUrl()).get("/bookings").set("Authorization", `Bearer ${authToken}`);
+    const countBefore = before.body.bookings.length;
+
+    const res = await place(validOrder([
+      { serviceId: serviceIds[0], quantity: 1 },
+      { serviceId: "00000000-0000-0000-0000-0000000000ff", quantity: 1 }
+    ]));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("SERVICE_NOT_FOUND");
+
+    const after = await request(baseUrl()).get("/bookings").set("Authorization", `Bearer ${authToken}`);
+    expect(after.body.bookings.length).toBe(countBefore);
+  });
+
+  it("replays rather than re-booking when the same key is sent twice", async () => {
+    // The one request in the app where a retry after a timeout would cost real
+    // money and real workers' time.
+    const reused = key();
+    const body = validOrder([{ serviceId: serviceIds[0], quantity: 1 }]);
+
+    const first = await place(body, reused);
+    const second = await place(body, reused);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.body.order.id).toBe(first.body.order.id);
+  });
+
+  it("rejects the same key with different contents", async () => {
+    const reused = key();
+    await place(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]), reused);
+    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 2 }]), reused);
+
+    expect(res.status).toBe(409);
+  });
+
+  it("requires a time for a scheduled order", async () => {
+    const res = await place({
+      ...validOrder([{ serviceId: serviceIds[0], quantity: 1 }]),
+      mode: "scheduled"
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ORDER_SCHEDULE_REQUIRED");
+  });
+
+  it("rejects an empty cart", async () => {
+    const res = await place(validOrder([]));
+    expect(res.status).toBe(400);
+  });
+
+  it("requires an idempotency key", async () => {
+    const res = await request(baseUrl())
+      .post("/orders")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses an unauthenticated caller", async () => {
+    const res = await request(baseUrl())
+      .post("/orders")
+      .set("Idempotency-Key", key())
+      .send(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+
+    expect(res.status).toBe(401);
+  });
+
+  it("does not hand one customer another customer's order", async () => {
+    const placed = await place(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+
+    const email = `nosy${Date.now()}@example.com`;
+    await request(baseUrl()).post("/auth/register").send({ name: "Nosy", email, password: "password123", role: "customer" });
+    const other = await request(baseUrl()).post("/auth/login").send({ email, password: "password123" });
+
+    const res = await request(baseUrl())
+      .get(`/orders/${placed.body.order.id}`)
+      .set("Authorization", `Bearer ${other.body.accessToken}`);
+
+    expect(res.status).toBe(404);
+  });
+});

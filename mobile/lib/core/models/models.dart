@@ -328,6 +328,46 @@ class FareEstimate {
 
 // ──────────────────────────────────────────────────────────── address ──
 
+/// The result of checking out a cart.
+///
+/// One order, and one booking per service in it — a booking is assigned to a
+/// single worker, and a cart can hold two different trades.
+class PlacedOrder {
+  const PlacedOrder({
+    required this.id,
+    required this.mode,
+    required this.total,
+    required this.bookings,
+    this.scheduledAt,
+    this.address,
+  });
+
+  final String id;
+  final String mode;
+
+  /// Sum of the prices the SERVER froze when it created the bookings, not
+  /// anything the app added up.
+  final double total;
+
+  final List<Booking> bookings;
+  final DateTime? scheduledAt;
+  final String? address;
+
+  int get bookingCount => bookings.length;
+
+  factory PlacedOrder.fromJson(Json json) {
+    final order = asJson(pick(json, 'order')) ?? const {};
+    return PlacedOrder(
+      id: asString(pick(order, 'id')),
+      mode: asString(pick(order, 'mode'), fallback: 'scheduled'),
+      total: asDouble(pick(order, 'total')),
+      scheduledAt: asDateOrNull(pick(order, 'scheduledAt')),
+      address: asStringOrNull(pick(order, 'address')),
+      bookings: parseList(pick(json, 'bookings'), Booking.fromJson),
+    );
+  }
+}
+
 class SavedAddress {
   const SavedAddress({
     required this.id,

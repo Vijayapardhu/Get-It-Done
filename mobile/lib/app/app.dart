@@ -7,15 +7,14 @@ import '../design/design_system.dart';
 import '../core/ui/service_artwork.dart';
 import '../features/account/profile_tab.dart';
 import '../features/auth/sign_in_screen.dart';
-import '../features/booking/book_service_screen.dart';
 import '../features/booking/booking_otp_screen.dart';
 import '../features/booking/review_screen.dart';
 import '../features/booking/track_booking_screen.dart';
 import '../features/emergency/emergency_screen.dart';
-import '../core/cart/cart.dart';
 import '../features/cart/cart_bar.dart';
 import '../features/catalogue/service_detail_screen.dart';
 import '../features/cart/cart_screen.dart';
+import '../features/cart/slot_picker_screen.dart';
 import '../features/home/home_screen.dart';
 import 'search_screen.dart';
 import 'tabs.dart';
@@ -228,29 +227,6 @@ class _AppShellState extends ConsumerState<AppShell> {
     _push(ServiceDetailScreen(service: service));
   }
 
-  void _openBookingForm(Service service) {
-    _push(BookServiceScreen(
-      service: service,
-      onBooked: (result) {
-        // Replace rather than push: there is no sensible "back" into a
-        // half-completed booking form once the booking exists.
-        _navigatorKeys[_tab].currentState?.pushReplacement(
-              MaterialPageRoute<void>(
-                builder: (_) => BookingConfirmedScreen(
-                  result: result,
-                  onViewCodes: () => _push(BookingOtpScreen(
-                    bookingId: result.booking.id,
-                    otps: result.otps,
-                    status: result.booking.status,
-                  )),
-                  onTrack: () => _openBooking(result.booking),
-                ),
-              ),
-            );
-      },
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
     final unread = ref.watch(unreadNotificationCountProvider);
@@ -323,52 +299,31 @@ class _AppShellState extends ConsumerState<AppShell> {
   /// The cart is app-level state, so it opens over the current tab rather than
   /// sending the user back to Home to find it.
   void _openCart() {
-    _push(CartScreen(onCheckout: _checkout));
+    _push(CartScreen(onPlaced: _onOrderPlaced));
   }
 
-  /// Checkout, as far as it goes today.
+  /// An order is several bookings, so there is no single booking to open.
   ///
-  /// One service goes through the existing booking flow, which is complete and
-  /// works. Several cannot yet: a booking row holds a single service_id, so
-  /// multi-service checkout is a schema change and the next piece of work.
-  ///
-  /// Until then this says so rather than silently booking only the first
-  /// thing in the cart, which is the failure mode that loses someone's order
-  /// and their trust in one step.
-  void _checkout() {
-    final cart = ref.read(cartProvider);
-    if (cart.lines.isEmpty) return;
+  /// Land on the bookings tab with the cart dropped from the stack: going
+  /// "back" into a cart that has just been emptied and checked out is a dead
+  /// end, and what the customer wants next is to see what they booked.
+  void _onOrderPlaced(PlacedOrder order) {
+    _navigatorKeys[_tab].currentState?.popUntil((route) => route.isFirst);
+    setState(() => _tab = 1);
 
-    if (cart.lines.length == 1) {
-      final service = cart.lines.single.service;
-      Navigator.of(context).pop();
-      _openBookingForm(service);
-      return;
-    }
+    final scheduled = order.scheduledAt;
+    final when = scheduled == null
+        ? 'We are finding workers now.'
+        : 'Scheduled for ${formatSlot(scheduled)}.';
 
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('One service at a time, for now'),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
         content: Text(
-          'Booking several services in one go is still being built. You can '
-          'book ${cart.lines.first.service.name} now and come back for the '
-          'rest, and your cart will still be here.',
+          order.bookingCount == 1
+              ? 'Booking confirmed. $when'
+              : '${order.bookingCount} bookings confirmed. $when',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Not now'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              Navigator.of(context).pop();
-              _openBookingForm(cart.lines.first.service);
-            },
-            child: Text('Book ${cart.lines.first.service.name}'),
-          ),
-        ],
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }

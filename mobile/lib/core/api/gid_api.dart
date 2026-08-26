@@ -126,6 +126,44 @@ class GidApi {
     return ServiceDetail.fromJson(asJson(pick(json, 'service')) ?? const {});
   }
 
+  /// Check out a cart.
+  ///
+  /// Creates one order and one booking per service, all or nothing. The
+  /// idempotency key is required by the server: a retry after a timeout must
+  /// not place a second set of bookings, and this is the one request in the
+  /// app where that would cost real money and real workers' time.
+  Future<PlacedOrder> createOrder({
+    required List<({String serviceId, int quantity})> lines,
+    required String mode,
+    required double latitude,
+    required double longitude,
+    required String address,
+    required String idempotencyKey,
+    String? addressId,
+    DateTime? scheduledAt,
+    String? description,
+  }) async {
+    final json = await _client.post(
+      '/orders',
+      headers: {'idempotency-key': idempotencyKey},
+      body: {
+        'lines': [
+          for (final line in lines)
+            {'serviceId': line.serviceId, 'quantity': line.quantity},
+        ],
+        'mode': mode,
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address,
+        if (addressId != null) 'addressId': addressId,
+        if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+      },
+    );
+    return PlacedOrder.fromJson(json);
+  }
+
   Future<List<Service>> services() async {
     final json = await _client.get('/services');
     return parseList(pick(json, 'services'), Service.fromJson);

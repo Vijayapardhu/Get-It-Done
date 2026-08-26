@@ -38,6 +38,7 @@ export const MIGRATIONS = [
   "migration_phase13_artwork.sql",         // service/category PNG + Lottie artwork
   "migration_phase14_catalogue.sql",       // list price for promotions, service index for ratings
   "migration_phase15_service_detail.sql",  // includes/excludes/steps/faqs for the detail page
+  "migration_phase16_orders.sql",          // service_orders: one checkout, several bookings
 ] as const;
 
 const CREATE_TRACKING_TABLE = `

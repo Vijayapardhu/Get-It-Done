@@ -21,6 +21,7 @@ import { notificationsRouter } from "./routes/notifications.js";
 import { filesRouter } from "./routes/files.js";
 import { configRouter } from "./routes/config.js";
 import { serviceArtworkRouter } from "./routes/serviceArtwork.js";
+import { ordersRouter } from "./routes/orders.js";
 import { usersRouter } from "./routes/users.js";
 import { cooperativesRouter } from "./routes/cooperatives.js";
 import { skillsRouter } from "./routes/skills.js";
@@ -183,6 +184,7 @@ export function createApp(): Express {
   // Mounted before "/services" so servicesRouter's GET /:id cannot swallow it.
   app.use("/services/discovery", requireAuth, serviceDiscoveryRouter);
   // Before servicesRouter: its `/:id` would otherwise capture "categories".
+  app.use("/orders", requireAuth, ordersRouter);
   app.use("/services", serviceArtworkRouter);
   app.use("/services", servicesRouter);
   app.use("/workers", requireAuth, workersRouter);

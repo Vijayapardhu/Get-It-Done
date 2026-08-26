@@ -22,6 +22,9 @@ import 'package:getitdone_customer/features/account/profile_tab.dart';
 import 'package:getitdone_customer/features/account/settings_screens.dart';
 import 'package:getitdone_customer/features/chat/chat_screens.dart';
 import 'package:getitdone_customer/core/models/payment_models.dart';
+import 'package:getitdone_customer/core/cart/cart.dart';
+import 'package:getitdone_customer/core/cart/checkout.dart';
+import 'package:getitdone_customer/features/cart/cart_screen.dart';
 import 'package:getitdone_customer/features/catalogue/service_detail_screen.dart';
 import 'package:getitdone_customer/features/emergency/emergency_screen.dart';
 import 'package:getitdone_customer/features/home/home_screen.dart';
@@ -142,6 +145,31 @@ final _detail = ServiceDetail(
     ),
   ],
 );
+
+const _address = SavedAddress(
+  id: 'addr-1',
+  name: 'Home',
+  address: 'Flat 402, Sai Enclave, Benz Circle, Vijayawada 520010',
+  latitude: 16.5062,
+  longitude: 80.6480,
+  isDefault: true,
+);
+
+/// Notifier overrides so a golden can pin cart and checkout state without
+/// driving the UI to build it up tap by tap.
+class _StubCart extends CartController {
+  _StubCart(this._lines);
+  final List<CartLine> _lines;
+  @override
+  Cart build() => Cart(lines: _lines);
+}
+
+class _StubCheckout extends CheckoutController {
+  _StubCheckout(this._state);
+  final CheckoutState _state;
+  @override
+  CheckoutState build() => _state;
+}
 
 final _bookings = <Booking>[
   Booking.fromJson({
@@ -417,6 +445,50 @@ void main() {
       size: const Size(390, 1900),
       overrides: [
         serviceDetailProvider(_services.first.id).overrideWith((ref) async => _detail),
+      ],
+    );
+  });
+
+  testWidgets('cart scheduled', (tester) async {
+    await shoot(
+      tester,
+      'cart_scheduled_light',
+      CartScreen(onPlaced: (_) {}),
+      size: const Size(390, 1200),
+      overrides: [
+        addressesProvider.overrideWith((ref) async => [_address]),
+        cartProvider.overrideWith(() => _StubCart([
+              CartLine(service: _services[0]),
+              CartLine(service: _services[2], quantity: 2),
+            ])),
+        checkoutProvider.overrideWith(() => _StubCheckout(
+              CheckoutState(
+                mode: CheckoutMode.scheduled,
+                addressId: _address.id,
+                scheduledAt: _now.add(const Duration(days: 1, hours: 4)),
+              ),
+            )),
+      ],
+    );
+  });
+
+  testWidgets('cart recurring', (tester) async {
+    await shoot(
+      tester,
+      'cart_recurring_light',
+      CartScreen(onPlaced: (_) {}),
+      size: const Size(390, 1200),
+      overrides: [
+        addressesProvider.overrideWith((ref) async => [_address]),
+        cartProvider.overrideWith(() => _StubCart([CartLine(service: _services[0])])),
+        checkoutProvider.overrideWith(() => _StubCheckout(
+              CheckoutState(
+                mode: CheckoutMode.recurring,
+                addressId: _address.id,
+                scheduledAt: _now.add(const Duration(days: 1, hours: 4)),
+                days: const {1, 4},
+              ),
+            )),
       ],
     );
   });

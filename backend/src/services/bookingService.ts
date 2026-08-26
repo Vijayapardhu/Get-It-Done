@@ -31,6 +31,85 @@ async function getBooking(client: typeof pool | PoolClient, id: string) {
   return result.rows[0] ?? null;
 }
 
+type BookingSeed = {
+  customerId: string;
+  serviceId: string;
+  latitude: number;
+  longitude: number;
+  address: string;
+  description: string;
+  scheduledAt?: string | null;
+  isEmergency: boolean;
+  addressId?: string | null;
+  orderId?: string | null;
+};
+
+type PlacedBooking = {
+  bookingId: string;
+  workerId: string | null;
+  otps: { startOtp: string; completionOtp: string };
+  matches: Awaited<ReturnType<typeof findMatchingWorkers>>;
+};
+
+/**
+ * Place one booking inside an existing transaction.
+ *
+ * Extracted so a multi-service order runs exactly this, once per service,
+ * rather than growing a second implementation that would drift from it. Every
+ * consequential step lives here: matching, reserving the worker, the OTP
+ * handshake codes, and freezing the price.
+ *
+ * It deliberately does NOT commit, write idempotency records, or arm the
+ * accept timeout. The caller owns the transaction, and a timeout armed before
+ * commit could fire against a row that gets rolled back.
+ */
+async function placeBooking(client: PoolClient, input: BookingSeed): Promise<PlacedBooking> {
+  const service = await client.query("select id, emergency_supported from services where id = $1", [input.serviceId]);
+  if (!service.rows[0]) throw new Error("SERVICE_NOT_FOUND");
+  if (input.isEmergency && !service.rows[0].emergency_supported) throw new Error("EMERGENCY_NOT_SUPPORTED");
+
+  const matches = await findMatchingWorkers({ serviceId: input.serviceId, latitude: input.latitude, longitude: input.longitude, urgency: input.isEmergency ? "emergency" : "regular" });
+  const workerId: string | null = matches.workers[0]?.workerId ?? null;
+  let confirmedWorkerId: string | null = workerId;
+  if (workerId) {
+    const worker = await client.query("select id from workers where id = $1 and verification_status = 'verified' and current_status = 'available' for update", [workerId]);
+    if (!worker.rows[0]) { confirmedWorkerId = null; }
+    else {
+      const reserved = await client.query("update workers set current_status = 'busy', updated_at = now() where id = $1 and current_status = 'available' returning id", [workerId]);
+      if (!reserved.rows[0]) confirmedWorkerId = null;
+    }
+  }
+
+  // Start/completion handshake codes. CSPRNG-backed: Math.random() is not
+  // unpredictable enough for a credential that gates payment.
+  const { startOtp, completionOtp, startOtpHash, completionOtpHash } = generateBookingOtps();
+  const status: BookingStatus = confirmedWorkerId ? "assigned" : "requested";
+
+  const result = await client.query(
+    `INSERT INTO bookings (customer_id, worker_id, service_id, status, scheduled_at, is_emergency, location, address, address_id, description, start_otp_hash, completion_otp_hash, order_id)
+     VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326)::geography, $9, $10, $11, $12, $13, $14)
+     RETURNING id`,
+    [input.customerId, confirmedWorkerId, input.serviceId, status, input.scheduledAt ?? null, input.isEmergency, input.longitude, input.latitude, input.address, input.addressId ?? null, input.description, startOtpHash, completionOtpHash, input.orderId ?? null]
+  );
+
+  const bookingId: string = result.rows[0].id;
+
+  // Freeze the price now, in this transaction. The customer is committing to a
+  // booking, so this is the moment the number becomes a promise -- leaving it
+  // until payment let surge and the assigned worker's cooperative move it out
+  // from under them.
+  await quoteBookingAmount(bookingId, client);
+
+  await client.query("insert into booking_status_events (booking_id, status, actor_id, reason) values ($1, $2, $3, $4)", [bookingId, status, input.customerId, confirmedWorkerId ? "matched_verified_worker" : "awaiting_worker"]);
+
+  if (confirmedWorkerId) {
+    const workerUser = await client.query("select user_id from workers where id = $1", [confirmedWorkerId]);
+    if (workerUser.rows[0]) await writeNotification(client, { userId: workerUser.rows[0].user_id, type: "booking.assigned", title: "New service booking", body: "You have been assigned a new service request.", aggregateType: "booking", aggregateId: bookingId });
+  }
+
+  return { bookingId, workerId: confirmedWorkerId, otps: { startOtp, completionOtp }, matches };
+}
+
 export async function createBooking(input: { customerId: string; serviceId: string; latitude: number; longitude: number; address: string; description: string; scheduledAt?: string; isEmergency: boolean; idempotencyKey?: string }) {
   const client = await pool.connect();
   try {
@@ -45,52 +124,15 @@ export async function createBooking(input: { customerId: string; serviceId: stri
       }
     }
 
-    const service = await client.query("select id, emergency_supported from services where id = $1", [input.serviceId]);
-    if (!service.rows[0]) throw new Error("SERVICE_NOT_FOUND");
-    if (input.isEmergency && !service.rows[0].emergency_supported) throw new Error("EMERGENCY_NOT_SUPPORTED");
+    const placed = await placeBooking(client, input);
+    const booking = await getBooking(client, placed.bookingId);
 
-    const matches = await findMatchingWorkers({ serviceId: input.serviceId, latitude: input.latitude, longitude: input.longitude, urgency: input.isEmergency ? "emergency" : "regular" });
-    const workerId: string | null = matches.workers[0]?.workerId ?? null;
-    const status: BookingStatus = workerId ? "assigned" : "requested";
-    let confirmedWorkerId: string | null = workerId;
-    if (workerId) {
-      const worker = await client.query("select id from workers where id = $1 and verification_status = 'verified' and current_status = 'available' for update", [workerId]);
-      if (!worker.rows[0]) { confirmedWorkerId = null; }
-      else {
-        const reserved = await client.query("update workers set current_status = 'busy', updated_at = now() where id = $1 and current_status = 'available' returning id", [workerId]);
-        if (!reserved.rows[0]) confirmedWorkerId = null;
-      }
-    }
-
-    // Start/completion handshake codes. CSPRNG-backed: Math.random() is not
-    // unpredictable enough for a credential that gates payment.
-    const { startOtp, completionOtp, startOtpHash, completionOtpHash } = generateBookingOtps();
-
-    const result = await client.query(
-      `INSERT INTO bookings (customer_id, worker_id, service_id, status, scheduled_at, is_emergency, location, address, description, start_otp_hash, completion_otp_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326)::geography, $9, $10, $11, $12)
-       RETURNING id`,
-      [input.customerId, confirmedWorkerId, input.serviceId, confirmedWorkerId ? "assigned" : "requested", input.scheduledAt ?? null, input.isEmergency, input.longitude, input.latitude, input.address, input.description, startOtpHash, completionOtpHash]
-    );
-
-    // Freeze the price now, in this transaction. The customer is committing to
-    // a booking, so this is the moment the number becomes a promise — leaving
-    // it until payment let surge and the assigned worker's cooperative move it
-    // out from under them.
-    await quoteBookingAmount(result.rows[0].id, client);
-
-    const booking = await getBooking(client, result.rows[0].id);
-    await client.query("insert into booking_status_events (booking_id, status, actor_id, reason, request_id) values ($1, $2, $3, $4, $5)", [result.rows[0].id, status, input.customerId, confirmedWorkerId ? "matched_verified_worker" : "awaiting_worker", input.idempotencyKey ?? null]);
-    if (confirmedWorkerId) {
-      const workerUser = await client.query("select user_id from workers where id = $1", [confirmedWorkerId]);
-      if (workerUser.rows[0]) await writeNotification(client, { userId: workerUser.rows[0].user_id, type: "booking.assigned", title: "New service booking", body: "You have been assigned a new service request.", aggregateType: "booking", aggregateId: result.rows[0].id });
-    }
     const response = {
       booking,
-      recommendedWorker: confirmedWorkerId ? matches.workers[0] ?? null : null,
-      alternatives: matches.workers.slice(1, 4),
+      recommendedWorker: placed.workerId ? placed.matches.workers[0] ?? null : null,
+      alternatives: placed.matches.workers.slice(1, 4),
       // OTPs are shown ONCE at booking creation; customer shares with worker on-site
-      otps: { startOtp, completionOtp },
+      otps: placed.otps,
     };
     if (input.idempotencyKey) await client.query("insert into idempotency_keys (user_id, endpoint, key, request_hash, response_status, response_body, expires_at) values ($1, 'create-booking', $2, $3, 201, $4, now() + interval '24 hours')", [input.customerId, input.idempotencyKey, bodyHash, response]);
     await client.query("commit");
@@ -98,8 +140,117 @@ export async function createBooking(input: { customerId: string; serviceId: stri
     // Blueprint 5.4: the assigned worker has WORKER_ACCEPT_TIMEOUT_SECONDS to
     // accept before the booking is offered to the next candidate. Armed after
     // commit so the job can never reference a rolled-back row.
-    if (confirmedWorkerId) {
-      await scheduleAssignmentTimeout(result.rows[0].id, confirmedWorkerId).catch(() => undefined);
+    if (placed.workerId) {
+      await scheduleAssignmentTimeout(placed.bookingId, placed.workerId).catch(() => undefined);
+    }
+
+    return { replay: false, status: 201, body: response };
+  } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+}
+
+export type OrderLine = { serviceId: string; quantity: number };
+
+export type CreateOrderInput = {
+  customerId: string;
+  lines: OrderLine[];
+  mode: "instant" | "scheduled" | "recurring";
+  latitude: number;
+  longitude: number;
+  address: string;
+  addressId?: string | null;
+  description?: string;
+  scheduledAt?: string | null;
+  idempotencyKey?: string;
+};
+
+/**
+ * Check out a cart: one order, one booking per service.
+ *
+ * All or nothing. Half an order -- the plumber booked, the electrician
+ * silently dropped because nobody was free -- is worse than a clear failure,
+ * because the customer believes both are coming and finds out only when one
+ * does not arrive. Any line that cannot be placed rolls the whole thing back.
+ *
+ * Quantity is deliberately NOT a multiplier on a single booking. Two hours of
+ * cleaning is two bookings, each matched to a worker and each with its own
+ * handshake, because that is what has to happen for the work to get done.
+ */
+export async function createOrder(input: CreateOrderInput) {
+  if (input.lines.length === 0) throw new Error("ORDER_EMPTY");
+  if (input.mode === "scheduled" && !input.scheduledAt) throw new Error("ORDER_SCHEDULE_REQUIRED");
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const bodyHash = requestHash(input);
+
+    if (input.idempotencyKey) {
+      const existing = await client.query("select request_hash, response_status, response_body from idempotency_keys where user_id = $1 and endpoint = 'create-order' and key = $2 for update", [input.customerId, input.idempotencyKey]);
+      if (existing.rows[0]) {
+        if (existing.rows[0].request_hash !== bodyHash) throw new Error("IDEMPOTENCY_KEY_REUSED");
+        await client.query("commit");
+        return { replay: true, status: existing.rows[0].response_status, body: existing.rows[0].response_body };
+      }
+    }
+
+    const order = await client.query(
+      `insert into service_orders (customer_id, mode, scheduled_at, address, address_id, location, notes)
+       values ($1, $2, $3, $4, $5, ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography, $8)
+       returning id, created_at as "createdAt"`,
+      [input.customerId, input.mode, input.scheduledAt ?? null, input.address, input.addressId ?? null, input.longitude, input.latitude, input.description ?? null]
+    );
+    const orderId: string = order.rows[0].id;
+
+    const placed: PlacedBooking[] = [];
+    for (const line of input.lines) {
+      const quantity = Math.max(1, Math.min(10, Math.trunc(line.quantity)));
+      for (let i = 0; i < quantity; i++) {
+        placed.push(await placeBooking(client, {
+          customerId: input.customerId,
+          serviceId: line.serviceId,
+          latitude: input.latitude,
+          longitude: input.longitude,
+          address: input.address,
+          addressId: input.addressId ?? null,
+          description: input.description ?? "",
+          scheduledAt: input.scheduledAt ?? null,
+          // A cart checked out as "instant" is matched now, but it is not an
+          // EMERGENCY: that is its own screen, its own endpoint and its own
+          // pricing, and quietly charging emergency rates here would be theft.
+          isEmergency: false,
+          orderId
+        }));
+      }
+    }
+
+    const bookings = [];
+    for (const item of placed) bookings.push(await getBooking(client, item.bookingId));
+
+    const total = bookings.reduce((sum, booking) => sum + Number(booking?.price ?? 0), 0);
+
+    const response = {
+      order: {
+        id: orderId,
+        mode: input.mode,
+        scheduledAt: input.scheduledAt ?? null,
+        address: input.address,
+        createdAt: order.rows[0].createdAt,
+        bookingCount: bookings.length,
+        // The sum of prices frozen a moment ago in this transaction, not a
+        // figure the client sent us.
+        total
+      },
+      bookings,
+      // One pair per booking, in the same order. Shown once; the customer
+      // gives them to each worker on arrival.
+      otps: placed.map((item, index) => ({ bookingId: item.bookingId, startOtp: item.otps.startOtp, completionOtp: item.otps.completionOtp, index }))
+    };
+
+    if (input.idempotencyKey) await client.query("insert into idempotency_keys (user_id, endpoint, key, request_hash, response_status, response_body, expires_at) values ($1, 'create-order', $2, $3, 201, $4, now() + interval '24 hours')", [input.customerId, input.idempotencyKey, bodyHash, response]);
+    await client.query("commit");
+
+    for (const item of placed) {
+      if (item.workerId) await scheduleAssignmentTimeout(item.bookingId, item.workerId).catch(() => undefined);
     }
 
     return { replay: false, status: 201, body: response };
