@@ -87,6 +87,13 @@ class _CartScreenState extends ConsumerState<CartScreen> {
             idempotencyKey: _idempotencyKey,
           );
 
+      // Before anything else. The server issued these once and keeps only
+      // hashes; a navigation that happened first and then failed would take
+      // them with it.
+      await ref.read(otpStoreProvider).saveAll({
+        for (final entry in order.otps) entry.bookingId: entry.pair,
+      });
+
       ref.read(cartProvider.notifier).clear();
       ref.read(checkoutProvider.notifier).reset();
       ref.invalidate(dashboardProvider);

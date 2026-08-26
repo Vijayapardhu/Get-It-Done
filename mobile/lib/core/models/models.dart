@@ -530,10 +530,20 @@ class WorkerMatch {
     this.isAvailable = true,
     this.score,
     this.reasons = const [],
+    this.phone,
+    this.avatarUrl,
   });
 
   final String workerId;
   final String name;
+
+  /// The assigned worker's number, from the tracking endpoint.
+  ///
+  /// This is what the Call button dials. The screen used to read it from
+  /// `booking.workerPhone`, which the tracking response does not carry — so it
+  /// was always null and the button never rendered at all.
+  final String? phone;
+  final String? avatarUrl;
   final double? distanceKm;
   final double? rating;
   final int? jobsToday;
@@ -548,6 +558,8 @@ class WorkerMatch {
   factory WorkerMatch.fromJson(Json json) => WorkerMatch(
         workerId: asString(pick(json, 'workerId', aliases: ['id'])),
         name: asString(pick(json, 'name'), fallback: 'Worker'),
+        phone: asStringOrNull(pick(json, 'phone', aliases: ['workerPhone'])),
+        avatarUrl: asStringOrNull(pick(json, 'avatarUrl')),
         distanceKm: asDoubleOrNull(pick(json, 'distanceKm')),
         rating: asDoubleOrNull(pick(json, 'rating')),
         jobsToday: asIntOrNull(pick(json, 'jobsToday')),

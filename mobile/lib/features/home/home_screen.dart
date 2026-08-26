@@ -51,55 +51,32 @@ class HomeScreen extends ConsumerWidget {
         ref.invalidate(servicesProvider);
         await ref.read(dashboardProvider.future);
       },
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: Space.x20),
-        children: [
-          HomeHero(
+      // A CustomScrollView rather than a ListView, so the search can be a
+      // pinned sliver. Everything else is the same list wrapped in one adapter:
+      // the page is short and its children are cheap, and splitting it into a
+      // dozen slivers would buy nothing but noise.
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: HomeHero(
             greeting: _greeting(user?.shortName),
             onOpenSearch: onOpenSearch,
             onInstant: onStartEmergency,
             onSchedule: onOpenSearch,
-            onOpenProfile: onOpenProfile,
-          ),
-
-          // ── The cooperative story ─────────────────────────────────────
-          // Sits where a commercial app puts its promotional banner, because
-          // it is doing that job: it is the reason to choose this app over the
-          // one with faster delivery. It is not a promotion, though — we run
-          // none, and a fabricated "50% off" would undo exactly the trust this
-          // is claiming.
-          const SizedBox(height: Space.x5),
-          Padding(
-            padding: Space.pageInsets,
-            child: AppCard(
-              elevated: false,
-              padding: const EdgeInsets.all(Space.x4),
-              child: Row(
-                children: [
-                  AppIconBadge(AppIcons.cooperative, size: 44, iconSize: 22),
-                  const SizedBox(width: Space.x4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Every booking funds worker welfare',
-                            style: context.text.titleSmall),
-                        const SizedBox(height: 2),
-                        Text(
-                          '2% of every job goes to insurance and training for '
-                          'the cooperative members who serve you.',
-                          style: context.text.bodySmall
-                              ?.copyWith(color: t.textSecondary, height: 1.45),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              onOpenProfile: onOpenProfile,
             ),
           ),
 
+          // Sits under the hero and sticks to the top once the hero has
+          // scrolled away, so search is always one tap from wherever you are
+          // in the catalogue.
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StickySearch(onTap: onOpenSearch),
+          ),
+
+          SliverList(
+            delegate: SliverChildListDelegate([
           // ── Active booking ────────────────────────────────────────────
           // Placed high and only when there is one: a customer with a worker
           // on the way opened the app for exactly this.
@@ -156,6 +133,44 @@ class HomeScreen extends ConsumerWidget {
           ),
 
           const SizedBox(height: Space.section),
+
+          // ── The cooperative story ─────────────────────────────────────
+          // Sits where a commercial app puts its promotional banner, because
+          // it is doing that job: it is the reason to choose this app over the
+          // one with faster delivery. It is not a promotion, though — we run
+          // none, and a fabricated "50% off" would undo exactly the trust this
+          // is claiming.
+          const SizedBox(height: Space.x5),
+          Padding(
+            padding: Space.pageInsets,
+            child: AppCard(
+              elevated: false,
+              padding: const EdgeInsets.all(Space.x4),
+              child: Row(
+                children: [
+                  AppIconBadge(AppIcons.cooperative, size: 44, iconSize: 22),
+                  const SizedBox(width: Space.x4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Every booking funds worker welfare',
+                            style: context.text.titleSmall),
+                        const SizedBox(height: 2),
+                        Text(
+                          '2% of every job goes to insurance and training for '
+                          'the cooperative members who serve you.',
+                          style: context.text.bodySmall
+                              ?.copyWith(color: t.textSecondary, height: 1.45),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
           // ── Recent ────────────────────────────────────────────────────
           dashboard.maybeWhen(
@@ -247,6 +262,9 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             orElse: () => const SizedBox.shrink(),
+          ),
+              const SizedBox(height: Space.x20),
+            ]),
           ),
         ],
       ),
@@ -401,6 +419,63 @@ class _PastBookingRow extends StatelessWidget {
   }
 }
 
+/// The search bar, pinned to the top of the catalogue.
+///
+/// One field, not two. The obvious alternative -- leave a search inside the
+/// hero and fade a second one in when it scrolls past -- means two widgets that
+/// have to agree about state and a cross-fade the eye can catch. This is the
+/// same field the whole time; it simply stops moving when it reaches the top.
+///
+/// The surface and its hairline fade in over the first few points of overlap
+/// rather than snapping on, so the bar separates from the content it is now
+/// covering without announcing itself.
+class _StickySearch extends SliverPersistentHeaderDelegate {
+  const _StickySearch({required this.onTap});
+
+  final VoidCallback onTap;
+
+  /// Field height plus the padding around it. Fixed, because min and max are
+  /// the same: this bar does not collapse, it pins.
+  static const _height = 76.0;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final t = context.tokens;
+
+    // Ramped over 24 points so the transition reads as smooth at any scroll
+    // speed. A boolean here would flick the shadow on and off when the user
+    // rests a finger near the boundary.
+    final settled = (shrinkOffset / 24).clamp(0.0, 1.0);
+
+    return Container(
+      height: _height,
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.page,
+        vertical: Space.x3,
+      ),
+      decoration: BoxDecoration(
+        color: t.pageBackground,
+        border: Border(
+          bottom: BorderSide(
+            color: t.border.withValues(alpha: settled),
+            width: settled == 0 ? 0 : 1,
+          ),
+        ),
+      ),
+      child: AppSearchField(readOnly: true, onTap: onTap, hint: 'Search for a service'),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _StickySearch oldDelegate) => oldDelegate.onTap != onTap;
+}
+
 /// The catalogue grid.
 ///
 /// Three columns on a phone, more on anything wider. Derived from the
@@ -422,10 +497,17 @@ class _ServiceGrid extends StatelessWidget {
   /// The grid runs closer to the screen edge than the prose around it.
   static const insets = EdgeInsets.symmetric(horizontal: Space.x4);
 
+  /// Three across, and only fewer if three genuinely will not fit.
+  ///
+  /// Capped rather than derived upward: a wide screen used to give four, and
+  /// the catalogue is meant to read as a considered set of three columns, not
+  /// as many tiles as happen to fit. Two remains the floor for a narrow phone
+  /// at a large accessibility text scale, where three columns of clipped words
+  /// help nobody.
   static int columnsFor(double width, double textScale) {
     final target = _minTile * (textScale > 1.3 ? 1.4 : 1);
     final fits = ((width + _gap) / (target + _gap)).floor();
-    return fits.clamp(2, 4);
+    return fits.clamp(2, 3);
   }
 
   /// Height of everything below the artwork square: the inset, two lines of

@@ -138,7 +138,13 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
                 const SizedBox(height: Space.x3),
                 // Reaching the worker matters most while they are on the way —
                 // gate codes, which floor, where to park.
-                _ContactRow(bookingId: widget.bookingId, phone: data.booking.workerPhone),
+                // The number lives on the WORKER in the tracking response, not on the
+                // booking. Reading it from the booking meant it was always null
+                // and the Call button was never drawn.
+                _ContactRow(
+                  bookingId: widget.bookingId,
+                  phone: data.worker?.phone ?? data.booking.workerPhone,
+                ),
                 const SizedBox(height: Space.x4),
               ],
 

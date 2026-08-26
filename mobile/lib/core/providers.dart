@@ -10,6 +10,7 @@ import 'models/payment_models.dart';
 import 'models/models.dart';
 import 'network/api_client.dart';
 import 'network/api_exception.dart';
+import 'storage/otp_store.dart';
 import 'storage/token_store.dart';
 
 /// Composition root.
@@ -18,6 +19,16 @@ import 'storage/token_store.dart';
 /// tests can override any layer with one `overrideWithValue`.
 
 final tokenStoreProvider = Provider<TokenStore>((ref) => TokenStore());
+
+/// Handshake codes for bookings placed on this device. See [OtpStore] for why
+/// the app has to keep them rather than asking for them again.
+final otpStoreProvider = Provider<OtpStore>((ref) => OtpStore());
+
+/// The stored codes for one booking, or null if this device never had them.
+final bookingOtpsProvider =
+    FutureProvider.autoDispose.family<BookingOtps?, String>((ref, bookingId) async {
+  return ref.watch(otpStoreProvider).read(bookingId);
+});
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final client = ApiClient(tokenStore: ref.watch(tokenStoreProvider));
@@ -207,6 +218,7 @@ class AuthController extends Notifier<AuthState> {
       } catch (_) {}
     }
     await ref.read(googleAuthServiceProvider).signOut();
+    await ref.read(otpStoreProvider).clear();
     await _tokens.clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

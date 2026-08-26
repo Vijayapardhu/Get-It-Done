@@ -42,6 +42,22 @@ class _BookingOtpScreenState extends ConsumerState<BookingOtpScreen> {
   bool _reissuing = false;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    // Nothing was passed in, so look for what this device kept when the
+    // booking was placed. Without this the only route to a code is reissuing,
+    // which mints a NEW pair and invalidates the one the customer already
+    // wrote down.
+    if (widget.otps == null) _restore();
+  }
+
+  Future<void> _restore() async {
+    final stored = await ref.read(otpStoreProvider).read(widget.bookingId);
+    if (!mounted || stored == null) return;
+    setState(() => _otps = stored);
+  }
+
   /// Which code the worker needs right now. Before work starts it is the start
   /// code; once started, the completion code. Showing both with equal weight is
   /// how a customer reads out the wrong one.
@@ -51,6 +67,7 @@ class _BookingOtpScreenState extends ConsumerState<BookingOtpScreen> {
     setState(() { _reissuing = true; _error = null; });
     try {
       final otps = await ref.read(apiProvider).reissueOtps(widget.bookingId);
+      await ref.read(otpStoreProvider).save(widget.bookingId, otps);
       if (!mounted) return;
       setState(() => _otps = otps);
       ScaffoldMessenger.of(context).showSnackBar(

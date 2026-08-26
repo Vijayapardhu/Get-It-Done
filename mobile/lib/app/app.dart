@@ -325,7 +325,12 @@ class _AppShellState extends ConsumerState<AppShell> {
                         label: 'Alerts',
                         badgeCount: unread,
                       ),
-                      const AppNavItem(icon: AppIcons.profile, label: 'Profile'),
+                      // No Profile destination. It is somewhere you go
+                      // occasionally to change something, not one of the three
+                      // things this app is for, and it was spending a quarter
+                      // of the bar on settings. The header avatar still selects
+                      // it -- it is a tab without a button, so the back gesture
+                      // and its own navigation stack keep working.
                     ],
                   ),
                 ],

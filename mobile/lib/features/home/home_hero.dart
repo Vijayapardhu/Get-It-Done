@@ -89,13 +89,6 @@ class HomeHero extends ConsumerWidget {
               ),
               const SizedBox(height: Space.x5),
 
-              AppSearchField(
-                readOnly: true,
-                onTap: onOpenSearch,
-                hint: 'Search for a service',
-              ),
-              const SizedBox(height: Space.x5),
-
               Row(
                 children: [
                   Expanded(
@@ -120,53 +113,10 @@ class HomeHero extends ConsumerWidget {
                 ],
               ),
 
-              const SizedBox(height: Space.x4),
-              const _TrustStrip(),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Why this app rather than the other one.
-///
-/// Three claims, small, on one line. It is deliberately not a card or a
-/// section: the moment this gets its own heading and an icon per row, it stops
-/// being a reason to trust the app and becomes marketing to scroll past.
-///
-/// Every claim is one the product actually keeps. Workers are verified by their
-/// cooperative before they can accept work; the price is quoted and frozen
-/// before booking and broken down on the invoice; the matching query is
-/// geographic and only reaches nearby workers. Nothing here is aspirational.
-class _TrustStrip extends StatelessWidget {
-  const _TrustStrip();
-
-  static const _claims = [
-    'Cooperative verified',
-    'Transparent pricing',
-    'Local workers',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        AppIcon(AppIcons.tick, size: 13, color: AppColors.blue200, bold: true),
-        const SizedBox(width: Space.x2),
-        Expanded(
-          child: Text(
-            _claims.join('  ·  '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.text.labelSmall?.copyWith(
-              color: AppColors.blue200,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
