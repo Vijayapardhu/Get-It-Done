@@ -1,0 +1,11 @@
+# Golden renders double as the visual review artefacts for the design system.
+#
+# They run by default locally (fonts are bundled and loaded explicitly in the
+# test, so output is deterministic on a given platform). Exclude them in CI,
+# where a different OS rasterises text slightly differently:
+#
+#   flutter test --exclude-tags golden
+#
+# Regenerate after an intentional visual change:
+#
+#   flutter test --update-goldens
