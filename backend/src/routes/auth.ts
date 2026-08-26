@@ -347,6 +347,57 @@ authRouter.post("/login", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+/**
+ * The demo account's phone number.
+ *
+ * Matches the seeded "Demo Customer" so a demo build lands on the account that
+ * already has bookings, invoices and a chat thread against it — an empty
+ * account demonstrates nothing. If the seed has not been run the account is
+ * created on first use, so the endpoint never depends on seed order.
+ */
+const DEMO_PHONE = "+919999990001";
+
+/**
+ * @openapi
+ * /auth/demo:
+ *   post:
+ *     summary: Sign in to the shared demo account (non-production only)
+ *     tags: [Authentication]
+ *     description: >
+ *       Issues a session with no credential. Available only while
+ *       DEMO_LOGIN_ENABLED is set, which the config refuses in production.
+ *       Responds 404 when disabled, so a probe cannot tell the route exists.
+ *     responses:
+ *       200: { description: Session issued }
+ *       404: { description: Demo login is not enabled on this server }
+ */
+authRouter.post("/demo", async (req, res, next) => {
+  try {
+    // 404, not 403. A 403 confirms the route is there and the operator merely
+    // turned it off, which is a map of where to push on the next deployment.
+    if (!env.DEMO_LOGIN_ENABLED) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    let user = await authService.findUserByPhone(DEMO_PHONE);
+    if (!user) {
+      user = await authService.createUserFromPhone(DEMO_PHONE, "Demo Customer", "customer");
+      logger.warn({ phone: DEMO_PHONE }, "Demo account did not exist and was created on first demo sign-in");
+    }
+
+    // Deliberately audited like any other sign-in. A shared account that
+    // several people use at once is exactly the one where you want a record of
+    // when and from where it was opened.
+    await authService.updateLastLogin(user.id);
+    await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), {
+      method: "demo",
+    });
+
+    res.json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
+  } catch (error) { next(error); }
+});
+
 authRouter.post("/refresh", async (req, res, next) => {
   try {
     const input = z.object({ refreshToken: z.string().min(32) }).parse(req.body);

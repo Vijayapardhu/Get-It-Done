@@ -31,6 +31,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
   bool _busy = false;
   bool _googleBusy = false;
+  bool _demoBusy = false;
   bool _obscure = true;
   String? _error;
 
@@ -65,6 +66,25 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _googleBusy = false);
+    }
+  }
+
+  Future<void> _signInAsDemo() async {
+    setState(() { _demoBusy = true; _error = null; });
+    try {
+      await ref.read(authControllerProvider.notifier).signInAsDemo();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        // 404 means the server has demo login off. The button is only drawn
+        // when the config said otherwise, so this is a config that changed
+        // under us — say that rather than showing a bare "not found".
+        _error = e.statusCode == 404
+            ? 'The demo account is not available on this server.'
+            : e.message;
+      });
+    } finally {
+      if (mounted) setState(() => _demoBusy = false);
     }
   }
 
@@ -105,7 +125,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final anyBusy = _busy || _googleBusy;
+    final anyBusy = _busy || _googleBusy || _demoBusy;
 
     return Scaffold(
       body: SafeArea(
@@ -247,6 +267,45 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                           ),
                 ),
               ),
+
+              // ── Demo account ─────────────────────────────────────────
+              // Drawn only when the SERVER says it has one, so a build that
+              // happens to contain this code shows nothing against a real
+              // deployment. Set apart in its own panel rather than sitting in
+              // the list of sign-in options: it is not a way to sign in, it is
+              // a way to look around, and someone with a real account should
+              // never reach for it by mistake.
+              if (ref.watch(effectiveConfigProvider).demoSignInEnabled) ...[
+                const SizedBox(height: Space.x6),
+                Container(
+                  padding: const EdgeInsets.all(Space.x4),
+                  decoration: BoxDecoration(
+                    color: t.surfaceAlt,
+                    borderRadius: BorderRadius.circular(Radii.xl),
+                    border: Border.all(color: t.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Just looking around?', style: context.text.titleSmall),
+                      const SizedBox(height: Space.x1),
+                      Text(
+                        'Open a shared demo account with sample bookings and '
+                        'invoices. Anything you do in it is visible to anyone '
+                        'else trying the demo.',
+                        style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+                      ),
+                      const SizedBox(height: Space.x3),
+                      AppButton(
+                        label: 'Explore the demo',
+                        variant: AppButtonVariant.secondary,
+                        loading: _demoBusy,
+                        onPressed: anyBusy ? null : _signInAsDemo,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               const SizedBox(height: Space.x6),
               Text(

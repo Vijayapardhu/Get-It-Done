@@ -93,6 +93,17 @@ const envSchema = z.object({
   /// Now it is an explicit opt-in and cannot be set in production.
   OTP_FIXED_CODE: booleanFromEnv.default(false),
 
+  /// Opens POST /auth/demo: one tap signs in to a shared, pre-populated
+  /// customer account with no credential at all. It exists so a demo build can
+  /// be handed to someone who has neither a Google account on the device nor a
+  /// phone that will receive our SMS.
+  ///
+  /// This is an unauthenticated session endpoint, which is to say a front door
+  /// with no lock. It is refused in production, and the app only offers the
+  /// button when GET /config/mobile says the server has it on — so the demo
+  /// path cannot be reached by a build merely because it was compiled with it.
+  DEMO_LOGIN_ENABLED: booleanFromEnv.default(false),
+
   // ── Google Sign-In ────────────────────────────────────────────────────────
   // A Google ID token's audience is the client id that requested it, and
   // Android, iOS and web each have their own. All acceptable ids are listed
@@ -131,6 +142,11 @@ if (env.NODE_ENV === "production") {
     throw new Error(
       "SMS_PROVIDER=console cannot be used in production: OTPs would only be logged, never sent. " +
         "Configure msg91 or twilio."
+    );
+  }
+  if (env.DEMO_LOGIN_ENABLED) {
+    throw new Error(
+      "DEMO_LOGIN_ENABLED cannot be enabled in production: POST /auth/demo issues a session to anyone who asks"
     );
   }
   if (env.OTP_ECHO_IN_RESPONSE) {

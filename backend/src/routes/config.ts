@@ -44,6 +44,13 @@ configRouter.get("/mobile", (_req, res) => {
        *  development affordance, not a delivered SMS. */
       otpSignInEnabled: true,
       smsProvider: env.SMS_PROVIDER,
+      /**
+       * Whether POST /auth/demo will issue a session. The app hides the demo
+       * button unless this is true, so the shared no-credential account cannot
+       * be reached just because a build was compiled with the button in it —
+       * the server has to be running with it on as well.
+       */
+      demoSignInEnabled: env.DEMO_LOGIN_ENABLED,
     },
     payments: {
       provider: "razorpay",

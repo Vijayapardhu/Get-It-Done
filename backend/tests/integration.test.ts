@@ -135,6 +135,31 @@ describe("Worker Endpoints", () => {
   });
 });
 
+describe("Demo Login", () => {
+  // The test environment does not set DEMO_LOGIN_ENABLED, so this is the
+  // default posture: an endpoint that hands out sessions with no credential
+  // must be shut unless someone deliberately opened it.
+  it("POST /auth/demo is closed unless the server opted in", async () => {
+    const res = await request(baseUrl()).post("/auth/demo").send({});
+    expect(res.status).toBe(404);
+  });
+
+  it("does not advertise demo sign-in in the mobile config", async () => {
+    const res = await request(baseUrl()).get("/config/mobile");
+    expect(res.status).toBe(200);
+    expect(res.body.auth.demoSignInEnabled).toBe(false);
+  });
+
+  // The app draws the demo button from the config flag alone, so a config that
+  // said true against a server that answers 404 would put a dead button on the
+  // sign-in screen. They have to move together.
+  it("the config flag and the endpoint agree", async () => {
+    const config = await request(baseUrl()).get("/config/mobile");
+    const demo = await request(baseUrl()).post("/auth/demo").send({});
+    expect(config.body.auth.demoSignInEnabled).toBe(demo.status === 200);
+  });
+});
+
 describe("Error Handling", () => {
   it("Returns 404 for unknown routes", async () => {
     const res = await request(baseUrl()).get("/unknown-route");

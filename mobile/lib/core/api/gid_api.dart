@@ -94,6 +94,17 @@ class GidApi {
     return AuthSession.fromJson(json);
   }
 
+  /// Sign in to the shared demo account.
+  ///
+  /// No credential, by design: it exists so the app can be handed to someone
+  /// with neither a Google account on the device nor a phone that will receive
+  /// our SMS. The server answers 404 unless it was started with demo login on,
+  /// so this cannot open a door on a deployment that did not ask for one.
+  Future<AuthSession> signInAsDemo() async {
+    final json = await _client.post('/auth/demo', auth: false);
+    return AuthSession.fromJson(json);
+  }
+
   Future<AppUser> me() async {
     // `/auth/me` rather than `/users/me`: same resource, but this one returns
     // camelCase and includes the OAuth linkage.

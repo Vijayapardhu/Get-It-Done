@@ -78,6 +78,12 @@ services:
       S3_SECRET_KEY: minioadmin
       S3_FORCE_PATH_STYLE: "true"
 
+      # Opens POST /auth/demo, which issues a session to anyone who asks, so a
+      # demo build can be handed to someone with no Google account on the
+      # device and no phone that will receive our SMS. Off unless asked for,
+      # and config/env.ts refuses it outright when NODE_ENV is production.
+      DEMO_LOGIN_ENABLED: ${DEMO_LOGIN_ENABLED:-false}
+
     ports:
       - "4000:4000"
     depends_on:

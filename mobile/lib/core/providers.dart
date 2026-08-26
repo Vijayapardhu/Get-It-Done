@@ -165,6 +165,13 @@ class AuthController extends Notifier<AuthState> {
     await _persist(session);
   }
 
+  /// Sign in to the shared demo account, if the server offers one.
+  Future<void> signInAsDemo() async {
+    state = state.copyWith(clearError: true);
+    final session = await _api.signInAsDemo();
+    await _persist(session);
+  }
+
   /// Create an account with exactly one of [email] or [phone].
   Future<void> registerWithPassword({
     required String name,
