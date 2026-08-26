@@ -32,6 +32,19 @@ export type Service = {
    */
   ratingAverage: number | null;
   ratingCount: number;
+
+  /**
+   * What a minute of this service costs.
+   *
+   * Null for a service an operator has not rated yet; the app then falls back
+   * to advertising basePrice as a flat figure rather than showing nothing.
+   */
+  pricePerMinute: number | null;
+
+  /** The bounds an operator set. The app offers nothing outside them. */
+  minMinutes: number;
+  maxMinutes: number;
+  defaultMinutes: number;
 };
 
 /** One thing that happens while the job is being done. */
@@ -82,6 +95,14 @@ export type ServiceCategory = {
   accentColor: string | null;
 };
 
+/** The rate and duration bounds an operator controls. */
+export type ServicePricing = {
+  pricePerMinute?: number | null;
+  minMinutes?: number;
+  maxMinutes?: number;
+  defaultMinutes?: number;
+};
+
 export type CreateService = {
   name: string;
   category: string;
@@ -92,7 +113,9 @@ export type CreateService = {
   animationUrl?: string | null;
 };
 
-export type UpdateService = Partial<CreateService>;
+/// Everything a create takes, plus the rate and duration bounds an operator
+/// tunes after the fact.
+export type UpdateService = Partial<CreateService> & ServicePricing;
 
 export type ServiceListParams = {
   category?: string;

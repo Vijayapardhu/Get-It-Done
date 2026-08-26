@@ -49,3 +49,17 @@ String _group(String fixed) {
 
   return '${groups.join(',')},$last3$fraction';
 }
+
+/// A duration, the way a person says it.
+///
+/// "1 hr 30 min", not "90 minutes" and not "1.5 hours". Someone booking a
+/// worker thinks in hours and half hours, and the figure appears beside a
+/// price, where a decimal reads as money.
+String formatMinutes(int minutes) {
+  if (minutes < 60) return '$minutes min';
+
+  final hours = minutes ~/ 60;
+  final rest = minutes % 60;
+  final hourLabel = '$hours hr';
+  return rest == 0 ? hourLabel : '$hourLabel $rest min';
+}

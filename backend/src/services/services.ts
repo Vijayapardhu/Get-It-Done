@@ -24,6 +24,10 @@ interface ServiceRow {
   category_animation_url?: string | null;
   category_accent_color?: string | null;
   list_price?: string | number | null;
+  price_per_minute?: string | number | null;
+  min_minutes?: number;
+  max_minutes?: number;
+  default_minutes?: number;
   rating_average?: string | number | null;
   rating_count?: string | number | null;
   hero_image_url?: string | null;
@@ -50,6 +54,10 @@ const SERVICE_COLUMNS = `
   s.image_url           as "image_url",
   s.animation_url       as "animation_url",
   s.list_price          as "list_price",
+  s.price_per_minute    as "price_per_minute",
+  s.min_minutes         as "min_minutes",
+  s.max_minutes         as "max_minutes",
+  s.default_minutes     as "default_minutes",
   c.image_url           as "category_image_url",
   c.animation_url       as "category_animation_url",
   c.accent_color        as "category_accent_color",
@@ -93,6 +101,10 @@ function mapServiceRow(row: ServiceRow): Service {
     listPrice: row.list_price == null ? null : Number(row.list_price),
     ratingAverage: row.rating_average == null ? null : Number(row.rating_average),
     ratingCount: Number(row.rating_count ?? 0),
+    pricePerMinute: row.price_per_minute == null ? null : Number(row.price_per_minute),
+    minMinutes: Number(row.min_minutes ?? 30),
+    maxMinutes: Number(row.max_minutes ?? 240),
+    defaultMinutes: Number(row.default_minutes ?? 60),
   };
 }
 
@@ -270,6 +282,22 @@ export async function updateService(id: string, input: UpdateService): Promise<S
   if (input.emergencySupported !== undefined) {
     fields.push(`emergency_supported = $${paramIndex++}`);
     values.push(input.emergencySupported);
+  }
+  if (input.pricePerMinute !== undefined) {
+    fields.push(`price_per_minute = $${paramIndex++}`);
+    values.push(input.pricePerMinute);
+  }
+  if (input.minMinutes !== undefined) {
+    fields.push(`min_minutes = $${paramIndex++}`);
+    values.push(input.minMinutes);
+  }
+  if (input.maxMinutes !== undefined) {
+    fields.push(`max_minutes = $${paramIndex++}`);
+    values.push(input.maxMinutes);
+  }
+  if (input.defaultMinutes !== undefined) {
+    fields.push(`default_minutes = $${paramIndex++}`);
+    values.push(input.defaultMinutes);
   }
 
   if (fields.length === 0) {

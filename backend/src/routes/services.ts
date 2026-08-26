@@ -258,7 +258,37 @@ const createServiceSchema = z.object({
   emergencySupported: z.boolean().default(false),
 });
 
-const updateServiceSchema = createServiceSchema.partial();
+/**
+ * Update also carries the pricing controls an operator tunes after launch: the
+ * per-minute rate and the duration bounds offered for that service.
+ *
+ * The bounds are validated as a set, not field by field. A max below the min,
+ * or a default outside them, is a service the app would offer and the server
+ * would then refuse — the database CHECK catches it, but a 500 from a
+ * constraint is a worse answer than a 400 that says which field is wrong.
+ */
+const updateServiceSchema = createServiceSchema
+  .partial()
+  .extend({
+    pricePerMinute: z.number().positive().max(1000).nullable().optional(),
+    minMinutes: z.number().int().min(5).max(720).optional(),
+    maxMinutes: z.number().int().min(5).max(720).optional(),
+    defaultMinutes: z.number().int().min(5).max(720).optional()
+  })
+  .refine(
+    (input) =>
+      input.minMinutes === undefined ||
+      input.maxMinutes === undefined ||
+      input.maxMinutes >= input.minMinutes,
+    { message: "maxMinutes must be at least minMinutes", path: ["maxMinutes"] }
+  )
+  .refine(
+    (input) =>
+      input.defaultMinutes === undefined ||
+      ((input.minMinutes === undefined || input.defaultMinutes >= input.minMinutes) &&
+        (input.maxMinutes === undefined || input.defaultMinutes <= input.maxMinutes)),
+    { message: "defaultMinutes must sit between minMinutes and maxMinutes", path: ["defaultMinutes"] }
+  );
 
 servicesRouter.get("/", async (req, res, next) => {
   try {

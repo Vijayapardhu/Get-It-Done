@@ -99,6 +99,10 @@ class Service {
     this.categoryAnimationUrl,
     this.categoryAccentColor,
     this.listPrice,
+    this.pricePerMinute,
+    this.minMinutes = 30,
+    this.maxMinutes = 240,
+    this.defaultMinutes = 60,
   });
 
   final String id;
@@ -141,6 +145,32 @@ class Service {
   /// treated as no promotion at all rather than rendered as a saving of zero.
   final double? listPrice;
 
+  /// What a minute of this service costs.
+  ///
+  /// Null for a service an operator has not rated yet, which still has to be
+  /// bookable — the app then shows [basePrice] as a flat figure.
+  final double? pricePerMinute;
+
+  /// The bounds the operator set. The app offers nothing outside them.
+  final int minMinutes;
+  final int maxMinutes;
+  final int defaultMinutes;
+
+  bool get isTimed => pricePerMinute != null;
+
+  /// The price for a given length of time, clamped to this service's bounds.
+  ///
+  /// Display only. The server quotes and freezes the real figure, and clamps
+  /// the minutes again on its side, because this one is editable.
+  double priceFor(int minutes) {
+    final rate = pricePerMinute;
+    if (rate == null) return basePrice;
+    return rate * minutes.clamp(minMinutes, maxMinutes);
+  }
+
+  /// Nearest bookable duration to [minutes].
+  int clampMinutes(int minutes) => minutes.clamp(minMinutes, maxMinutes);
+
   bool get hasDiscount => listPrice != null && listPrice! > basePrice;
 
   /// Whole-percent saving, for the badge. Null when there is no promotion.
@@ -179,6 +209,10 @@ class Service {
         categoryAnimationUrl: asStringOrNull(pick(json, 'categoryAnimationUrl')),
         categoryAccentColor: asStringOrNull(pick(json, 'categoryAccentColor')),
         listPrice: asDoubleOrNull(pick(json, 'listPrice')),
+        pricePerMinute: asDoubleOrNull(pick(json, 'pricePerMinute')),
+        minMinutes: asIntOrNull(pick(json, 'minMinutes')) ?? 30,
+        maxMinutes: asIntOrNull(pick(json, 'maxMinutes')) ?? 240,
+        defaultMinutes: asIntOrNull(pick(json, 'defaultMinutes')) ?? 60,
       );
 }
 

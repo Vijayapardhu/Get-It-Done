@@ -31,7 +31,7 @@ class ServiceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
-    final quantity = ref.watch(cartProvider).quantityOf(service.id);
+    final inCart = ref.watch(cartProvider).contains(service.id);
 
     return GestureDetector(
       onTap: onOpen,
@@ -48,7 +48,7 @@ class ServiceCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            _Artwork(service: service, quantity: quantity),
+            _Artwork(service: service, inCart: inCart),
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.x3, Space.x3, Space.x3, Space.x4),
               child: Column(
@@ -81,10 +81,10 @@ class ServiceCard extends ConsumerWidget {
 }
 
 class _Artwork extends ConsumerWidget {
-  const _Artwork({required this.service, required this.quantity});
+  const _Artwork({required this.service, required this.inCart});
 
   final Service service;
-  final int quantity;
+  final bool inCart;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -120,9 +120,12 @@ class _Artwork extends ConsumerWidget {
             right: Space.x2,
             bottom: Space.x2,
             child: _AddButton(
-              quantity: quantity,
+              inCart: inCart,
               onAdd: () {
                 HapticFeedback.selectionClick();
+                // Adds the service's default duration. The exact time is
+                // changed in the cart or on the service's own page, where
+                // there is room to show what it costs.
                 ref.read(cartProvider.notifier).add(service);
               },
             ),
@@ -168,15 +171,14 @@ class _Rating extends StatelessWidget {
 }
 
 class _AddButton extends StatelessWidget {
-  const _AddButton({required this.quantity, required this.onAdd});
+  const _AddButton({required this.inCart, required this.onAdd});
 
-  final int quantity;
+  final bool inCart;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final inCart = quantity > 0;
 
     return GestureDetector(
       onTap: onAdd,
@@ -195,14 +197,10 @@ class _AddButton extends StatelessWidget {
           boxShadow: t.cardShadow,
         ),
         alignment: Alignment.center,
+        // A tick once it is in, not a count: a service goes in once and the
+        // duration is what changes.
         child: inCart
-            ? Text(
-                '$quantity',
-                style: context.text.labelLarge?.copyWith(
-                  color: t.textOnPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              )
+            ? AppIcon(AppIcons.tick, size: 18, color: t.textOnPrimary, bold: true)
             : AppIcon(AppIcons.add, size: 18, color: t.primary, bold: true),
       ),
     );
@@ -223,13 +221,24 @@ class _PriceRow extends StatelessWidget {
       textBaseline: TextBaseline.alphabetic,
       children: [
         Text(
-          'From ',
+          service.isTimed ? '' : 'From ',
           style: context.text.labelSmall?.copyWith(color: t.textTertiary),
         ),
         Text(
-          formatRupees(service.basePrice),
+          formatRupees(
+            service.isTimed ? service.priceFor(service.defaultMinutes) : service.basePrice,
+          ),
           style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
+        if (service.isTimed)
+          Flexible(
+            child: Text(
+              ' / ${formatMinutes(service.defaultMinutes)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.text.labelSmall?.copyWith(color: t.textTertiary),
+            ),
+          ),
         if (service.hasDiscount) ...[
           const SizedBox(width: Space.x2),
           Flexible(

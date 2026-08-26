@@ -133,7 +133,7 @@ class GidApi {
   /// not place a second set of bookings, and this is the one request in the
   /// app where that would cost real money and real workers' time.
   Future<PlacedOrder> createOrder({
-    required List<({String serviceId, int quantity})> lines,
+    required List<({String serviceId, int minutes})> lines,
     required String mode,
     required double latitude,
     required double longitude,
@@ -149,7 +149,7 @@ class GidApi {
       body: {
         'lines': [
           for (final line in lines)
-            {'serviceId': line.serviceId, 'quantity': line.quantity},
+            {'serviceId': line.serviceId, 'minutes': line.minutes},
         ],
         'mode': mode,
         'latitude': latitude,

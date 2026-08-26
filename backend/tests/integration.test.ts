@@ -228,7 +228,7 @@ describe("Multi-service checkout", () => {
       .set("Idempotency-Key", idempotencyKey)
       .send(body);
 
-  const validOrder = (lines: Array<{ serviceId: string; quantity: number }>) => ({
+  const validOrder = (lines: Array<{ serviceId: string; minutes: number }>) => ({
     lines,
     mode: "instant",
     latitude: 16.5062,
@@ -240,8 +240,8 @@ describe("Multi-service checkout", () => {
     // A booking is assigned to ONE worker, and two trades cannot share one.
     // The whole point of the order is that it fans out.
     const res = await place(validOrder([
-      { serviceId: serviceIds[0], quantity: 1 },
-      { serviceId: serviceIds[1], quantity: 1 }
+      { serviceId: serviceIds[0], minutes: 60 },
+      { serviceId: serviceIds[1], minutes: 60 }
     ]));
 
     expect(res.status).toBe(201);
@@ -252,17 +252,48 @@ describe("Multi-service checkout", () => {
     expect(orderIds.size).toBe(2);
   });
 
-  it("books each unit of a quantity as its own visit", async () => {
-    // Two hours of cleaning is two workers, not one booking with a multiplier:
-    // that is what actually has to happen for the work to get done.
-    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 2 }]));
+  it("books one visit per service, however long it is", async () => {
+    // Two hours of cleaning is ONE worker for two hours, not two workers for an
+    // hour each. That was what a quantity meant, and it is a different job.
+    const res = await place(validOrder([{ serviceId: serviceIds[0], minutes: 120 }]));
 
     expect(res.status).toBe(201);
-    expect(res.body.bookings).toHaveLength(2);
+    expect(res.body.bookings).toHaveLength(1);
+  });
+
+  it("refuses the same service twice", async () => {
+    // Asking for a service again is asking for longer, and two bookings for one
+    // address at one time would send two workers to do one job.
+    const res = await place(validOrder([
+      { serviceId: serviceIds[0], minutes: 60 },
+      { serviceId: serviceIds[0], minutes: 30 }
+    ]));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ORDER_DUPLICATE_SERVICE");
+  });
+
+  it("prices the time bought, not the service", async () => {
+    const hour = await place(validOrder([{ serviceId: serviceIds[0], minutes: 60 }]));
+    const two = await place(validOrder([{ serviceId: serviceIds[0], minutes: 120 }]));
+
+    expect(hour.status).toBe(201);
+    expect(two.status).toBe(201);
+    expect(Number(two.body.order.total)).toBeCloseTo(Number(hour.body.order.total) * 2, 1);
+  });
+
+  it("clamps a duration beyond the service's ceiling", async () => {
+    // This number becomes money, so it is never taken on trust: the schema
+    // allows up to 720 minutes and the SERVICE decides its own ceiling.
+    const capped = await place(validOrder([{ serviceId: serviceIds[0], minutes: 720 }]));
+    const atMax = await place(validOrder([{ serviceId: serviceIds[0], minutes: 240 }]));
+
+    expect(capped.status).toBe(201);
+    expect(Number(capped.body.order.total)).toBeCloseTo(Number(atMax.body.order.total), 1);
   });
 
   it("prices come from the server, one per booking", async () => {
-    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+    const res = await place(validOrder([{ serviceId: serviceIds[0], minutes: 60 }]));
 
     expect(res.status).toBe(201);
     const price = Number(res.body.bookings[0].price);
@@ -273,9 +304,15 @@ describe("Multi-service checkout", () => {
   });
 
   it("issues one OTP pair per booking", async () => {
-    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 2 }]));
+    // Two services, so two workers, so two pairs -- and reading the wrong pair
+    // to the wrong worker has to fail, which is why they carry a booking id.
+    const res = await place(validOrder([
+      { serviceId: serviceIds[0], minutes: 60 },
+      { serviceId: serviceIds[1], minutes: 60 }
+    ]));
 
     expect(res.body.otps).toHaveLength(2);
+    expect(new Set(res.body.otps.map((o: { bookingId: string }) => o.bookingId)).size).toBe(2);
     for (const otp of res.body.otps) {
       expect(otp.startOtp).toMatch(/^\d{6}$/);
       expect(otp.completionOtp).toMatch(/^\d{6}$/);
@@ -290,8 +327,8 @@ describe("Multi-service checkout", () => {
     const countBefore = before.body.bookings.length;
 
     const res = await place(validOrder([
-      { serviceId: serviceIds[0], quantity: 1 },
-      { serviceId: "00000000-0000-0000-0000-0000000000ff", quantity: 1 }
+      { serviceId: serviceIds[0], minutes: 60 },
+      { serviceId: "00000000-0000-0000-0000-0000000000ff", minutes: 60 }
     ]));
 
     expect(res.status).toBe(400);
@@ -305,7 +342,7 @@ describe("Multi-service checkout", () => {
     // The one request in the app where a retry after a timeout would cost real
     // money and real workers' time.
     const reused = key();
-    const body = validOrder([{ serviceId: serviceIds[0], quantity: 1 }]);
+    const body = validOrder([{ serviceId: serviceIds[0], minutes: 60 }]);
 
     const first = await place(body, reused);
     const second = await place(body, reused);
@@ -317,15 +354,15 @@ describe("Multi-service checkout", () => {
 
   it("rejects the same key with different contents", async () => {
     const reused = key();
-    await place(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]), reused);
-    const res = await place(validOrder([{ serviceId: serviceIds[0], quantity: 2 }]), reused);
+    await place(validOrder([{ serviceId: serviceIds[0], minutes: 60 }]), reused);
+    const res = await place(validOrder([{ serviceId: serviceIds[0], minutes: 120 }]), reused);
 
     expect(res.status).toBe(409);
   });
 
   it("requires a time for a scheduled order", async () => {
     const res = await place({
-      ...validOrder([{ serviceId: serviceIds[0], quantity: 1 }]),
+      ...validOrder([{ serviceId: serviceIds[0], minutes: 60 }]),
       mode: "scheduled"
     });
 
@@ -342,7 +379,7 @@ describe("Multi-service checkout", () => {
     const res = await request(baseUrl())
       .post("/orders")
       .set("Authorization", `Bearer ${authToken}`)
-      .send(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+      .send(validOrder([{ serviceId: serviceIds[0], minutes: 60 }]));
 
     expect(res.status).toBe(400);
   });
@@ -351,13 +388,13 @@ describe("Multi-service checkout", () => {
     const res = await request(baseUrl())
       .post("/orders")
       .set("Idempotency-Key", key())
-      .send(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+      .send(validOrder([{ serviceId: serviceIds[0], minutes: 60 }]));
 
     expect(res.status).toBe(401);
   });
 
   it("does not hand one customer another customer's order", async () => {
-    const placed = await place(validOrder([{ serviceId: serviceIds[0], quantity: 1 }]));
+    const placed = await place(validOrder([{ serviceId: serviceIds[0], minutes: 60 }]));
 
     const email = `nosy${Date.now()}@example.com`;
     await request(baseUrl()).post("/auth/register").send({ name: "Nosy", email, password: "password123", role: "customer" });

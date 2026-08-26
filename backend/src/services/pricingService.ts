@@ -14,7 +14,15 @@ import logger from "../core/logger.js";
  */
 
 export interface PriceBreakdown {
+  /** rate x minutes, or the flat price for a service with no rate yet. */
   baseService: number;
+
+  /** The duration actually priced, after clamping to the service's bounds. */
+  minutes: number;
+
+  /** Null for a service still on a flat price. */
+  ratePerMinute: number | null;
+
   travel: number;
   emergency: number;
   surge: number;
@@ -32,6 +40,13 @@ export interface QuoteInput {
   longitude: number;
   urgency: "regular" | "emergency";
   cooperativeId?: string | null;
+
+  /**
+   * How long the customer wants. Omitted falls back to the service's default,
+   * and anything outside its bounds is clamped — this is the number that
+   * becomes money, so it is never taken on trust from a client.
+   */
+  minutes?: number;
 }
 
 export async function calculateTravelFee(cooperativeId: string, distanceKm: number): Promise<number> {
@@ -116,7 +131,8 @@ function round2(value: number): number {
 
 export async function quote(input: QuoteInput): Promise<PriceBreakdown> {
   const service = await pool.query(
-    `SELECT base_price, emergency_supported FROM services WHERE id = $1`,
+    `SELECT base_price, emergency_supported, price_per_minute, min_minutes, max_minutes, default_minutes
+       FROM services WHERE id = $1`,
     [input.serviceId]
   );
   if (!service.rows[0]) throw new Error("SERVICE_NOT_FOUND");
@@ -124,7 +140,21 @@ export async function quote(input: QuoteInput): Promise<PriceBreakdown> {
     throw new Error("EMERGENCY_NOT_SUPPORTED");
   }
 
-  let variantPrice = Number(service.rows[0].base_price);
+  const row = service.rows[0];
+
+  // What the customer is buying is TIME. Minutes are clamped to the service's
+  // own bounds rather than trusted: the app enforces them too, but a client is
+  // editable and this is the number that becomes money.
+  const rate = row.price_per_minute === null ? null : Number(row.price_per_minute);
+  const requested = input.minutes ?? Number(row.default_minutes);
+  const minutes = Math.min(
+    Number(row.max_minutes),
+    Math.max(Number(row.min_minutes), Math.round(requested))
+  );
+
+  // A service with no rate yet still has to be bookable, and its flat price is
+  // the only honest figure available for it.
+  let variantPrice = rate === null ? Number(row.base_price) : rate * minutes;
   if (input.variantId) {
     const variant = await pool.query(
       `SELECT base_price FROM service_variants WHERE id = $1 AND service_id = $2`,
@@ -145,6 +175,8 @@ export async function quote(input: QuoteInput): Promise<PriceBreakdown> {
 
   return {
     baseService: round2(variantPrice),
+    minutes,
+    ratePerMinute: rate === null ? null : round2(rate),
     travel: round2(travelFee),
     emergency: round2(emergencyFee),
     surge: round2(surgeFee),
@@ -181,7 +213,7 @@ export async function quoteBookingAmount(
   const db = client ?? pool;
 
   const result = await db.query(
-    `SELECT b.id, b.price, b.service_id, b.is_emergency,
+    `SELECT b.id, b.price, b.service_id, b.is_emergency, b.duration_minutes,
             ST_Y(b.location::geometry) AS latitude,
             ST_X(b.location::geometry) AS longitude
        FROM bookings b
@@ -201,6 +233,9 @@ export async function quoteBookingAmount(
     longitude: Number(booking.longitude),
     urgency: booking.is_emergency ? "emergency" : "regular",
     cooperativeId: null,
+    // The duration frozen onto the booking, so the amount charged reflects the
+    // time actually bought rather than the service's default.
+    minutes: booking.duration_minutes === null ? undefined : Number(booking.duration_minutes),
   });
 
   // `price IS NULL` in the predicate makes this safe under a race: whichever

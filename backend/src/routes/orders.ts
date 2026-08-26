@@ -35,10 +35,10 @@ import { rejectNonUuidParam } from "../middleware/uuidParams.js";
  *                 type: array
  *                 items:
  *                   type: object
- *                   required: [serviceId, quantity]
+ *                   required: [serviceId, minutes]
  *                   properties:
  *                     serviceId: { type: string, format: uuid }
- *                     quantity: { type: integer, minimum: 1, maximum: 10 }
+ *                     minutes: { type: integer, minimum: 5, maximum: 720 }
  *               mode: { type: string, enum: [instant, scheduled, recurring] }
  *               scheduledAt: { type: string, format: date-time }
  *               latitude: { type: number }
@@ -62,7 +62,14 @@ ordersRouter.param("id", rejectNonUuidParam);
 
 const createOrderSchema = z.object({
   lines: z
-    .array(z.object({ serviceId: z.string().uuid(), quantity: z.number().int().min(1).max(10) }))
+    .array(
+      z.object({
+        serviceId: z.string().uuid(),
+        // Bounds are per service and enforced by the pricing service; this is
+        // only a sanity range, so a malformed client cannot ask for a year.
+        minutes: z.number().int().min(5).max(720)
+      })
+    )
     .min(1)
     // A cart of fifty is not a customer, and each line places a real booking
     // that reserves a real worker.
@@ -82,6 +89,7 @@ const ORDER_MESSAGES: Record<string, { status: number; message: string }> = {
   ORDER_SCHEDULE_REQUIRED: { status: 400, message: "Pick a date and time for a scheduled order." },
   SERVICE_NOT_FOUND: { status: 400, message: "One of the services in your cart is no longer available." },
   EMERGENCY_NOT_SUPPORTED: { status: 400, message: "That service cannot be booked as an emergency." },
+  ORDER_DUPLICATE_SERVICE: { status: 400, message: "That service is already in your cart. Change how long you need instead." },
   IDEMPOTENCY_KEY_REUSED: { status: 409, message: "This order was already submitted with different details." }
 };
 

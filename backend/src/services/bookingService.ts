@@ -42,6 +42,10 @@ type BookingSeed = {
   isEmergency: boolean;
   addressId?: string | null;
   orderId?: string | null;
+
+  /// How long the customer bought. Frozen onto the booking so the quote and
+  /// the invoice both price the time actually purchased.
+  minutes?: number | null;
 };
 
 type PlacedBooking = {
@@ -86,10 +90,10 @@ async function placeBooking(client: PoolClient, input: BookingSeed): Promise<Pla
   const status: BookingStatus = confirmedWorkerId ? "assigned" : "requested";
 
   const result = await client.query(
-    `INSERT INTO bookings (customer_id, worker_id, service_id, status, scheduled_at, is_emergency, location, address, address_id, description, start_otp_hash, completion_otp_hash, order_id)
-     VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326)::geography, $9, $10, $11, $12, $13, $14)
+    `INSERT INTO bookings (customer_id, worker_id, service_id, status, scheduled_at, is_emergency, location, address, address_id, description, start_otp_hash, completion_otp_hash, order_id, duration_minutes)
+     VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326)::geography, $9, $10, $11, $12, $13, $14, $15)
      RETURNING id`,
-    [input.customerId, confirmedWorkerId, input.serviceId, status, input.scheduledAt ?? null, input.isEmergency, input.longitude, input.latitude, input.address, input.addressId ?? null, input.description, startOtpHash, completionOtpHash, input.orderId ?? null]
+    [input.customerId, confirmedWorkerId, input.serviceId, status, input.scheduledAt ?? null, input.isEmergency, input.longitude, input.latitude, input.address, input.addressId ?? null, input.description, startOtpHash, completionOtpHash, input.orderId ?? null, input.minutes ?? null]
   );
 
   const bookingId: string = result.rows[0].id;
@@ -148,7 +152,15 @@ export async function createBooking(input: { customerId: string; serviceId: stri
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
 }
 
-export type OrderLine = { serviceId: string; quantity: number };
+/**
+ * One service, for a length of time.
+ *
+ * Not a quantity. A customer needing two hours of cleaning wants ONE worker for
+ * two hours, not two workers for an hour each -- which is what a quantity of
+ * two meant, and it is a different job with a different price and a different
+ * person at the door.
+ */
+export type OrderLine = { serviceId: string; minutes: number };
 
 export type CreateOrderInput = {
   customerId: string;
@@ -171,9 +183,9 @@ export type CreateOrderInput = {
  * because the customer believes both are coming and finds out only when one
  * does not arrive. Any line that cannot be placed rolls the whole thing back.
  *
- * Quantity is deliberately NOT a multiplier on a single booking. Two hours of
- * cleaning is two bookings, each matched to a worker and each with its own
- * handshake, because that is what has to happen for the work to get done.
+ * One booking per line, and the line carries its duration. A service can only
+ * appear once in a cart: asking for it twice is asking for longer, and that is
+ * what the minutes are for.
  */
 export async function createOrder(input: CreateOrderInput) {
   if (input.lines.length === 0) throw new Error("ORDER_EMPTY");
@@ -201,26 +213,35 @@ export async function createOrder(input: CreateOrderInput) {
     );
     const orderId: string = order.rows[0].id;
 
+    // A service must not appear twice: two lines for the same service would
+    // place two bookings for one address at one time, and the customer meant
+    // to ask for longer.
+    const seen = new Set<string>();
+    for (const line of input.lines) {
+      if (seen.has(line.serviceId)) throw new Error("ORDER_DUPLICATE_SERVICE");
+      seen.add(line.serviceId);
+    }
+
     const placed: PlacedBooking[] = [];
     for (const line of input.lines) {
-      const quantity = Math.max(1, Math.min(10, Math.trunc(line.quantity)));
-      for (let i = 0; i < quantity; i++) {
-        placed.push(await placeBooking(client, {
-          customerId: input.customerId,
-          serviceId: line.serviceId,
-          latitude: input.latitude,
-          longitude: input.longitude,
-          address: input.address,
-          addressId: input.addressId ?? null,
-          description: input.description ?? "",
-          scheduledAt: input.scheduledAt ?? null,
-          // A cart checked out as "instant" is matched now, but it is not an
-          // EMERGENCY: that is its own screen, its own endpoint and its own
-          // pricing, and quietly charging emergency rates here would be theft.
-          isEmergency: false,
-          orderId
-        }));
-      }
+      placed.push(await placeBooking(client, {
+        customerId: input.customerId,
+        serviceId: line.serviceId,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        address: input.address,
+        addressId: input.addressId ?? null,
+        description: input.description ?? "",
+        scheduledAt: input.scheduledAt ?? null,
+        // A cart checked out as "instant" is matched now, but it is not an
+        // EMERGENCY: that is its own screen, its own endpoint and its own
+        // pricing, and quietly charging emergency rates here would be theft.
+        isEmergency: false,
+        orderId,
+        // Clamped again by the pricing service against the service's own
+        // bounds; this is only what the customer asked for.
+        minutes: line.minutes
+      }));
     }
 
     const bookings = [];

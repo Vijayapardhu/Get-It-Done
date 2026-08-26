@@ -39,6 +39,7 @@ export const MIGRATIONS = [
   "migration_phase14_catalogue.sql",       // list price for promotions, service index for ratings
   "migration_phase15_service_detail.sql",  // includes/excludes/steps/faqs for the detail page
   "migration_phase16_orders.sql",          // service_orders: one checkout, several bookings
+  "migration_phase17_time_pricing.sql",    // per-minute rates and duration bounds
 ] as const;
 
 const CREATE_TRACKING_TABLE = `

@@ -20,7 +20,11 @@ const noArtwork = {
   /** No promotion and no reviews: the cards render one price and no stars. */
   listPrice: null,
   ratingAverage: null,
-  ratingCount: 0
+  ratingCount: 0,
+  pricePerMinute: null,
+  minMinutes: 30,
+  maxMinutes: 240,
+  defaultMinutes: 60
 } as const;
 
 export const demoServices: Service[] = [

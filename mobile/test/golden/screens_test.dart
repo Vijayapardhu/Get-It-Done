@@ -146,6 +146,10 @@ final _services = <Service>[
     'name': 'Plumbing',
     'category': 'Home Repair',
     'basePrice': 299,
+    'pricePerMinute': 4.98,
+    'minMinutes': 30,
+    'maxMinutes': 240,
+    'defaultMinutes': 60,
     // Rated, and on promotion: exercises both conditional bits of the card.
     'ratingAverage': 4.7,
     'ratingCount': 7,
@@ -159,6 +163,10 @@ final _services = <Service>[
     'name': 'Electrical',
     'category': 'Home Repair',
     'basePrice': 349,
+    'pricePerMinute': 5.82,
+    'minMinutes': 30,
+    'maxMinutes': 240,
+    'defaultMinutes': 60,
     // Rated but not discounted.
     'ratingAverage': 4.9,
     'ratingCount': 42,
@@ -173,6 +181,10 @@ final _services = <Service>[
     'name': 'Cleaning',
     'category': 'Household',
     'basePrice': 499,
+    'pricePerMinute': 8.32,
+    'minMinutes': 30,
+    'maxMinutes': 240,
+    'defaultMinutes': 60,
     'categoryImageUrl': '/media/artwork/household.png',
     'categoryAccentColor': '#E8A317',
   }),
@@ -537,7 +549,7 @@ void main() {
         addressesProvider.overrideWith((ref) async => [_address]),
         cartProvider.overrideWith(() => _StubCart([
               CartLine(service: _services[0]),
-              CartLine(service: _services[2], quantity: 2),
+              CartLine(service: _services[2], minutes: 120),
             ])),
         checkoutProvider.overrideWith(() => _StubCheckout(
               CheckoutState(

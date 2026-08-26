@@ -75,7 +75,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       final order = await ref.read(apiProvider).createOrder(
             lines: [
               for (final line in cart.lines)
-                (serviceId: line.service.id, quantity: line.quantity),
+                (serviceId: line.service.id, minutes: line.minutes),
             ],
             mode: checkout.mode.wire,
             latitude: address.latitude!,
@@ -174,12 +174,13 @@ class _CartScreenState extends ConsumerState<CartScreen> {
             const SizedBox(height: Space.x2),
           ],
 
-          // One booking per unit, said plainly. Someone adding two hours of
-          // cleaning should know two workers may arrive, not discover it.
-          if (cart.itemCount > cart.serviceCount) ...[
+          // One service, one worker, for the time booked. Said plainly where
+          // more than one trade is involved, because that is two people at the
+          // door rather than one doing both.
+          if (cart.serviceCount > 1) ...[
             const SizedBox(height: Space.x2),
             AppBanner(
-              message: 'Each unit is booked as its own visit, so ${cart.itemCount} '
+              message: 'Each service is a separate visit, so ${cart.serviceCount} '
                   'workers will be assigned.',
               tone: StateTone.neutral,
             ),
@@ -334,39 +335,48 @@ class _CartRow extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  formatRupees(line.service.basePrice),
+                  line.service.isTimed
+                      ? '${formatMinutes(line.minutes)}  ·  ${formatRupees(line.lineTotal)}'
+                      : formatRupees(line.lineTotal),
                   style: context.text.bodySmall?.copyWith(color: t.textSecondary),
                 ),
               ],
             ),
           ),
-          _Stepper(
-            quantity: line.quantity,
-            onAdd: () => cart.add(line.service),
-            onRemove: () => cart.remove(line.service.id),
-          ),
+          if (line.service.isTimed)
+            _DurationStepper(line: line)
+          else
+            _RemoveButton(onTap: () => cart.remove(line.service.id)),
         ],
       ),
     );
   }
 }
 
-/// Quantity control. The minus becomes a bin at one, so removing a line is the
-/// same tap as decrementing it rather than hiding behind a swipe.
-class _Stepper extends StatelessWidget {
-  const _Stepper({
-    required this.quantity,
-    required this.onAdd,
-    required this.onRemove,
-  });
+/// How long this service is booked for.
+///
+/// Steps in half hours, because that is how people buy someone's time and a
+/// per-minute control would be absurd to operate with a thumb. The bounds come
+/// from the service, so a deep clean cannot be booked for ten minutes and a
+/// mis-tap cannot book a worker for a day.
+///
+/// At the minimum the down button becomes a bin: the way out of a service you
+/// no longer want is the same control, rather than a swipe nobody discovers.
+class _DurationStepper extends ConsumerWidget {
+  const _DurationStepper({required this.line});
 
-  final int quantity;
-  final VoidCallback onAdd;
-  final VoidCallback onRemove;
+  final CartLine line;
+
+  static const _step = 30;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
+    final cart = ref.read(cartProvider.notifier);
+    final service = line.service;
+
+    final atFloor = line.minutes <= service.minMinutes;
+    final atCeiling = line.minutes >= service.maxMinutes;
 
     return Container(
       decoration: BoxDecoration(
@@ -377,23 +387,55 @@ class _Stepper extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _StepButton(
-            icon: quantity > 1 ? AppIcons.remove : AppIcons.delete,
-            semanticLabel: quantity > 1 ? 'Remove one' : 'Remove from cart',
-            onTap: onRemove,
+            icon: atFloor ? AppIcons.delete : AppIcons.remove,
+            semanticLabel: atFloor ? 'Remove from cart' : 'Half an hour less',
+            onTap: () => atFloor
+                ? cart.remove(service.id)
+                : cart.setMinutes(service.id, line.minutes - _step),
           ),
           SizedBox(
-            width: 24,
+            width: 58,
             child: Text(
-              '$quantity',
+              formatMinutes(line.minutes),
               textAlign: TextAlign.center,
-              style: context.text.labelLarge?.copyWith(
+              style: context.text.labelMedium?.copyWith(
                 color: t.primary,
                 fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          _StepButton(icon: AppIcons.add, semanticLabel: 'Add one', onTap: onAdd),
+          _StepButton(
+            icon: AppIcons.add,
+            semanticLabel: 'Half an hour more',
+            // Disabled rather than hidden at the ceiling, so the control keeps
+            // its shape and the limit is visible instead of mysterious.
+            enabled: !atCeiling,
+            onTap: () => cart.setMinutes(service.id, line.minutes + _step),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// For a service still on a flat price, where there is no duration to adjust.
+class _RemoveButton extends StatelessWidget {
+  const _RemoveButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Container(
+      decoration: BoxDecoration(
+        color: t.primarySoft,
+        borderRadius: BorderRadius.circular(Radii.md),
+      ),
+      child: _StepButton(
+        icon: AppIcons.delete,
+        semanticLabel: 'Remove from cart',
+        onTap: onTap,
       ),
     );
   }
@@ -404,25 +446,35 @@ class _StepButton extends StatelessWidget {
     required this.icon,
     required this.semanticLabel,
     required this.onTap,
+    this.enabled = true,
   });
 
   final AppIconData icon;
   final String semanticLabel;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     return Semantics(
       button: true,
+      enabled: enabled,
       label: semanticLabel,
       child: GestureDetector(
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         behavior: HitTestBehavior.opaque,
         child: SizedBox(
           width: 36,
           height: 36,
-          child: Center(child: AppIcon(icon, size: 16, color: t.primary, bold: true)),
+          child: Center(
+            child: AppIcon(
+              icon,
+              size: 16,
+              color: enabled ? t.primary : t.textTertiary,
+              bold: true,
+            ),
+          ),
         ),
       ),
     );
@@ -561,7 +613,9 @@ class _Bill extends StatelessWidget {
       child: Column(
         children: [
           _BillRow(
-            label: cart.itemCount == 1 ? '1 visit' : '${cart.itemCount} visits',
+            label: cart.serviceCount == 1
+                ? '1 visit · ${formatMinutes(cart.totalMinutes)}'
+                : '${cart.serviceCount} visits · ${formatMinutes(cart.totalMinutes)}',
             value: formatRupees(cart.subtotal),
           ),
           if (cart.savings > 0) ...[

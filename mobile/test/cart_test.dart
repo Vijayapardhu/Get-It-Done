@@ -4,12 +4,25 @@ import 'package:getitdone_customer/core/cart/cart.dart';
 import 'package:getitdone_customer/core/models/models.dart';
 import 'package:getitdone_customer/core/network/json.dart';
 
-Service service(String id, {double price = 299, double? listPrice}) => Service.fromJson({
+Service service(
+  String id, {
+  double price = 299,
+  double? listPrice,
+  double? ratePerMinute = 5,
+  int minMinutes = 30,
+  int maxMinutes = 240,
+  int defaultMinutes = 60,
+}) =>
+    Service.fromJson({
       'id': id,
       'name': 'Service $id',
       'category': 'Home Repair',
       'basePrice': price,
       if (listPrice != null) 'listPrice': listPrice,
+      if (ratePerMinute != null) 'pricePerMinute': ratePerMinute,
+      'minMinutes': minMinutes,
+      'maxMinutes': maxMinutes,
+      'defaultMinutes': defaultMinutes,
     });
 
 void main() {
@@ -27,28 +40,57 @@ void main() {
       expect(state().subtotal, 0);
     });
 
-    test('adding the same service raises its quantity rather than duplicating it',
-        () {
-      cart().add(service('a'));
-      cart().add(service('a'));
+    test('a service goes in once, at its default duration', () {
+      cart().add(service('a', defaultMinutes: 90));
 
-      // One line, quantity two — not two lines. The bar says "1 service",
-      // because the customer picked one service.
       expect(state().lines, hasLength(1));
-      expect(state().quantityOf('a'), 2);
+      expect(state().minutesOf('a'), 90);
       expect(state().serviceCount, 1);
-      expect(state().itemCount, 2);
     });
 
-    test('subtotal multiplies price by quantity across lines', () {
-      cart().add(service('a', price: 299));
-      cart().add(service('a', price: 299));
-      cart().add(service('b', price: 499));
+    test('adding again REPLACES the time rather than extending it', () {
+      // Tapping add twice means "book this", not "book twice as long". Silently
+      // doubling someone's booking is how they end up paying for four hours
+      // they never asked for.
+      cart().add(service('a', defaultMinutes: 60));
+      cart().add(service('a', defaultMinutes: 60));
 
-      expect(state().subtotal, 299 * 2 + 499);
+      expect(state().lines, hasLength(1));
+      expect(state().minutesOf('a'), 60);
     });
 
-    test('removing the last of a line drops the line', () {
+    test('minutes are clamped to the service bounds', () {
+      cart().add(service('a', minMinutes: 30, maxMinutes: 120), minutes: 10);
+      expect(state().minutesOf('a'), 30);
+
+      cart().setMinutes('a', 600);
+      expect(state().minutesOf('a'), 120);
+    });
+
+    test('the line total is rate times time', () {
+      cart().add(service('a', ratePerMinute: 5), minutes: 90);
+      expect(state().subtotal, 450);
+    });
+
+    test('subtotal adds across services', () {
+      cart().add(service('a', ratePerMinute: 5), minutes: 60);
+      cart().add(service('b', ratePerMinute: 8), minutes: 30);
+
+      expect(state().subtotal, 300 + 240);
+      expect(state().totalMinutes, 90);
+      expect(state().serviceCount, 2);
+    });
+
+    test('a service with no rate falls back to its flat price', () {
+      // Not every service will have been given a rate on day one, and one that
+      // has not still has to be bookable.
+      cart().add(service('a', price: 299, ratePerMinute: null));
+
+      expect(state().lines.single.service.isTimed, isFalse);
+      expect(state().subtotal, 299);
+    });
+
+    test('removing takes the service out entirely', () {
       cart().add(service('a'));
       cart().remove('a');
 
@@ -56,57 +98,42 @@ void main() {
       expect(state().contains('a'), isFalse);
     });
 
-    test('removing one of several leaves the rest', () {
-      cart().add(service('a'));
-      cart().add(service('a'));
-      cart().remove('a');
-
-      expect(state().quantityOf('a'), 1);
-    });
-
-    test('removeAll drops the line whatever its quantity', () {
-      cart().add(service('a'));
-      cart().add(service('a'));
-      cart().add(service('b'));
-      cart().removeAll('a');
-
-      expect(state().contains('a'), isFalse);
-      expect(state().contains('b'), isTrue);
-    });
-
     test('removing something that is not there changes nothing', () {
       cart().add(service('a'));
       cart().remove('nope');
 
-      expect(state().quantityOf('a'), 1);
+      expect(state().minutesOf('a'), greaterThan(0));
       expect(state().lines, hasLength(1));
     });
 
-    test('savings count only real promotions', () {
-      // A line with no list price contributes nothing to the saving, rather
-      // than counting its own price as a discount against itself.
-      cart().add(service('a', price: 299));
-      expect(state().savings, 0);
+    test('savings scale with the time booked', () {
+      // The promotion discounts the RATE, so booking twice as long saves twice
+      // as much.
+      cart().add(
+        service('a', price: 200, listPrice: 250, ratePerMinute: 4),
+        minutes: 60,
+      );
 
-      cart().add(service('b', price: 200, listPrice: 250));
-      expect(state().savings, 50);
+      expect(state().subtotal, 240);
+      expect(state().savings, closeTo(60, 0.01));
+    });
+
+    test('a service with no promotion contributes no saving', () {
+      cart().add(service('a', ratePerMinute: 5), minutes: 60);
+      expect(state().savings, 0);
     });
 
     test('re-adding refreshes the stored service', () {
-      // The cart holds the Service it was handed. Adding again after a
-      // catalogue refresh should carry the newer price rather than keeping a
-      // stale copy the customer would then be quoted against.
-      cart().add(service('a', price: 299));
-      cart().add(service('a', price: 349));
+      cart().add(service('a', ratePerMinute: 5));
+      cart().add(service('a', ratePerMinute: 8));
 
-      expect(state().lines.single.service.basePrice, 349);
-      expect(state().quantityOf('a'), 2);
+      expect(state().lines.single.service.pricePerMinute, 8);
     });
   });
 
   group('Service promotions', () {
     test('a list price above the charge is a discount', () {
-      final s = service('a', price: 299, listPrice: 399);
+      final s = service('a', price: 299, listPrice: 399, ratePerMinute: null);
       expect(s.hasDiscount, isTrue);
       expect(s.discountPercent, 25);
     });
@@ -118,6 +145,22 @@ void main() {
       expect(service('a', price: 299, listPrice: 200).hasDiscount, isFalse);
       expect(service('a', price: 299).hasDiscount, isFalse);
       expect(service('a', price: 299).discountPercent, isNull);
+    });
+  });
+
+  group('Service duration', () {
+    test('priceFor clamps before multiplying', () {
+      final s = service('a', ratePerMinute: 5, minMinutes: 30, maxMinutes: 120);
+
+      expect(s.priceFor(60), 300);
+      expect(s.priceFor(10), 150, reason: 'below the floor, priced at the floor');
+      expect(s.priceFor(600), 600, reason: 'above the ceiling, priced at the ceiling');
+    });
+
+    test('a service with no rate ignores the duration', () {
+      final s = service('a', price: 299, ratePerMinute: null);
+      expect(s.priceFor(240), 299);
+      expect(s.isTimed, isFalse);
     });
   });
 

@@ -481,7 +481,7 @@ class _AddBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
-    final quantity = ref.watch(cartProvider).quantityOf(service.id);
+    final booked = ref.watch(cartProvider).minutesOf(service.id);
 
     return Container(
       decoration: BoxDecoration(
@@ -500,11 +500,19 @@ class _AddBar extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      formatRupees(service.basePrice),
+                      formatRupees(
+                        service.isTimed
+                            ? service.priceFor(booked > 0 ? booked : service.defaultMinutes)
+                            : service.basePrice,
+                      ),
                       style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     Text(
-                      quantity > 0 ? '$quantity in cart' : 'Starting price',
+                      booked > 0
+                          ? '${formatMinutes(booked)} in your cart'
+                          : service.isTimed
+                              ? 'for ${formatMinutes(service.defaultMinutes)}'
+                              : 'Starting price',
                       style: context.text.bodySmall?.copyWith(color: t.textSecondary),
                     ),
                   ],
@@ -512,12 +520,16 @@ class _AddBar extends ConsumerWidget {
               ),
               const SizedBox(width: Space.x4),
               AppButton.primary(
-                label: quantity > 0 ? 'Add another' : 'Add to cart',
+                // Never "add another": a service goes in once, and asking for
+                // more means asking for longer.
+                label: booked > 0 ? 'In your cart' : 'Add to cart',
                 expand: false,
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  ref.read(cartProvider.notifier).add(service);
-                },
+                onPressed: booked > 0
+                    ? null
+                    : () {
+                        HapticFeedback.selectionClick();
+                        ref.read(cartProvider.notifier).add(service);
+                      },
               ),
             ],
           ),
