@@ -199,7 +199,7 @@ class _AddressCard extends StatelessWidget {
     );
   }
 
-  static List<List<dynamic>> _iconFor(String name) {
+  static AppIconData _iconFor(String name) {
     final n = name.toLowerCase();
     if (n.contains('home') || n.contains('house')) return AppIcons.home_;
     if (n.contains('office') || n.contains('work')) return AppIcons.work;

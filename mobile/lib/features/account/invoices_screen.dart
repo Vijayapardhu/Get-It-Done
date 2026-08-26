@@ -264,7 +264,7 @@ class _SplitRow extends StatelessWidget {
   final String label;
   final double amount;
   final bool highlight;
-  final List<List<dynamic>>? icon;
+  final AppIconData? icon;
 
   @override
   Widget build(BuildContext context) {

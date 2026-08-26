@@ -12,7 +12,11 @@ import '../../design/design_system.dart';
 /// forget they have.
 ///
 /// It takes no height at all when the cart is empty, so nothing below it moves
-/// except when there is genuinely something to say.
+/// except when there is genuinely something to say — and it is a separate
+/// strip ABOVE the navigation rather than merged into it. Navigation is where
+/// you go; this is what you are carrying. Fusing them makes a bar that changes
+/// height and meaning depending on state, which is the kind of furniture that
+/// moves under your thumb.
 class CartBar extends ConsumerWidget {
   const CartBar({super.key, required this.onOpenCart});
 
@@ -31,13 +35,17 @@ class CartBar extends ConsumerWidget {
           ? const SizedBox(width: double.infinity)
           : Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(Space.x4, Space.x3, Space.x4, Space.x3),
+              padding: const EdgeInsets.fromLTRB(Space.x4, Space.x2, Space.x4, Space.x2),
               decoration: BoxDecoration(
-                color: t.surface,
+                // Tinted, not white. Against a white nav bar directly below it,
+                // a white strip reads as one tall bar with a line through it.
+                color: t.primarySoft,
                 border: Border(top: BorderSide(color: t.border)),
               ),
               child: Row(
                 children: [
+                  AppIcon(AppIcons.bookings, size: Sizes.iconSm, color: t.primary),
+                  const SizedBox(width: Space.x3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

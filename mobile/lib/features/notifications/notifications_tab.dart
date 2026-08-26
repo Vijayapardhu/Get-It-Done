@@ -105,7 +105,7 @@ class NotificationsTab extends ConsumerWidget {
 
   /// Notification types come from the backend as free-form strings; anything
   /// unrecognised falls back to the bell rather than rendering nothing.
-  static List<List<dynamic>> _iconFor(String? type) {
+  static AppIconData _iconFor(String? type) {
     final value = type ?? '';
     if (value.contains('payment') || value.contains('invoice')) return AppIcons.invoice;
     if (value.contains('emergency')) return AppIcons.emergency;

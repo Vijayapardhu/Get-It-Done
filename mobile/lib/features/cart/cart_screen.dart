@@ -399,7 +399,7 @@ class _StepButton extends StatelessWidget {
     required this.onTap,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String semanticLabel;
   final VoidCallback onTap;
 
@@ -431,7 +431,7 @@ class _DetailRow extends StatelessWidget {
     this.onTap,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String label;
   final String value;
 

@@ -30,7 +30,7 @@ class AppBadge extends StatelessWidget {
 
   final String label;
   final BadgeTone tone;
-  final List<List<dynamic>>? icon;
+  final AppIconData? icon;
   final bool dense;
 
   @override
@@ -194,7 +194,7 @@ class TrustRow extends StatelessWidget {
   final String label;
   final bool verified;
   final String? detail;
-  final List<List<dynamic>>? icon;
+  final AppIconData? icon;
 
   @override
   Widget build(BuildContext context) {

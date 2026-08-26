@@ -132,7 +132,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 class _ReadOnlyRow extends StatelessWidget {
   const _ReadOnlyRow({required this.icon, required this.label, required this.value});
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String label;
   final String value;
 

@@ -181,7 +181,7 @@ class AppStateView extends StatelessWidget {
 
   final String title;
   final String message;
-  final List<List<dynamic>>? icon;
+  final AppIconData? icon;
   final StateTone tone;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -192,7 +192,7 @@ class AppStateView extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
 
-    final (Color fg, Color bg, List<List<dynamic>> defaultIcon) = switch (tone) {
+    final (Color fg, Color bg, AppIconData defaultIcon) = switch (tone) {
       StateTone.neutral => (t.primary, t.primarySoft, AppIcons.idea),
       StateTone.error => (t.danger, t.dangerSoft, AppIcons.alertCircle),
       StateTone.warning => (t.warning, t.warningSoft, AppIcons.info),
@@ -251,7 +251,7 @@ class AppBanner extends StatelessWidget {
 
   final String message;
   final StateTone tone;
-  final List<List<dynamic>>? icon;
+  final AppIconData? icon;
   final VoidCallback? onDismiss;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -260,7 +260,7 @@ class AppBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
 
-    final (Color fg, Color bg, List<List<dynamic>> defaultIcon) = switch (tone) {
+    final (Color fg, Color bg, AppIconData defaultIcon) = switch (tone) {
       StateTone.neutral => (t.primary, t.primarySoft, AppIcons.info),
       StateTone.error => (t.danger, t.dangerSoft, AppIcons.alertCircle),
       StateTone.warning => (t.warning, t.warningSoft, AppIcons.info),

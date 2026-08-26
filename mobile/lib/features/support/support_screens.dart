@@ -211,7 +211,7 @@ class _NewTicketScreenState extends ConsumerState<NewTicketScreen> {
   String? _error;
 
   /// Mirrors the backend's complaint categories.
-  static const _categories = <({String value, String label, List<List<dynamic>> icon})>[
+  static const _categories = <({String value, String label, AppIconData icon})>[
     (value: 'service_quality', label: 'Quality of work', icon: AppIcons.thumbsUp),
     (value: 'worker_behaviour', label: 'Worker behaviour', icon: AppIcons.user),
     (value: 'billing', label: 'Billing or payment', icon: AppIcons.wallet),

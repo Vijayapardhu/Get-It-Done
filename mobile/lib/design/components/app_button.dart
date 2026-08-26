@@ -82,8 +82,8 @@ class AppButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final AppButtonVariant variant;
   final AppButtonSize size;
-  final List<List<dynamic>>? icon;
-  final List<List<dynamic>>? trailingIcon;
+  final AppIconData? icon;
+  final AppIconData? trailingIcon;
 
   /// Shows a spinner and blocks input. The label stays laid out underneath so
   /// the button does not change width mid-press.
@@ -240,7 +240,7 @@ class AppIconButton extends StatelessWidget {
     this.tooltip,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final VoidCallback? onPressed;
   final double size;
   final double iconSize;

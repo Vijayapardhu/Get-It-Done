@@ -217,16 +217,12 @@ void main() {
         ],
       )));
 
-      // By semantics label, not visible text: only the active destination
-      // renders its label now, so a screen reader is the only thing that can
-      // still name the others — and this asserts it can.
-      await tester.tap(find.bySemanticsLabel('Bookings'));
+      await tester.tap(find.text('Bookings'));
       await tester.pump();
       expect(tapped, 1);
     });
 
-    testWidgets('inactive destinations keep an accessible name without showing one',
-        (tester) async {
+    testWidgets('every destination is named, active or not', (tester) async {
       await tester.pumpWidget(wrap(AppBottomNav(
         currentIndex: 0,
         onTap: (_) {},
@@ -236,12 +232,24 @@ void main() {
         ],
       )));
 
-      // The active one is spelled out; the inactive one is an icon with a name
-      // attached. Losing the second half would make the bar a rebus for anyone
-      // relying on a screen reader.
+      // Four icons alone are a rebus: a bell and a clipboard could each be two
+      // different things. Both the visible label and the semantic one.
       expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Bookings'), findsNothing);
+      expect(find.text('Bookings'), findsOneWidget);
       expect(find.bySemanticsLabel('Bookings'), findsOneWidget);
+    });
+
+    testWidgets('a badge count rides on its destination', (tester) async {
+      await tester.pumpWidget(wrap(AppBottomNav(
+        currentIndex: 0,
+        onTap: (_) {},
+        items: const [
+          AppNavItem(icon: AppIcons.home, label: 'Home'),
+          AppNavItem(icon: AppIcons.notifications, label: 'Alerts', badgeCount: 3),
+        ],
+      )));
+
+      expect(find.text('3'), findsOneWidget);
     });
 
     testWidgets('tapping the active nav tab does not re-fire', (tester) async {

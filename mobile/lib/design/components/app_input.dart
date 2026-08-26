@@ -50,7 +50,7 @@ class AppTextField extends StatelessWidget {
   final bool enabled;
   final int maxLines;
   final int? maxLength;
-  final List<List<dynamic>>? prefixIcon;
+  final AppIconData? prefixIcon;
   final Widget? suffix;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -287,7 +287,7 @@ class AppSelectableRow extends StatelessWidget {
   final String? subtitle;
   final bool selected;
   final VoidCallback onTap;
-  final List<List<dynamic>>? icon;
+  final AppIconData? icon;
 
   /// Takes the place of [icon] when supplied — a service's artwork, say.
   /// Sized by the caller, because a picture and a glyph want different boxes.

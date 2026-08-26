@@ -528,7 +528,7 @@ class _PayPrompt extends ConsumerWidget {
 class _Metric extends StatelessWidget {
   const _Metric({required this.icon, required this.value, required this.label});
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String value;
   final String label;
 

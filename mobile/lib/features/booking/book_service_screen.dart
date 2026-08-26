@@ -295,7 +295,7 @@ class _AddressStep extends ConsumerWidget {
     if (created != null) onSelect(created);
   }
 
-  static List<List<dynamic>> _iconFor(String name) {
+  static AppIconData _iconFor(String name) {
     final n = name.toLowerCase();
     if (n.contains('home') || n.contains('house')) return AppIcons.home_;
     if (n.contains('office') || n.contains('work')) return AppIcons.work;
@@ -591,7 +591,7 @@ class _ConfirmStep extends StatelessWidget {
 class _SummaryRow extends StatelessWidget {
   const _SummaryRow({required this.icon, required this.label, required this.value});
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String label;
   final String value;
 

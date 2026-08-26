@@ -1,110 +1,133 @@
 import 'package:flutter/material.dart';
-import 'package:hugeicons/hugeicons.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../theme/app_theme.dart';
 import '../tokens/spacing.dart';
 
+/// An icon, as this app stores one.
+///
+/// Phosphor exposes each glyph as a function taking a weight rather than as a
+/// single constant, so what is held here is that function. It is what lets
+/// [AppIcon]'s `bold` flag resolve to Phosphor's REAL bold weight instead of
+/// thickening a regular glyph and getting a slightly blurred one.
+typedef AppIconData = PhosphorIconData Function([PhosphorIconsStyle]);
+
 /// The app's icon vocabulary.
 ///
 /// Every icon in the product is named here by ROLE, not by picture. Screens
-/// write `AppIcons.bookings`, never `HugeIcons.strokeRoundedCalendar03`. When a
-/// glyph needs to change, it changes once.
+/// write `AppIcons.bookings`, never a package constant. When a glyph needs to
+/// change, it changes once — which is what made moving the whole app from
+/// Hugeicons to Phosphor a single-file job.
 ///
-/// One style throughout: stroke-rounded. The free Hugeicons package ships only
-/// that weight, and mixing weights for active states causes visible thickness
-/// jitter in the nav bar anyway. Active state is expressed through colour and a
-/// soft-filled container — see [AppIcon] and the bottom nav.
+/// ONE family, everywhere. An app that mixes two icon packs looks unfinished in
+/// a way people notice without being able to say why: the stroke weights differ
+/// by a fraction, the optical sizes disagree, and corners are rounded to
+/// different radii. Phosphor is large enough that nothing here needs a
+/// borrowed glyph.
 abstract final class AppIcons {
   // ── Navigation ────────────────────────────────────────────────────────────
-  static const home = HugeIcons.strokeRoundedHome01;
-  static const bookings = HugeIcons.strokeRoundedCalendar03;
-  static const notifications = HugeIcons.strokeRoundedNotification03;
-  static const profile = HugeIcons.strokeRoundedUserCircle;
-  static const menu = HugeIcons.strokeRoundedMenu01;
+  static const AppIconData home = PhosphorIcons.house;
+  static const AppIconData bookings = PhosphorIcons.clipboardText;
+  static const AppIconData notifications = PhosphorIcons.bell;
+  static const AppIconData profile = PhosphorIcons.userCircle;
+  static const AppIconData menu = PhosphorIcons.list;
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  static const search = HugeIcons.strokeRoundedSearch01;
-  static const filter = HugeIcons.strokeRoundedFilter;
-  static const sort = HugeIcons.strokeRoundedSortByDown01;
-  static const add = HugeIcons.strokeRoundedAdd01;
-  static const remove = HugeIcons.strokeRoundedMinusSign;
-  static const close = HugeIcons.strokeRoundedCancel01;
-  static const edit = HugeIcons.strokeRoundedEdit02;
-  static const delete = HugeIcons.strokeRoundedDelete02;
-  static const share = HugeIcons.strokeRoundedShare08;
-  static const copy = HugeIcons.strokeRoundedCopy01;
-  static const refresh = HugeIcons.strokeRoundedRefresh;
-  static const download = HugeIcons.strokeRoundedDownload01;
-  static const more = HugeIcons.strokeRoundedMoreVertical;
-  static const chevronRight = HugeIcons.strokeRoundedArrowRight01;
-  static const chevronLeft = HugeIcons.strokeRoundedArrowLeft01;
-  static const chevronDown = HugeIcons.strokeRoundedArrowDown01;
-  static const repeat = HugeIcons.strokeRoundedRepeat;
+  static const AppIconData search = PhosphorIcons.magnifyingGlass;
+  static const AppIconData filter = PhosphorIcons.funnel;
+  static const AppIconData sort = PhosphorIcons.sortAscending;
+  static const AppIconData add = PhosphorIcons.plus;
+  static const AppIconData remove = PhosphorIcons.minus;
+  static const AppIconData close = PhosphorIcons.x;
+  static const AppIconData edit = PhosphorIcons.pencilSimple;
+  static const AppIconData delete = PhosphorIcons.trash;
+  static const AppIconData share = PhosphorIcons.shareNetwork;
+  static const AppIconData copy = PhosphorIcons.copy;
+  static const AppIconData refresh = PhosphorIcons.arrowsClockwise;
+  static const AppIconData download = PhosphorIcons.downloadSimple;
+  static const AppIconData more = PhosphorIcons.dotsThreeVertical;
+  static const AppIconData chevronRight = PhosphorIcons.caretRight;
+  static const AppIconData chevronLeft = PhosphorIcons.arrowLeft;
+  static const AppIconData chevronDown = PhosphorIcons.caretDown;
+  static const AppIconData repeat = PhosphorIcons.repeat;
 
   // ── Trust (the product's differentiator — used deliberately) ─────────────
-  static const verified = HugeIcons.strokeRoundedCheckmarkBadge01;
-  static const secure = HugeIcons.strokeRoundedSecurityCheck;
-  static const showPassword = HugeIcons.strokeRoundedView;
-  static const hidePassword = HugeIcons.strokeRoundedViewOff;
-  static const certificate = HugeIcons.strokeRoundedCertificate01;
-  static const cooperative = HugeIcons.strokeRoundedUserGroup;
-  static const rating = HugeIcons.strokeRoundedStar;
-  static const shield = HugeIcons.strokeRoundedShield01;
+  static const AppIconData verified = PhosphorIcons.sealCheck;
+  static const AppIconData secure = PhosphorIcons.shieldCheck;
+  static const AppIconData showPassword = PhosphorIcons.eye;
+  static const AppIconData hidePassword = PhosphorIcons.eyeSlash;
+  static const AppIconData certificate = PhosphorIcons.certificate;
+  static const AppIconData cooperative = PhosphorIcons.usersThree;
+  static const AppIconData rating = PhosphorIcons.star;
+  static const AppIconData shield = PhosphorIcons.shield;
 
   // ── Booking lifecycle ─────────────────────────────────────────────────────
-  static const time = HugeIcons.strokeRoundedTime04;
-  static const location = HugeIcons.strokeRoundedLocation01;
-  static const locationPin = HugeIcons.strokeRoundedLocation04;
-  static const navigate = HugeIcons.strokeRoundedNavigation03;
-  static const call = HugeIcons.strokeRoundedCall02;
-  static const message = HugeIcons.strokeRoundedMessage01;
-  static const chat = HugeIcons.strokeRoundedChatting01;
-  static const send = HugeIcons.strokeRoundedSent;
-  static const camera = HugeIcons.strokeRoundedCamera01;
-  static const photo = HugeIcons.strokeRoundedImage01;
-  static const home_ = HugeIcons.strokeRoundedHome03;
-  static const building = HugeIcons.strokeRoundedBuilding03;
-  static const work = HugeIcons.strokeRoundedBriefcase01;
+  static const AppIconData time = PhosphorIcons.clock;
+  static const AppIconData location = PhosphorIcons.mapPin;
+  static const AppIconData locationPin = PhosphorIcons.mapPinLine;
+  static const AppIconData navigate = PhosphorIcons.navigationArrow;
+  static const AppIconData call = PhosphorIcons.phone;
+  static const AppIconData message = PhosphorIcons.chatCircle;
+  static const AppIconData chat = PhosphorIcons.chatsCircle;
+  static const AppIconData send = PhosphorIcons.paperPlaneTilt;
+  static const AppIconData camera = PhosphorIcons.camera;
+  static const AppIconData photo = PhosphorIcons.image;
+  static const AppIconData home_ = PhosphorIcons.houseLine;
+  static const AppIconData building = PhosphorIcons.buildings;
+  static const AppIconData work = PhosphorIcons.briefcase;
 
   // ── Money ─────────────────────────────────────────────────────────────────
-  static const wallet = HugeIcons.strokeRoundedWallet01;
-  static const invoice = HugeIcons.strokeRoundedInvoice01;
-  static const card = HugeIcons.strokeRoundedCreditCard;
-  static const money = HugeIcons.strokeRoundedMoney01;
-  static const document = HugeIcons.strokeRoundedFile01;
+  static const AppIconData wallet = PhosphorIcons.wallet;
+  static const AppIconData invoice = PhosphorIcons.receipt;
+  static const AppIconData card = PhosphorIcons.creditCard;
+  static const AppIconData money = PhosphorIcons.currencyInr;
+  static const AppIconData document = PhosphorIcons.fileText;
 
   // ── Emergency ─────────────────────────────────────────────────────────────
-  static const emergency = HugeIcons.strokeRoundedAlert01;
-  static const alertCircle = HugeIcons.strokeRoundedAlertCircle;
-  static const flash = HugeIcons.strokeRoundedFlash;
+  static const AppIconData emergency = PhosphorIcons.warning;
+  static const AppIconData alertCircle = PhosphorIcons.warningCircle;
+  static const AppIconData flash = PhosphorIcons.lightning;
 
   // ── Feedback / state ──────────────────────────────────────────────────────
-  static const success = HugeIcons.strokeRoundedCheckmarkCircle02;
-  static const tick = HugeIcons.strokeRoundedTick02;
-  static const info = HugeIcons.strokeRoundedInformationCircle;
-  static const favourite = HugeIcons.strokeRoundedFavouriteCircle;
-  static const bookmark = HugeIcons.strokeRoundedBookmark01;
-  static const thumbsUp = HugeIcons.strokeRoundedThumbsUp;
-  static const idea = HugeIcons.strokeRoundedIdea01;
-  static const analytics = HugeIcons.strokeRoundedAnalytics01;
-  static const support = HugeIcons.strokeRoundedCustomerService01;
-  static const loading = HugeIcons.strokeRoundedLoading03;
+  static const AppIconData success = PhosphorIcons.checkCircle;
+  static const AppIconData tick = PhosphorIcons.check;
+  static const AppIconData info = PhosphorIcons.info;
+  static const AppIconData favourite = PhosphorIcons.heart;
+  static const AppIconData bookmark = PhosphorIcons.bookmarkSimple;
+  static const AppIconData thumbsUp = PhosphorIcons.thumbsUp;
+  static const AppIconData idea = PhosphorIcons.lightbulb;
+  static const AppIconData analytics = PhosphorIcons.chartLineUp;
+  static const AppIconData support = PhosphorIcons.headset;
+  static const AppIconData loading = PhosphorIcons.circleNotch;
 
   // ── Settings ──────────────────────────────────────────────────────────────
-  static const settings = HugeIcons.strokeRoundedSettings01;
-  static const language = HugeIcons.strokeRoundedGlobe02;
-  static const logout = HugeIcons.strokeRoundedLogout03;
-  static const lightMode = HugeIcons.strokeRoundedSun01;
-  static const darkMode = HugeIcons.strokeRoundedMoon02;
-  static const user = HugeIcons.strokeRoundedUser;
+  static const AppIconData settings = PhosphorIcons.gear;
+  static const AppIconData language = PhosphorIcons.globe;
+  static const AppIconData logout = PhosphorIcons.signOut;
+  static const AppIconData lightMode = PhosphorIcons.sun;
+  static const AppIconData darkMode = PhosphorIcons.moon;
+  static const AppIconData user = PhosphorIcons.user;
+
+  // ── Trades ────────────────────────────────────────────────────────────────
+  // The catalogue's fallback glyphs. See ServiceVisuals, which pairs each with
+  // a tint.
+  static const AppIconData electrical = PhosphorIcons.lightning;
+  static const AppIconData plumbing = PhosphorIcons.wrench;
+  static const AppIconData cleaning = PhosphorIcons.broom;
+  static const AppIconData painting = PhosphorIcons.paintBrushHousehold;
+  static const AppIconData carpentry = PhosphorIcons.hammer;
+  static const AppIconData appliance = PhosphorIcons.washingMachine;
+  static const AppIconData climate = PhosphorIcons.fan;
+  static const AppIconData pest = PhosphorIcons.bug;
+  static const AppIconData gardening = PhosphorIcons.plant;
+  static const AppIconData tools = PhosphorIcons.toolbox;
 }
 
-/// Renders an [AppIcons] entry with the app's stroke weight and a theme-aware
-/// default colour.
+/// Renders an [AppIcons] entry at a theme-aware default colour.
 ///
-/// Prefer this over `HugeIcon` directly so stroke width stays consistent — a
-/// mix of 1.5 and 2.0 across screens is subtle enough to survive review and
-/// obvious enough to make the app feel unfinished.
+/// Prefer this over a raw `PhosphorIcon` so weight and default colour stay
+/// consistent — a mix of weights across screens is subtle enough to survive
+/// review and obvious enough to make the app feel unfinished.
 class AppIcon extends StatelessWidget {
   const AppIcon(
     this.icon, {
@@ -115,11 +138,11 @@ class AppIcon extends StatelessWidget {
     this.semanticLabel,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final double size;
   final Color? color;
 
-  /// Heavier stroke for active states and large hero icons.
+  /// Phosphor's real bold cut, not a thickened regular one.
   final bool bold;
 
   final String? semanticLabel;
@@ -127,11 +150,10 @@ class AppIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolved = color ?? context.tokens.textSecondary;
-    final glyph = HugeIcon(
-      icon: icon,
-      color: resolved,
+    final glyph = Icon(
+      icon(bold ? PhosphorIconsStyle.bold : PhosphorIconsStyle.regular),
       size: size,
-      strokeWidth: bold ? Sizes.iconStrokeBold : Sizes.iconStroke,
+      color: resolved,
     );
 
     if (semanticLabel == null) {
@@ -160,7 +182,7 @@ class AppIconBadge extends StatelessWidget {
     this.bold = false,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final Color? background;
   final Color? foreground;
   final double size;

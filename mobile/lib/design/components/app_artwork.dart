@@ -41,7 +41,7 @@ class AppArtwork extends StatelessWidget {
   });
 
   /// Rendered when there is no artwork, or when fetching it fails.
-  final List<List<dynamic>> fallbackIcon;
+  final AppIconData fallbackIcon;
 
   /// Absolute URL. Resolve relative API paths before passing them in.
   final String? imageUrl;
@@ -196,7 +196,7 @@ class AppIllustration extends StatelessWidget {
   /// — the offline empty state being the obvious one.
   final String? assetAnimation;
 
-  final List<List<dynamic>>? fallbackIcon;
+  final AppIconData? fallbackIcon;
   final double height;
   final bool animate;
 

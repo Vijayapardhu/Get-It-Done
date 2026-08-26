@@ -100,8 +100,8 @@ class HomeHero extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: _StartCard(
-                      title: 'Get it done now',
-                      caption: 'Nearest worker',
+                      title: 'Get Instant Service',
+                      caption: 'Find an available worker',
                       icon: AppIcons.flash,
                       tint: t.warning,
                       onTap: onInstant,
@@ -110,8 +110,8 @@ class HomeHero extends ConsumerWidget {
                   const SizedBox(width: Space.x3),
                   Expanded(
                     child: _StartCard(
-                      title: 'Schedule for later',
-                      caption: 'Pick a slot',
+                      title: 'Schedule for Later',
+                      caption: 'Pick a convenient time',
                       icon: AppIcons.bookings,
                       tint: t.primary,
                       onTap: onSchedule,
@@ -119,10 +119,54 @@ class HomeHero extends ConsumerWidget {
                   ),
                 ],
               ),
+
+              const SizedBox(height: Space.x4),
+              const _TrustStrip(),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Why this app rather than the other one.
+///
+/// Three claims, small, on one line. It is deliberately not a card or a
+/// section: the moment this gets its own heading and an icon per row, it stops
+/// being a reason to trust the app and becomes marketing to scroll past.
+///
+/// Every claim is one the product actually keeps. Workers are verified by their
+/// cooperative before they can accept work; the price is quoted and frozen
+/// before booking and broken down on the invoice; the matching query is
+/// geographic and only reaches nearby workers. Nothing here is aspirational.
+class _TrustStrip extends StatelessWidget {
+  const _TrustStrip();
+
+  static const _claims = [
+    'Cooperative verified',
+    'Transparent pricing',
+    'Local workers',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        AppIcon(AppIcons.tick, size: 13, color: AppColors.blue200, bold: true),
+        const SizedBox(width: Space.x2),
+        Expanded(
+          child: Text(
+            _claims.join('  ·  '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.labelSmall?.copyWith(
+              color: AppColors.blue200,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -219,7 +263,7 @@ class _StartCard extends StatelessWidget {
 
   final String title;
   final String caption;
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final Color tint;
   final VoidCallback onTap;
 
@@ -252,7 +296,7 @@ class _StartCard extends StatelessWidget {
             Text(
               caption,
               style: context.text.bodySmall?.copyWith(color: t.textTertiary),
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],

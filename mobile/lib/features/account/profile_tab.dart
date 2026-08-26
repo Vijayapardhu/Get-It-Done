@@ -254,7 +254,7 @@ class _Row extends StatelessWidget {
     this.showChevron = true,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String label;
   final String? subtitle;
   final VoidCallback onTap;

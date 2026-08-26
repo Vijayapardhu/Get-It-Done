@@ -61,7 +61,14 @@ class ServiceCard extends ConsumerWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: Space.x2),
+                  // Rating under the name rather than floating on the picture:
+                  // at this card width a pill over the artwork covered the
+                  // subject, and the number belongs with the price anyway.
+                  if (service.rating != null) ...[
+                    const SizedBox(height: Space.x1),
+                    _Rating(rating: service.rating!),
+                  ],
+                  const SizedBox(height: Space.x1),
                   _PriceRow(service: service),
                 ],
               ),
@@ -107,17 +114,6 @@ class _Artwork extends ConsumerWidget {
             ),
           ),
 
-          // Rating, top-left, only where the service has actually been rated.
-          if (service.rating != null)
-            Positioned(
-              top: Space.x2,
-              left: Space.x2,
-              child: _RatingPill(
-                rating: service.rating!,
-                count: service.reviewCount ?? 0,
-              ),
-            ),
-
           // Add, bottom-right and overlapping the artwork edge, so it reads as
           // a control on top of the picture rather than part of it.
           Positioned(
@@ -146,41 +142,27 @@ class _Artwork extends ConsumerWidget {
   }
 }
 
-class _RatingPill extends StatelessWidget {
-  const _RatingPill({required this.rating, required this.count});
+class _Rating extends StatelessWidget {
+  const _Rating({required this.rating});
 
   final double rating;
-  final int count;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: Space.x2, vertical: 3),
-      decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(Radii.pill),
-        boxShadow: t.cardShadow,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(AppIcons.rating, size: 12, color: t.warning, bold: true),
-          const SizedBox(width: 3),
-          Text(
-            rating.toStringAsFixed(1),
-            style: context.text.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+    return Row(
+      children: [
+        AppIcon(AppIcons.rating, size: 12, color: t.warning, bold: true),
+        const SizedBox(width: 3),
+        Text(
+          rating.toStringAsFixed(1),
+          style: context.text.labelSmall?.copyWith(
+            color: t.textSecondary,
+            fontWeight: FontWeight.w600,
           ),
-          if (count > 0) ...[
-            const SizedBox(width: 2),
-            Text(
-              '($count)',
-              style: context.text.labelSmall?.copyWith(color: t.textTertiary),
-            ),
-          ],
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -240,6 +222,10 @@ class _PriceRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
       children: [
+        Text(
+          'From ',
+          style: context.text.labelSmall?.copyWith(color: t.textTertiary),
+        ),
         Text(
           formatRupees(service.basePrice),
           style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700),

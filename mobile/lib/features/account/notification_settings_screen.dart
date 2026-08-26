@@ -135,7 +135,7 @@ class _ChannelToggle extends StatelessWidget {
     this.enabled = true,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final String title;
   final String subtitle;
   final bool value;

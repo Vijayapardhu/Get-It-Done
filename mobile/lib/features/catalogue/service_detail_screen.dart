@@ -110,7 +110,7 @@ class _Hero extends StatelessWidget {
 class _CircleButton extends StatelessWidget {
   const _CircleButton({required this.icon});
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -258,7 +258,7 @@ class _TickList extends StatelessWidget {
 
   final String title;
   final List<String> items;
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
   final Color tint;
 
   @override

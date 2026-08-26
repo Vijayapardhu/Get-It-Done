@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hugeicons/hugeicons.dart';
-
 import '../tokens/colors.dart';
+import 'app_icons.dart';
 
 /// Icon + accent pairing for each service category.
 ///
@@ -20,7 +19,7 @@ class ServiceVisual {
     required this.accentSoft,
   });
 
-  final List<List<dynamic>> icon;
+  final AppIconData icon;
 
   /// For the glyph itself and any emphasis stroke.
   final Color accent;
@@ -44,55 +43,55 @@ class ServiceVisual {
 
 abstract final class ServiceVisuals {
   static const plumbing = ServiceVisual(
-    icon: HugeIcons.strokeRoundedWrench01,
+    icon: AppIcons.plumbing,
     accent: AppColors.servicePlumbing,
     accentSoft: AppColors.servicePlumbingSoft,
   );
 
   static const electrical = ServiceVisual(
-    icon: HugeIcons.strokeRoundedPlug01,
+    icon: AppIcons.electrical,
     accent: AppColors.serviceElectrical,
     accentSoft: AppColors.serviceElectricalSoft,
   );
 
   static const cleaning = ServiceVisual(
-    icon: HugeIcons.strokeRoundedCleaningBucket,
+    icon: AppIcons.cleaning,
     accent: AppColors.serviceCleaning,
     accentSoft: AppColors.serviceCleaningSoft,
   );
 
   static const painting = ServiceVisual(
-    icon: HugeIcons.strokeRoundedPaintBrush01,
+    icon: AppIcons.painting,
     accent: AppColors.servicePainting,
     accentSoft: AppColors.servicePaintingSoft,
   );
 
   static const carpentry = ServiceVisual(
-    icon: HugeIcons.strokeRoundedTools,
+    icon: AppIcons.carpentry,
     accent: AppColors.serviceCarpentry,
     accentSoft: AppColors.serviceCarpentrySoft,
   );
 
   static const appliance = ServiceVisual(
-    icon: HugeIcons.strokeRoundedWashingMachine,
+    icon: AppIcons.appliance,
     accent: AppColors.serviceAppliance,
     accentSoft: AppColors.serviceApplianceSoft,
   );
 
   static const climate = ServiceVisual(
-    icon: HugeIcons.strokeRoundedFan01,
+    icon: AppIcons.climate,
     accent: AppColors.serviceAppliance,
     accentSoft: AppColors.serviceApplianceSoft,
   );
 
   static const pest = ServiceVisual(
-    icon: HugeIcons.strokeRoundedBug01,
+    icon: AppIcons.pest,
     accent: AppColors.servicePest,
     accentSoft: AppColors.servicePestSoft,
   );
 
   static const other = ServiceVisual(
-    icon: HugeIcons.strokeRoundedTools,
+    icon: AppIcons.tools,
     accent: AppColors.serviceOther,
     accentSoft: AppColors.serviceOtherSoft,
   );

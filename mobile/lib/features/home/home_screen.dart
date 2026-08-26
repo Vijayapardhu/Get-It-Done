@@ -62,6 +62,44 @@ class HomeScreen extends ConsumerWidget {
             onOpenProfile: onOpenProfile,
           ),
 
+          // ── The cooperative story ─────────────────────────────────────
+          // Sits where a commercial app puts its promotional banner, because
+          // it is doing that job: it is the reason to choose this app over the
+          // one with faster delivery. It is not a promotion, though — we run
+          // none, and a fabricated "50% off" would undo exactly the trust this
+          // is claiming.
+          const SizedBox(height: Space.x5),
+          Padding(
+            padding: Space.pageInsets,
+            child: AppCard(
+              elevated: false,
+              padding: const EdgeInsets.all(Space.x4),
+              child: Row(
+                children: [
+                  AppIconBadge(AppIcons.cooperative, size: 44, iconSize: 22),
+                  const SizedBox(width: Space.x4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Every booking funds worker welfare',
+                            style: context.text.titleSmall),
+                        const SizedBox(height: 2),
+                        Text(
+                          '2% of every job goes to insurance and training for '
+                          'the cooperative members who serve you.',
+                          style: context.text.bodySmall
+                              ?.copyWith(color: t.textSecondary, height: 1.45),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // ── Active booking ────────────────────────────────────────────
           // Placed high and only when there is one: a customer with a worker
           // on the way opened the app for exactly this.
@@ -95,7 +133,7 @@ class HomeScreen extends ConsumerWidget {
           // have to guess whether the thing they want exists.
           Section(
             title: 'All home services',
-            subtitle: 'Add what you need, then book in one go.',
+            subtitle: 'Book trusted cooperative workers.',
             child: services.when(
               loading: () => const _ServiceGridSkeletons(),
               error: (error, _) => Padding(
@@ -118,29 +156,6 @@ class HomeScreen extends ConsumerWidget {
           ),
 
           const SizedBox(height: Space.section),
-
-          // ── The cooperative story ─────────────────────────────────────
-          // A full-bleed tinted band rather than another card, so the page has
-          // rhythm instead of a uniform stack.
-          Padding(
-            padding: Space.pageInsets,
-            child: AppFeatureBand(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppIconBadge(AppIcons.shield, size: 52, iconSize: 26),
-                  const SizedBox(height: Space.x4),
-                  Text('Every booking funds\nworker welfare', style: context.text.headlineMedium),
-                  const SizedBox(height: Space.x2),
-                  Text(
-                    '2% of every job goes to insurance and training for the '
-                    'cooperative members who serve you.',
-                    style: context.text.bodyMedium?.copyWith(color: t.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-          ),
 
           // ── Recent ────────────────────────────────────────────────────
           dashboard.maybeWhen(

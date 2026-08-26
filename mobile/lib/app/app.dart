@@ -154,7 +154,30 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   /// Each tab keeps its own navigator, so switching tabs does not discard a
   /// half-finished booking flow.
-  final _navigatorKeys = List.generate(3, (_) => GlobalKey<NavigatorState>());
+  final _navigatorKeys = List.generate(4, (_) => GlobalKey<NavigatorState>());
+
+  /// How deep each tab's own navigator is stacked.
+  ///
+  /// Zero means the tab is showing its root screen -- Home, Bookings, Alerts,
+  /// Profile -- and the user is browsing. Anything above zero means they have
+  /// pushed into a focused task: a service page, a slot picker, checkout,
+  /// tracking a worker. Navigation is hidden there, because the job is to
+  /// finish the task or go back, and a tab bar offers a third thing that
+  /// abandons it.
+  ///
+  /// Driven by an observer rather than by each screen declaring itself, so a
+  /// screen added later cannot forget to.
+  final _stackDepth = List.filled(4, 0);
+
+  late final _depthObservers = [
+    for (var tab = 0; tab < 4; tab++)
+      _DepthObserver((depth) {
+        if (!mounted) return;
+        setState(() => _stackDepth[tab] = depth);
+      }),
+  ];
+
+  bool get _isBrowsing => _stackDepth[_tab] == 0;
 
   Future<bool> _onWillPop() async {
     final navigator = _navigatorKeys[_tab].currentState;
@@ -249,6 +272,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           children: [
             _TabNavigator(
               navigatorKey: _navigatorKeys[0],
+              observers: [_depthObservers[0]],
               child: HomeScreen(
                 onOpenService: _openService,
                 onOpenSearch: () => _push(SearchScreen(onOpenService: _openService)),
@@ -262,39 +286,51 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[1],
+              observers: [_depthObservers[1]],
               child: BookingsTab(onOpenBooking: _openBooking),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[2],
+              observers: [_depthObservers[2]],
               child: const NotificationsTab(),
+            ),
+            _TabNavigator(
+              navigatorKey: _navigatorKeys[3],
+              observers: [_depthObservers[3]],
+              child: ProfileTab(onToggleTheme: widget.onToggleTheme),
             ),
           ],
         ),
-        // No emergency FAB. It floated over the catalogue grid, covering the
-        // third card in the first row, and it duplicated a path that already
-        // has a home: "Get it done now" in the header opens the same picker.
-        // The feature is unchanged — only the second, overlapping doorway to
-        // it is gone.
+        // Navigation and the cart strip are hidden together once a tab has
+        // pushed into a focused task. They are hidden by DEPTH, not by scroll
+        // position: furniture that vanishes because you flicked a list is the
+        // thing people complain about without being able to name.
         //
-        // The cart bar sits above the navigation rather than on the home
-        // screen, so someone who added two services and then wandered into
-        // Bookings can still see what they were in the middle of. It collapses
-        // to nothing when the cart is empty.
-        bottomNavigationBar: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CartBar(onOpenCart: _openCart),
-            AppBottomNav(
-          currentIndex: _tab,
-          onTap: (i) => setState(() => _tab = i),
-          items: [
-            const AppNavItem(icon: AppIcons.home, label: 'Home'),
-            const AppNavItem(icon: AppIcons.bookings, label: 'Bookings'),
-            AppNavItem(icon: AppIcons.notifications, label: 'Alerts', badgeCount: unread),
-          ],
-        ),
-          ],
-        ),
+        // The cart strip is its own bar above the navigation rather than part
+        // of it. Navigation is where you can go; the strip is what you are
+        // carrying.
+        bottomNavigationBar: _isBrowsing
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CartBar(onOpenCart: _openCart),
+                  AppBottomNav(
+                    currentIndex: _tab,
+                    onTap: (i) => setState(() => _tab = i),
+                    items: [
+                      const AppNavItem(icon: AppIcons.home, label: 'Home'),
+                      const AppNavItem(icon: AppIcons.bookings, label: 'Bookings'),
+                      AppNavItem(
+                        icon: AppIcons.notifications,
+                        label: 'Alerts',
+                        badgeCount: unread,
+                      ),
+                      const AppNavItem(icon: AppIcons.profile, label: 'Profile'),
+                    ],
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
@@ -330,15 +366,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     _push(OrderDetailScreen(orderId: orderId, onOpenBooking: _openBooking));
   }
 
-  /// Profile is reached from the avatar in the home header rather than a tab.
-  ///
-  /// It is a place you visit occasionally to change something, not one of the
-  /// three things this app is for; a permanent tab spent a quarter of the bar
-  /// on settings. Pushed as a route, so the back gesture returns you to what
-  /// you were doing.
-  void _openProfile() {
-    _push(ProfileTab(onToggleTheme: widget.onToggleTheme));
-  }
+  /// The avatar in the home header selects the Profile TAB rather than
+  /// pushing a second copy of it onto Home. Two routes to the same screen that
+  /// behave differently under back is how an app starts feeling unreliable.
+  void _openProfile() => setState(() => _tab = 3);
 
   void _showEmergencySheet(BuildContext context) {
     showModalBottomSheet<void>(
@@ -356,20 +387,71 @@ class _AppShellState extends ConsumerState<AppShell> {
 
 /// Wraps a tab in its own Navigator so back navigation is per-tab.
 class _TabNavigator extends StatelessWidget {
-  const _TabNavigator({required this.navigatorKey, required this.child});
+  const _TabNavigator({
+    required this.navigatorKey,
+    required this.child,
+    this.observers = const [],
+  });
 
   final GlobalKey<NavigatorState> navigatorKey;
   final Widget child;
+  final List<NavigatorObserver> observers;
 
   @override
   Widget build(BuildContext context) {
     return Navigator(
       key: navigatorKey,
+      observers: observers,
       onGenerateRoute: (settings) => MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => child,
       ),
     );
+  }
+}
+
+/// Reports how deep a tab's navigator is stacked.
+///
+/// The shell hides its navigation when a tab pushes a focused screen, and this
+/// is what tells it. An observer rather than a per-screen flag: screens get
+/// added, and one that forgot to declare itself would show a tab bar over a
+/// checkout without anybody noticing until it shipped.
+class _DepthObserver extends NavigatorObserver {
+  _DepthObserver(this.onChanged);
+
+  /// Called with the number of routes ABOVE the tab's root.
+  final ValueChanged<int> onChanged;
+
+  int _depth = 0;
+
+  void _emit(int next) {
+    if (next == _depth) return;
+    _depth = next;
+    onChanged(next);
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    // The tab's own root arrives as a push with nothing beneath it, and that
+    // is depth zero rather than one.
+    if (previousRoute != null) _emit(_depth + 1);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) _emit(_depth - 1);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) _emit(_depth - 1);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    // Depth is unchanged by a replacement, but the shell may have popped back
+    // to the root by another path, so re-assert rather than assume.
+    _emit(_depth);
   }
 }
 

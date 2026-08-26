@@ -1,6 +1,8 @@
 @Tags(['golden'])
 library;
 
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +39,62 @@ Future<void> _loadFonts() async {
     for (final weight in entry.value) {
       loader.addFont(rootBundle.load('assets/fonts/${entry.key}-$weight.ttf'));
     }
+    await loader.load();
+  }
+
+  await _loadIconFont();
+}
+
+/// Load Phosphor's icon font from the package on disk.
+///
+/// Phosphor is an icon FONT, unlike the vector-path pack it replaced, so a
+/// golden captured without it shows every icon as an empty box.
+///
+/// rootBundle cannot reach it: a test's asset bundle carries only what THIS
+/// package declares, and these fonts belong to phosphor_flutter's pubspec. The
+/// real app bundles them at build time and needs none of this.
+///
+/// The package's location comes from .dart_tool/package_config.json, which is
+/// what `pub get` writes and what the analyzer itself reads. Isolate
+/// .resolvePackageUri would be the obvious route and throws under flutter_test;
+/// a hardcoded pub-cache path differs per machine and per version.
+Future<void> _loadIconFont() async {
+  final config = File('.dart_tool/package_config.json');
+  if (!config.existsSync()) return;
+
+  final packages = (jsonDecode(config.readAsStringSync())
+      as Map<String, dynamic>)['packages'] as List<dynamic>;
+
+  final entry = packages.cast<Map<String, dynamic>>().firstWhere(
+        (package) => package['name'] == 'phosphor_flutter',
+        orElse: () => const <String, dynamic>{},
+      );
+  if (entry.isEmpty) return;
+
+  // The trailing slash matters: Uri.resolve REPLACES the last segment when the
+  // base has none, so ".../phosphor_flutter-2.1.0" + "lib/" resolved to
+  // ".../lib/" and quietly found nothing.
+  final rootValue = entry['rootUri'] as String;
+  final root = config.absolute.uri
+      .resolve(rootValue.endsWith('/') ? rootValue : '$rootValue/');
+  final lib = root.resolve('${entry['packageUri']}');
+
+  // Registered under the PREFIXED family name. PhosphorIconData sets
+  // fontPackage, so Flutter looks the family up as
+  // "packages/phosphor_flutter/PhosphorRegular" -- registering plain
+  // "Phosphor" loads a font nothing ever asks for, and every icon stays an
+  // empty box while the loader reports success.
+  for (final font in const {
+    'PhosphorRegular': 'Phosphor.ttf',
+    'PhosphorBold': 'Phosphor-Bold.ttf',
+    'PhosphorFill': 'Phosphor-Fill.ttf',
+  }.entries) {
+    final file = File.fromUri(lib.resolve('fonts/${font.value}'));
+    if (!file.existsSync()) continue;
+
+    final bytes = file.readAsBytesSync();
+    final loader = FontLoader('packages/phosphor_flutter/${font.key}')
+      ..addFont(Future.value(ByteData.view(bytes.buffer)));
     await loader.load();
   }
 }
