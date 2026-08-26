@@ -34,6 +34,7 @@ export const MIGRATIONS = [
   "fix_roles_trigger.sql",
   "migration_phase10_missing_entities.sql",// emergency_bookings, complaint_comments, review_reports, ...
   "migration_phase11_financials.sql",      // welfare fund split, settlement batches, job queue
+  "migration_phase12_security_events.sql",// anonymous failed-login records
 ] as const;
 
 const CREATE_TRACKING_TABLE = `

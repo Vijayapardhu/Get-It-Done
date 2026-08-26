@@ -43,6 +43,8 @@ abstract final class AppIcons {
   // ── Trust (the product's differentiator — used deliberately) ─────────────
   static const verified = HugeIcons.strokeRoundedCheckmarkBadge01;
   static const secure = HugeIcons.strokeRoundedSecurityCheck;
+  static const showPassword = HugeIcons.strokeRoundedView;
+  static const hidePassword = HugeIcons.strokeRoundedViewOff;
   static const certificate = HugeIcons.strokeRoundedCertificate01;
   static const cooperative = HugeIcons.strokeRoundedUserGroup;
   static const rating = HugeIcons.strokeRoundedStar;

@@ -4,6 +4,9 @@ import bcrypt from "bcryptjs";
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../config/env.js";
+import logger from "../core/logger.js";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const publicUserColumns = "id, name, phone, email, role, language, status, display_name, date_of_birth, gender, preferred_language, timezone, last_login_at, avatar_url, oauth_provider, oauth_subject";
@@ -69,9 +72,32 @@ export class AuthService {
     return result.rows[0] ? this.toUser(result.rows[0]) : null;
   }
 
-  async findUserByPhone(phone: string): Promise<User | null> {
-    const result = await pool.query(`SELECT ${publicUserColumns} FROM users WHERE phone = $1`, [phone]);
-    return result.rows[0] ? this.toUser(result.rows[0]) : null;
+  async findUserByPhone(phone: string): Promise<(User & { passwordHash?: string }) | null> {
+    // Returns the hash like findUserByEmail does, so phone+password sign-in
+    // works the same way. Callers that do not need it simply ignore it.
+    const result = await pool.query(
+      `SELECT ${publicUserColumns}, password_hash FROM users WHERE phone = $1`,
+      [phone]
+    );
+    if (!result.rows[0]) return null;
+    return { ...this.toUser(result.rows[0]), passwordHash: result.rows[0].password_hash ?? undefined };
+  }
+
+  /**
+   * Resolve a user by whatever they typed.
+   *
+   * Sign-in asks for one field, not "email or phone" radio buttons: people know
+   * what they signed up with and should not have to tell us which kind of thing
+   * it is. An '@' is the only signal needed.
+   */
+  async findUserByIdentifier(identifier: string): Promise<(User & { passwordHash?: string }) | null> {
+    const value = identifier.trim();
+    if (value.includes("@")) return this.findUserByEmail(value);
+
+    // Match how the number was stored: createUserFromPhone writes exactly what
+    // the client sent, so strip formatting the user may have typed.
+    const digits = value.replace(/[\s()-]/g, "");
+    return this.findUserByPhone(digits);
   }
 
   async findUserByEmail(email: string): Promise<(User & { passwordHash?: string }) | null> {
@@ -80,8 +106,18 @@ export class AuthService {
     return { ...this.toUser(result.rows[0]), passwordHash: result.rows[0].password_hash ?? undefined };
   }
 
-  async createUserFromPhone(phone: string, name: string, role = "customer"): Promise<User> {
-    const result = await pool.query(`INSERT INTO users (id, name, phone, role) VALUES ($1, $2, $3, $4) RETURNING ${publicUserColumns}`, [uuidv4(), name, phone, role]);
+  /**
+   * Create a phone-first account.
+   *
+   * [password] is optional because OTP sign-up has no password to set; passing
+   * one enables phone+password sign-in for that account afterwards.
+   */
+  async createUserFromPhone(phone: string, name: string, role = "customer", password?: string): Promise<User> {
+    const passwordHash = password ? await this.hashPassword(password) : null;
+    const result = await pool.query(
+      `INSERT INTO users (id, name, phone, role, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING ${publicUserColumns}`,
+      [uuidv4(), name, phone, role, passwordHash]
+    );
     return this.toUser(result.rows[0]);
   }
 
@@ -194,8 +230,33 @@ export class AuthService {
     return true;
   }
 
-  async recordSecurityEvent(userId: string, eventType: string, ip?: string, userAgent?: string, metadata: Record<string, unknown> = {}): Promise<void> {
-    await pool.query(`INSERT INTO security_events (user_id, event_type, ip, user_agent, metadata) VALUES ($1, $2, $3, $4, $5)`, [userId, eventType, ip ?? null, userAgent ?? null, metadata]);
+  /**
+   * Record a security event.
+   *
+   * [userId] is nullable because the most important event to record — a failed
+   * sign-in — often has no known user. Callers previously passed the literal
+   * string "unknown", which is not a uuid, so the INSERT threw and the login
+   * route returned 500 instead of 401. That difference let anyone enumerate
+   * which emails and phone numbers are registered.
+   *
+   * Never throws: an audit write must not be able to fail a sign-in.
+   */
+  async recordSecurityEvent(
+    userId: string | null | undefined,
+    eventType: string,
+    ip?: string,
+    userAgent?: string,
+    metadata: Record<string, unknown> = {}
+  ): Promise<void> {
+    const actor = userId && UUID_PATTERN.test(userId) ? userId : null;
+    try {
+      await pool.query(
+        `INSERT INTO security_events (user_id, event_type, ip, user_agent, metadata) VALUES ($1, $2, $3, $4, $5)`,
+        [actor, eventType, ip ?? null, userAgent ?? null, metadata]
+      );
+    } catch (error) {
+      logger.error({ err: error, eventType }, "Failed to record security event");
+    }
   }
 
   async getSecurityEvents(userId: string, limit = 50, offset = 0) {

@@ -154,19 +154,27 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
-  Future<void> signInWithEmail({required String email, required String password}) async {
+  /// Password sign-in with an email address or a phone number.
+  Future<void> signInWithPassword({required String identifier, required String password}) async {
     state = state.copyWith(clearError: true);
-    final session = await _api.login(email: email, password: password);
+    final session = await _api.login(identifier: identifier, password: password);
     await _persist(session);
   }
 
-  Future<void> registerWithEmail({
+  /// Create an account with exactly one of [email] or [phone].
+  Future<void> registerWithPassword({
     required String name,
-    required String email,
     required String password,
+    String? email,
+    String? phone,
   }) async {
     state = state.copyWith(clearError: true);
-    final session = await _api.register(name: name, email: email, password: password);
+    final session = await _api.register(
+      name: name,
+      password: password,
+      email: email,
+      phone: phone,
+    );
     await _persist(session);
   }
 

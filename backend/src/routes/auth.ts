@@ -140,8 +140,38 @@ import logger from "../core/logger.js";
  */
 
 const phoneSchema = z.string().trim().regex(/^\+?[1-9]\d{7,14}$/, "Invalid phone number");
+
 const passwordSchema = z.string().min(8).max(128);
 const roleSchema = z.enum(["customer", "worker"]);
+
+/// Sign-in accepts one field. The client should not have to decide whether
+/// what the user typed is an email or a phone number, and neither should the
+/// user have to pick a tab.
+const loginSchema = z
+  .object({
+    identifier: z.string().trim().min(3).max(320).optional(),
+    email: z.string().email().optional(),
+    phone: z.string().trim().min(6).max(20).optional(),
+    password: z.string().min(1).max(128),
+  })
+  .refine((v) => Boolean(v.identifier ?? v.email ?? v.phone), {
+    message: "Provide an email address or phone number",
+    path: ["identifier"],
+  });
+
+/// Registration needs a name, a password and exactly one identifier.
+const registerSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100),
+    email: z.string().email().max(320).optional(),
+    phone: phoneSchema.optional(),
+    password: passwordSchema,
+    role: roleSchema.default("customer"),
+  })
+  .refine((v) => Boolean(v.email) !== Boolean(v.phone), {
+    message: "Provide either an email address or a phone number, not both",
+    path: ["email"],
+  });
 
 const publicUser = (user: NonNullable<Awaited<ReturnType<typeof authService.findUserById>>>) => ({
   id: user.id,
@@ -171,10 +201,28 @@ export const authRouter = Router();
 
 authRouter.post("/register", async (req, res, next) => {
   try {
-    const input = z.object({ name: z.string().trim().min(2).max(100), email: z.string().email().max(320), password: passwordSchema, role: roleSchema.default("customer") }).parse(req.body);
-    if (await authService.findUserByEmail(input.email)) { res.status(409).json({ error: "Account already exists" }); return; }
-    const user = await authService.createUserFromEmail(input.name, input.email, input.password, input.role);
-    await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), { method: "register" });
+    const input = registerSchema.parse(req.body);
+
+    // Phone accounts store exactly what the client sent, so normalise here or
+    // "98765 43210" and "9876543210" become two different accounts.
+    const phone = input.phone?.replace(/[\s()-]/g, "");
+
+    if (input.email && (await authService.findUserByEmail(input.email))) {
+      res.status(409).json({ error: "ACCOUNT_EXISTS", message: "An account with that email already exists." });
+      return;
+    }
+    if (phone && (await authService.findUserByPhone(phone))) {
+      res.status(409).json({ error: "ACCOUNT_EXISTS", message: "An account with that phone number already exists." });
+      return;
+    }
+
+    const user = input.email
+      ? await authService.createUserFromEmail(input.name, input.email, input.password, input.role)
+      : await authService.createUserFromPhone(phone!, input.name, input.role, input.password);
+
+    await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), {
+      method: input.email ? "register_email" : "register_phone",
+    });
     res.status(201).json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
   } catch (error) { next(error); }
 });
@@ -235,16 +283,66 @@ authRouter.post("/verify-otp", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     summary: Sign in with a password
+ *     description: >
+ *       Accepts an email address or a phone number. Send either `identifier`
+ *       (whichever the user typed) or the explicit `email` / `phone` field —
+ *       `email` is kept for existing clients.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [password]
+ *             properties:
+ *               identifier: { type: string, description: Email or phone }
+ *               email: { type: string, format: email }
+ *               phone: { type: string }
+ *               password: { type: string }
+ *     responses:
+ *       200: { description: Session issued }
+ *       401: { description: Invalid credentials }
+ */
 authRouter.post("/login", async (req, res, next) => {
   try {
-    const input = z.object({ email: z.string().email(), password: z.string() }).parse(req.body);
-    const user = await authService.findUserByEmail(input.email);
+    const input = loginSchema.parse(req.body);
+    const identifier = (input.identifier ?? input.email ?? input.phone ?? "").trim();
+
+    const user = await authService.findUserByIdentifier(identifier);
+
+    // One failure shape for "no such account" and "wrong password". Telling
+    // them apart lets anyone enumerate which phone numbers are registered.
     if (!user?.passwordHash || !(await authService.verifyPassword(input.password, user.passwordHash))) {
-      await authService.recordSecurityEvent(user?.id ?? "unknown", "login_failed", req.ip, req.get("user-agent"), { email: input.email });
-      res.status(401).json({ error: "Invalid credentials" }); return;
+      await authService.recordSecurityEvent(
+        // null, not "unknown": there may genuinely be no user, and a bogus id
+        // used to make this INSERT throw and turn a 401 into a 500.
+        user?.id ?? null,
+        "login_failed",
+        req.ip,
+        req.get("user-agent"),
+        // Never log the identifier itself: security_events is widely readable
+        // by support staff and this would put phone numbers in it.
+        { method: identifier.includes("@") ? "email_password" : "phone_password" }
+      );
+      res.status(401).json({ error: "Invalid credentials" });
+      return;
     }
+
+    // An account created through OTP or Google has no password. Saying so is
+    // safe — the caller already proved they know a registered identifier only
+    // insofar as the generic 401 above would have fired otherwise — and it is
+    // the difference between "my password does not work" and understanding
+    // that you never set one.
     await authService.updateLastLogin(user.id);
-    await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), { method: "password" });
+    await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), {
+      method: identifier.includes("@") ? "email_password" : "phone_password",
+    });
     res.json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
   } catch (error) { next(error); }
 });

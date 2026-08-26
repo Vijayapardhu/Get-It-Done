@@ -42,24 +42,39 @@ class GidApi {
     return AuthSession.fromJson(json);
   }
 
+  /// Create an account with EITHER an email or a phone number, plus a password.
+  ///
+  /// The backend rejects both or neither, so exactly one must be supplied.
   Future<AuthSession> register({
     required String name,
-    required String email,
     required String password,
+    String? email,
+    String? phone,
     String role = 'customer',
   }) async {
+    assert(
+      (email == null) != (phone == null),
+      'register requires exactly one of email or phone',
+    );
+
     final json = await _client.post('/auth/register', auth: false, body: {
       'name': name,
-      'email': email,
+      if (email != null) 'email': email,
+      if (phone != null) 'phone': phone,
       'password': password,
       'role': role,
     });
     return AuthSession.fromJson(json);
   }
 
-  Future<AuthSession> login({required String email, required String password}) async {
+  /// Sign in with a password.
+  ///
+  /// [identifier] is whatever the user typed — an email or a phone number. The
+  /// backend works out which; the app should not make the user pick a tab, and
+  /// people generally do not remember which one they signed up with.
+  Future<AuthSession> login({required String identifier, required String password}) async {
     final json = await _client.post('/auth/login', auth: false, body: {
-      'email': email,
+      'identifier': identifier.trim(),
       'password': password,
     });
     return AuthSession.fromJson(json);
