@@ -1,6 +1,7 @@
 @Tags(['golden'])
 library;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:getitdone_customer/app/tabs.dart';
+import 'package:getitdone_customer/core/api/gid_api.dart';
 import 'package:getitdone_customer/core/models/account_models.dart';
 import 'package:getitdone_customer/core/models/models.dart';
 import 'package:getitdone_customer/core/providers.dart';
@@ -17,7 +19,9 @@ import 'package:getitdone_customer/features/account/plans_and_invoices.dart';
 import 'package:getitdone_customer/features/account/profile_tab.dart';
 import 'package:getitdone_customer/features/account/settings_screens.dart';
 import 'package:getitdone_customer/features/chat/chat_screens.dart';
+import 'package:getitdone_customer/core/models/payment_models.dart';
 import 'package:getitdone_customer/features/emergency/emergency_screen.dart';
+import 'package:getitdone_customer/features/payment/payment_screen.dart';
 import 'package:getitdone_customer/features/support/support_screens.dart';
 
 /// Golden renders of the account, chat, plans, payments, support and emergency
@@ -47,11 +51,13 @@ Future<void> _loadFonts() async {
 
 /// Fixed clock for the fixtures.
 ///
-/// Relative labels ("Tomorrow at 09:00", "in 3 days") are computed against
-/// DateTime.now(), so fixtures are built as offsets from now rather than as
-/// absolute dates — an absolute date would make the golden drift into the past
-/// and change the rendered text.
-final _now = DateTime.now();
+/// Screens render relative labels — "Today at 14:08", "in 2 days", "11:47" —
+/// so a golden captured at one moment and verified at another disagrees on the
+/// text. Offsets from the real `DateTime.now()` do not fix that; they just
+/// move the drift. The screens read `clock.now()` instead, and every golden
+/// runs inside `withClock`, which pins both capture and verification to the
+/// same instant.
+final _now = DateTime(2026, 8, 26, 14, 8);
 
 const _user = AppUser(
   id: 'u1',
@@ -184,6 +190,15 @@ final _messages = <ChatMessage>[
   }),
 ];
 
+final _completedBooking = Booking.fromJson({
+  'id': 'b9',
+  'status': 'completed',
+  'service_name': 'Plumbing repair',
+  'service_category': 'plumbing',
+  'address': 'Flat 402, Sai Enclave, Benz Circle',
+  'price': 352.82,
+});
+
 final _emergencyService = Service.fromJson(const {
   'id': 's1',
   'name': 'Gas leak',
@@ -204,19 +219,14 @@ void main() {
   // design — it cannot be turned off, because the binding asserts the flag is
   // still set when each test ends.
 
-  Future<void> shoot(
+  Future<void> render(
     WidgetTester tester,
     String name,
-    Widget child, {
-    List<Override> overrides = const [],
-    Brightness brightness = Brightness.light,
-    Size size = const Size(390, 844),
-    bool settle = true,
-  }) async {
-    tester.view.physicalSize = size;
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-
+    Widget child,
+    List<Override> overrides,
+    Brightness brightness,
+    bool settle,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -239,6 +249,27 @@ void main() {
     }
 
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('$name.png'));
+  }
+
+  Future<void> shoot(
+    WidgetTester tester,
+    String name,
+    Widget child, {
+    List<Override> overrides = const [],
+    Brightness brightness = Brightness.light,
+    Size size = const Size(390, 844),
+    bool settle = true,
+  }) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    // Everything renders at one pinned instant, so a golden captured now and
+    // verified in ten minutes agrees on every relative label.
+    await withClock(
+      Clock.fixed(_now),
+      () => render(tester, name, child, overrides, brightness, settle),
+    );
   }
 
   testWidgets('profile', (tester) async {
@@ -355,6 +386,68 @@ void main() {
     );
   });
 
+  // The payment screen creates its order on open, so the golden needs the API
+  // stubbed. Without an override it renders the failed state, which is a real
+  // branch but not the one worth reviewing.
+  testWidgets('payment', (tester) async {
+    await shoot(
+      tester,
+      'payment_light',
+      PaymentScreen(booking: _completedBooking),
+      settle: false,
+      overrides: [
+        apiProvider.overrideWithValue(_StubApi(
+          PaymentIntent(
+            order: PaymentOrder.fromJson(const {
+              'id': 'po1',
+              'bookingId': 'b9',
+              'amount': 352.82,
+              'status': 'created',
+              'providerOrderId': 'order_test_1',
+            }),
+            checkout: CheckoutSession.fromJson(const {
+              'paymentOrderId': 'po1',
+              'amountInPaise': 35282,
+              'amount': 352.82,
+              'keyId': 'rzp_test_key',
+              'providerOrderId': 'order_test_1',
+              'live': true,
+            }),
+          ),
+        )),
+      ],
+    );
+  });
+
+  testWidgets('payment test mode', (tester) async {
+    await shoot(
+      tester,
+      'payment_testmode_light',
+      PaymentScreen(booking: _completedBooking),
+      settle: false,
+      overrides: [
+        apiProvider.overrideWithValue(_StubApi(
+          PaymentIntent(
+            order: PaymentOrder.fromJson(const {
+              'id': 'po2',
+              'bookingId': 'b9',
+              'amount': 352.82,
+              'status': 'created',
+              'providerOrderId': 'order_sim_1',
+            }),
+            checkout: CheckoutSession.fromJson(const {
+              'paymentOrderId': 'po2',
+              'amountInPaise': 35282,
+              'amount': 352.82,
+              'providerOrderId': 'order_sim_1',
+              'live': false,
+            }),
+          ),
+        )),
+      ],
+    );
+  });
+
   // Location is unavailable in the test binding, so this renders the fallback
   // path — which is exactly the branch worth reviewing, because it is the one
   // that has to still work when GPS is refused mid-emergency.
@@ -378,4 +471,23 @@ void main() {
       ],
     );
   });
+}
+
+/// Minimal stand-in for the API so the payment golden renders a real order
+/// instead of the "could not prepare" branch.
+class _StubApi implements GidApi {
+  _StubApi(this.intent);
+
+  final PaymentIntent intent;
+
+  @override
+  Future<PaymentIntent> createPaymentOrder({
+    required String bookingId,
+    required String idempotencyKey,
+    String provider = 'razorpay',
+  }) async =>
+      intent;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

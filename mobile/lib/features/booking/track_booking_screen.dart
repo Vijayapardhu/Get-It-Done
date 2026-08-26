@@ -8,6 +8,7 @@ import '../../core/realtime/realtime_service.dart';
 import '../../design/design_system.dart';
 import '../../core/network/api_exception.dart';
 import '../chat/chat_screens.dart';
+import '../payment/payment_screen.dart';
 
 /// Live booking tracking.
 ///
@@ -203,6 +204,11 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
                   ),
                 ),
                 const SizedBox(height: Space.x4),
+
+                // Payment sits AFTER the completion card rather than inside
+                // it: the work is done either way, and burying "you still owe
+                // money" in a congratulations panel reads as a trick.
+                _PayPrompt(booking: data.booking),
               ],
 
               Section(
@@ -404,6 +410,88 @@ class _ContactRowState extends ConsumerState<_ContactRow> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "Pay now" for a completed booking that has not been settled.
+///
+/// Renders nothing at all when the booking is already paid — an outstanding
+/// balance is worth interrupting someone for, a settled one is not.
+class _PayPrompt extends ConsumerWidget {
+  const _PayPrompt({required this.booking});
+
+  final Booking booking;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final payment = ref.watch(bookingPaymentProvider(booking.id));
+
+    return payment.when(
+      // Neither a spinner nor an error belongs here. If we cannot tell whether
+      // the booking is paid, saying nothing is better than wrongly demanding
+      // money from someone who has already paid.
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (order) {
+        if (order != null && order.isPaid) {
+          return Row(
+            children: [
+              AppIcon(AppIcons.success, size: Sizes.iconXs, color: t.success),
+              const SizedBox(width: Space.x2),
+              Text(
+                'Paid ₹${order.amount.toStringAsFixed(2)}',
+                style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+              ),
+            ],
+          );
+        }
+
+        return AppCard(
+          padding: Space.cardInsetsLarge,
+          border: t.primary,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AppIconBadge(AppIcons.wallet, size: 44),
+                  const SizedBox(width: Space.x3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Payment due', style: context.text.titleMedium),
+                        Text(
+                          booking.price == null
+                              ? 'Settle up to close this booking.'
+                              : '₹${booking.price!.toStringAsFixed(2)} for this service',
+                          style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Space.x4),
+              AppButton.primary(
+                label: 'Pay now',
+                size: AppButtonSize.medium,
+                icon: AppIcons.secure,
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PaymentScreen(booking: booking),
+                    ),
+                  );
+                  ref.invalidate(bookingPaymentProvider(booking.id));
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

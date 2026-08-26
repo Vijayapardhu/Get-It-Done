@@ -1,5 +1,6 @@
 import '../models/account_models.dart';
 import '../models/models.dart';
+import '../models/payment_models.dart';
 import '../network/api_client.dart';
 import '../network/json.dart';
 
@@ -461,6 +462,78 @@ class GidApi {
   Future<void> resumeRecurringPlan(String id) => _client.post('/recurring/plans/$id/resume');
 
   Future<void> cancelRecurringPlan(String id) => _client.delete('/recurring/plans/$id');
+
+  // ─────────────────────────────────────────────────────────── payments ──
+
+  /// Create (or replay) the payment order for a booking.
+  ///
+  /// The idempotency key must be generated when the payment screen OPENS, not
+  /// when the pay button is tapped. A retry after a dropped response then
+  /// returns the SAME order — including the same gateway order id — instead of
+  /// creating a second one the customer could be charged for twice.
+  Future<PaymentIntent> createPaymentOrder({
+    required String bookingId,
+    required String idempotencyKey,
+    String provider = 'razorpay',
+  }) async {
+    final json = await _client.post('/payments/orders', body: {
+      'bookingId': bookingId,
+      'provider': provider,
+      'idempotencyKey': idempotencyKey,
+    });
+    return PaymentIntent.fromJson(json);
+  }
+
+  Future<PaymentIntent> paymentOrder(String id) async {
+    final json = await _client.get('/payments/orders/$id');
+    return PaymentIntent.fromJson(json);
+  }
+
+  /// The most recent payment order for a booking, or null if none exists.
+  Future<PaymentOrder?> paymentOrderForBooking(String bookingId) async {
+    final json = await _client.get('/payments/orders', query: {'bookingId': bookingId, 'limit': 1});
+    final orders = parseList(pick(json, 'orders'), PaymentOrder.fromJson);
+    return orders.isEmpty ? null : orders.first;
+  }
+
+  /// Hand the gateway's signed response back for verification.
+  ///
+  /// The backend re-derives the HMAC with its secret; a response the app made
+  /// up cannot pass. On success the order is captured and the booking settled
+  /// immediately, so the customer is not left watching "pending" until the
+  /// webhook lands.
+  Future<PaymentVerification> verifyPayment({
+    required String paymentOrderId,
+    required String signature,
+    String? providerPaymentId,
+    String? providerOrderId,
+  }) async {
+    final json = await _client.post('/payments/orders/$paymentOrderId/verify', body: {
+      'signature': signature,
+      if (providerPaymentId != null) 'paymentId': providerPaymentId,
+      if (providerOrderId != null) 'orderId': providerOrderId,
+    });
+    return PaymentVerification.fromJson(json);
+  }
+
+  /// What a service will cost before booking it. The backend freezes this same
+  /// total onto the booking, so it is a quote, not a guess.
+  Future<PriceBreakdown> priceEstimate({
+    required String serviceId,
+    required double latitude,
+    required double longitude,
+    bool emergency = false,
+    String? variantId,
+  }) async {
+    final json = await _client.post('/pricing/estimate', body: {
+      'serviceId': serviceId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'urgency': emergency ? 'emergency' : 'regular',
+      if (variantId != null) 'variantId': variantId,
+    });
+    return PriceBreakdown.fromJson(json);
+  }
 
   // ─────────────────────────────────────────────────────────── invoices ──
 

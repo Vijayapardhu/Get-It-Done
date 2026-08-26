@@ -5,6 +5,7 @@ import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
+import { quote } from "../services/pricingService.js";
 
 /**
  * @openapi
@@ -171,62 +172,34 @@ pricingRouter.post("/estimate", requireAuth, async (req, res, next) => {
       cooperativeId: z.string().uuid().optional(),
     }).parse(req.body);
 
-    const service = await pool.query(`SELECT base_price, emergency_supported FROM services WHERE id = $1`, [input.serviceId]);
-    if (!service.rows[0]) { res.status(404).json({ error: "Service not found" }); return; }
-    if (input.urgency === "emergency" && !service.rows[0].emergency_supported) { res.status(400).json({ error: "Emergency not supported for this service" }); return; }
+    const cooperativeId =
+      input.cooperativeId ??
+      (await pool.query(`SELECT cooperative_id FROM workers WHERE user_id = $1`, [req.user!.id])).rows[0]?.cooperative_id ??
+      null;
 
-    let variantPrice = Number(service.rows[0].base_price);
-    if (input.variantId) {
-      const variant = await pool.query(`SELECT base_price FROM service_variants WHERE id = $1 AND service_id = $2`, [input.variantId, input.serviceId]);
-      if (variant.rows[0]) variantPrice = Number(variant.rows[0].base_price);
+    // Shared with the payment path — see quoteBookingAmount. The customer must
+    // be charged the number this endpoint showed them.
+    let breakdown;
+    try {
+      breakdown = await quote({
+        serviceId: input.serviceId,
+        variantId: input.variantId,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        urgency: input.urgency,
+        cooperativeId,
+      });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "SERVICE_NOT_FOUND") { res.status(404).json({ error: "Service not found" }); return; }
+      if (code === "EMERGENCY_NOT_SUPPORTED") { res.status(400).json({ error: "Emergency not supported for this service" }); return; }
+      throw error;
     }
-
-    const cooperativeId = input.cooperativeId ?? (await pool.query(`SELECT cooperative_id FROM workers WHERE id = (SELECT id FROM workers WHERE user_id = $1)`, [req.user!.id])).rows[0]?.cooperative_id;
-
-    const distanceKm = 5;
-    const travelFee = cooperativeId ? await calculateTravelFee(cooperativeId, distanceKm) : 0;
-    const emergencyFee = input.urgency === "emergency" ? variantPrice * 0.25 : 0;
-    const surgeMultiplier = await getSurgeMultiplier(input.serviceId, input.latitude, input.longitude, input.urgency);
-    const surgeFee = (variantPrice + travelFee + emergencyFee) * (surgeMultiplier - 1);
-    const subtotal = variantPrice + travelFee + emergencyFee + surgeFee;
-    const taxRate = await getTaxRate(cooperativeId);
-    const tax = subtotal * taxRate;
-    const total = subtotal + tax;
-
-    const breakdown = {
-      baseService: variantPrice,
-      travel: travelFee,
-      emergency: emergencyFee,
-      surge: surgeFee,
-      subtotal,
-      taxRate,
-      tax,
-      total,
-      currency: "INR",
-    };
 
     res.json({ estimate: breakdown });
   } catch (error) { next(error); }
 });
 
-async function calculateTravelFee(cooperativeId: string, distanceKm: number): Promise<number> {
-  const result = await pool.query(`SELECT base_km, base_fee, per_km_rate, max_distance_km FROM travel_fees WHERE cooperative_id = $1`, [cooperativeId]);
-  if (!result.rows[0]) return 0;
-  const { base_km, base_fee, per_km_rate, max_distance_km } = result.rows[0];
-  if (distanceKm > max_distance_km) return 0;
-  if (distanceKm <= base_km) return Number(base_fee);
-  return Number(base_fee) + (distanceKm - base_km) * Number(per_km_rate);
-}
-
-async function getSurgeMultiplier(serviceId: string, latitude: number, longitude: number, urgency: string): Promise<number> {
-  const result = await pool.query(`SELECT multiplier FROM surge_rules WHERE (service_id = $1 OR service_id IS NULL) AND ST_Contains(area::geometry, ST_SetSRID(ST_MakePoint($2, $3), 4326)) AND (starts_at IS NULL OR starts_at <= now()) AND (ends_at IS NULL OR ends_at > now()) ORDER BY multiplier DESC LIMIT 1`, [serviceId, longitude, latitude]);
-  return result.rows[0] ? Number(result.rows[0].multiplier) : 1;
-}
-
-async function getTaxRate(cooperativeId: string | null): Promise<number> {
-  const result = await pool.query(`SELECT rate FROM tax_rules WHERE applies_to = 'service' ${cooperativeId ? "AND jurisdiction = (SELECT state FROM cooperatives WHERE id = $1)" : ""} ORDER BY rate DESC LIMIT 1`, cooperativeId ? [cooperativeId] : []);
-  return result.rows[0] ? Number(result.rows[0].rate) : 0.18;
-}
 
 pricingRouter.get("/rules", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {

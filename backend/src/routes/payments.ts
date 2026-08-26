@@ -2,9 +2,11 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
-import { createPaymentOrder, getPaymentOrder, getPaymentOrderByBooking, listPaymentOrders, processWebhook, initiateRefund, getPaymentLedger, getReconciliationReport, getInvoice, getInvoiceByBooking, listInvoices } from "../services/paymentService.js";
+import { capturePayment, createPaymentOrder, getPaymentOrder, getPaymentOrderByBooking, listPaymentOrders, processWebhook, initiateRefund, getPaymentLedger, getReconciliationReport, getInvoice, getInvoiceByBooking, listInvoices } from "../services/paymentService.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { verifyWebhookSignature, verifyCheckoutSignature } from "../services/webhookSignature.js";
+import { quoteBookingAmount } from "../services/pricingService.js";
+import { publishableKey, isConfigured } from "../services/razorpayClient.js";
 import logger from "../core/logger.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
@@ -216,6 +218,30 @@ const webhookSchema = z.object({
   payload: z.record(z.unknown()),
 });
 
+/**
+ * Everything the mobile checkout needs, and nothing it does not.
+ *
+ * Only the publishable key id crosses this boundary. RAZORPAY_KEY_SECRET signs
+ * webhooks and checkout responses; shipping it to a phone would let anyone
+ * forge a "paid" signature.
+ */
+function checkoutPayload(order: { id: string; amount: number; currency: string; providerOrderId: string | null; provider: string }) {
+  return {
+    provider: order.provider,
+    keyId: publishableKey(),
+    providerOrderId: order.providerOrderId,
+    // Razorpay's SDK takes paise, so the conversion is done here rather than
+    // trusting each client to remember.
+    amountInPaise: Math.round(order.amount * 100),
+    amount: order.amount,
+    currency: order.currency,
+    paymentOrderId: order.id,
+    /** False in dev with no keys configured: the app then shows a simulated
+     *  flow instead of opening a checkout that cannot work. */
+    live: isConfigured(),
+  };
+}
+
 paymentsRouter.post("/orders", requireAuth, async (req, res, next) => {
   try {
     if (!["customer", "institutional_customer"].includes(req.user!.role)) {
@@ -224,24 +250,35 @@ paymentsRouter.post("/orders", requireAuth, async (req, res, next) => {
     }
     const input = createOrderSchema.parse(req.body);
 
-    const booking = await pool.query(`select b.*, s.base_price from bookings b join services s on s.id = b.service_id where b.id = $1 and b.customer_id = $2`, [input.bookingId, req.user!.id]);
+    const booking = await pool.query(`select b.id, b.status from bookings b where b.id = $1 and b.customer_id = $2`, [input.bookingId, req.user!.id]);
     if (!booking.rows[0]) {
       res.status(404).json({ error: "Booking not found" });
       return;
     }
 
-    const expectedAmount = Number(booking.rows[0].base_price);
+    // Cancelled work is not payable. Without this the app could open checkout
+    // against a booking nobody is going to do.
+    if (["cancelled", "expired", "refunded"].includes(booking.rows[0].status)) {
+      res.status(409).json({ error: "BOOKING_NOT_PAYABLE", message: "This booking can no longer be paid for." });
+      return;
+    }
+
+    // The authoritative amount, frozen onto the booking. Previously this was
+    // `services.base_price`, which ignored travel, emergency, surge and tax —
+    // the customer was quoted one number and charged another.
+    const { amount } = await quoteBookingAmount(input.bookingId);
+
     const { order, isReplay } = await createPaymentOrder({
       bookingId: input.bookingId,
       customerId: req.user!.id,
-      amount: expectedAmount,
+      amount,
       provider: input.provider,
       idempotencyKey: input.idempotencyKey,
     });
 
     await recordAuditEvent({ actorId: req.user!.id, action: "payment.order.created", resourceType: "payment_order", resourceId: order.id, requestId: req.header("x-request-id") ?? undefined, metadata: { bookingId: input.bookingId, provider: input.provider } }).catch(() => undefined);
 
-    res.status(isReplay ? 200 : 201).json({ order, replay: isReplay });
+    res.status(isReplay ? 200 : 201).json({ order, checkout: checkoutPayload(order), replay: isReplay });
   } catch (error) { next(error); }
 });
 
@@ -252,7 +289,7 @@ paymentsRouter.get("/orders/:id", requireAuth, async (req, res, next) => {
     if (order.customerId !== req.user!.id && !["system_admin", "federation_admin", "society_admin", "support_staff"].includes(req.user!.role)) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-    res.json({ order });
+    res.json({ order, checkout: checkoutPayload(order) });
   } catch (error) { next(error); }
 });
 
@@ -336,10 +373,26 @@ paymentsRouter.post("/orders/:id/verify", requireAuth, async (req, res, next) =>
       payload: z.record(z.unknown()).optional(),
     }).parse(req.body);
 
-    const result = verifyCheckoutSignature(order.provider, {
-      orderId: input.orderId ?? order.providerOrderId ?? undefined,
-      paymentId: input.paymentId ?? (input.payload?.paymentId as string | undefined),
-    }, input.signature);
+    // A simulated order can only be settled by the simulated path, and only
+    // where no gateway is configured. `assertConfigured` refuses to issue
+    // simulated orders in production, so this branch is unreachable there —
+    // but it is checked again here rather than trusted, because the cost of
+    // being wrong is accepting a forged payment.
+    const simulated =
+      !isConfigured() &&
+      process.env.NODE_ENV !== "production" &&
+      (order.providerOrderId ?? "").startsWith("order_sim_");
+
+    const result = simulated
+      ? { verified: true as const, reason: undefined }
+      : verifyCheckoutSignature(order.provider, {
+          orderId: input.orderId ?? order.providerOrderId ?? undefined,
+          paymentId: input.paymentId ?? (input.payload?.paymentId as string | undefined),
+        }, input.signature);
+
+    if (simulated) {
+      logger.warn({ paymentOrderId: orderId }, "Settling a SIMULATED payment; no money moved");
+    }
 
     if (!result.verified) {
       await recordAuditEvent({ actorId: req.user!.id, action: "payment.verification.failed", resourceType: "payment_order", resourceId: orderId, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: result.reason } }).catch(() => undefined);
@@ -348,7 +401,16 @@ paymentsRouter.post("/orders/:id/verify", requireAuth, async (req, res, next) =>
     }
 
     await recordAuditEvent({ actorId: req.user!.id, action: "payment.verification.succeeded", resourceType: "payment_order", resourceId: orderId, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
-    res.json({ verified: true });
+
+    // The signature proves Razorpay captured this payment, so confirm it now
+    // rather than leaving the customer staring at "pending" until the webhook
+    // lands. capturePayment is idempotent, so the webhook arriving afterwards
+    // changes nothing.
+    const paymentId = input.paymentId ?? (input.payload?.paymentId as string | undefined) ?? "";
+    const capture = await capturePayment(orderId, paymentId, input.payload ?? {});
+
+    const settled = await getPaymentOrder(orderId);
+    res.json({ verified: true, captured: capture.captured, alreadyPaid: capture.alreadyPaid, order: settled });
   } catch (error) { next(error); }
 });
 
@@ -407,6 +469,20 @@ paymentsRouter.get("/reconciliation", requireAuth, requireRoles("system_admin", 
   } catch (error) { next(error); }
 });
 
+// Registered BEFORE /invoices/:id on purpose. Express matches in declaration
+// order, so with :id first the literal segment "booking" was captured as an id,
+// hit the uuid guard, and this route 404'd for every caller.
+paymentsRouter.get("/invoices/booking/:bookingId", requireAuth, async (req, res, next) => {
+  try {
+    const invoice = await getInvoiceByBooking(String(req.params.bookingId));
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+    if (invoice.customerId !== req.user!.id && invoice.workerId !== req.user!.id && !["system_admin", "federation_admin", "society_admin", "support_staff"].includes(req.user!.role)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    res.json({ invoice });
+  } catch (error) { next(error); }
+});
+
 paymentsRouter.get("/invoices/:id", requireAuth, async (req, res, next) => {
   try {
     const invoiceId = String(req.params.id);
@@ -430,16 +506,5 @@ paymentsRouter.get("/invoices", requireAuth, async (req, res, next) => {
     };
     const invoices = await listInvoices(filters);
     res.json({ invoices });
-  } catch (error) { next(error); }
-});
-
-paymentsRouter.get("/invoices/booking/:bookingId", requireAuth, async (req, res, next) => {
-  try {
-    const invoice = await getInvoiceByBooking(String(req.params.bookingId));
-    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
-    if (invoice.customerId !== req.user!.id && invoice.workerId !== req.user!.id && !["system_admin", "federation_admin", "society_admin", "support_staff"].includes(req.user!.role)) {
-      res.status(403).json({ error: "Forbidden" }); return;
-    }
-    res.json({ invoice });
   } catch (error) { next(error); }
 });

@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +7,7 @@ import '../core/providers.dart';
 import '../design/design_system.dart';
 import '../features/account/settings_screens.dart';
 import '../features/chat/chat_screens.dart';
+import '../features/payment/payment_screen.dart';
 
 // ── Bookings ──────────────────────────────────────────────────────────────
 
@@ -38,6 +40,17 @@ class _BookingsTabState extends ConsumerState<BookingsTab> {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final bookings = ref.watch(bookingsProvider);
+
+    // One request for the whole list. An invoice exists only once a booking is
+    // settled, and `pending` on it means the work is done but unpaid — so this
+    // is exactly the set worth flagging, without a payment lookup per card.
+    final unpaidBookingIds = ref.watch(invoicesProvider).maybeWhen(
+          data: (invoices) => invoices
+              .where((i) => !i.isPaid && i.bookingId != null)
+              .map((i) => i.bookingId!)
+              .toSet(),
+          orElse: () => <String>{},
+        );
 
     return Scaffold(
       appBar: AppBar(
@@ -117,6 +130,7 @@ class _BookingsTabState extends ConsumerState<BookingsTab> {
                     separatorBuilder: (_, __) => const SizedBox(height: Space.x3),
                     itemBuilder: (context, i) => BookingListCard(
                       booking: list[i],
+                      unpaid: unpaidBookingIds.contains(list[i].id),
                       onTap: () => widget.onOpenBooking(list[i]),
                     ),
                   ),
@@ -131,10 +145,18 @@ class _BookingsTabState extends ConsumerState<BookingsTab> {
 }
 
 class BookingListCard extends StatelessWidget {
-  const BookingListCard({super.key, required this.booking, required this.onTap});
+  const BookingListCard({
+    super.key,
+    required this.booking,
+    required this.onTap,
+    this.unpaid = false,
+  });
 
   final Booking booking;
   final VoidCallback onTap;
+
+  /// Work is done and settled, but the customer still owes for it.
+  final bool unpaid;
 
   /// The states where a worker is actually moving — these get the live accent
   /// so a glance at the list finds the one that matters.
@@ -215,6 +237,17 @@ class BookingListCard extends StatelessWidget {
               ],
             ),
           ],
+          if (unpaid) ...[
+            const SizedBox(height: Space.x3),
+            AppButton.primary(
+              label: 'Pay now',
+              size: AppButtonSize.small,
+              icon: AppIcons.secure,
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => PaymentScreen(booking: booking)),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -224,7 +257,7 @@ class BookingListCard extends StatelessWidget {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final local = at.toLocal();
-    final now = DateTime.now();
+    final now = clock.now();
     final time =
         '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 

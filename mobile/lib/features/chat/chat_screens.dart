@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -169,10 +170,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     final me = ref.read(currentUserProvider);
     final optimistic = ChatMessage(
-      id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
+      id: 'pending-${clock.now().microsecondsSinceEpoch}',
       body: text,
       senderId: me?.id,
-      createdAt: DateTime.now(),
+      createdAt: clock.now(),
     );
 
     setState(() {
@@ -405,7 +406,7 @@ class _Bubble extends StatelessWidget {
 /// 14:05 today, "Yesterday", or 3 Aug.
 String formatMessageTime(DateTime at) {
   final local = at.toLocal();
-  final now = DateTime.now();
+  final now = clock.now();
   if (local.year == now.year && local.month == now.month && local.day == now.day) {
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
@@ -420,7 +421,7 @@ String formatMessageTime(DateTime at) {
 
 String formatMessageDay(DateTime at) {
   final local = at.toLocal();
-  final now = DateTime.now();
+  final now = clock.now();
   if (local.year == now.year && local.month == now.month && local.day == now.day) {
     return 'Today';
   }

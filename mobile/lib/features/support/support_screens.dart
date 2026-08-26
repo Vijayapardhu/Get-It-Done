@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -176,7 +177,7 @@ class _TicketCard extends StatelessWidget {
   }
 
   static String _relative(DateTime at) {
-    final diff = DateTime.now().difference(at);
+    final diff = clock.now().difference(at);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';

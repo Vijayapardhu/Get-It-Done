@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
+import { quoteBookingAmount } from "./pricingService.js";
 import type { PoolClient } from "pg";
 import { findMatchingWorkers } from "./matching.js";
 import { writeNotification } from "./notificationService.js";
@@ -71,6 +72,12 @@ export async function createBooking(input: { customerId: string; serviceId: stri
        RETURNING id`,
       [input.customerId, confirmedWorkerId, input.serviceId, confirmedWorkerId ? "assigned" : "requested", input.scheduledAt ?? null, input.isEmergency, input.longitude, input.latitude, input.address, input.description, startOtpHash, completionOtpHash]
     );
+
+    // Freeze the price now, in this transaction. The customer is committing to
+    // a booking, so this is the moment the number becomes a promise — leaving
+    // it until payment let surge and the assigned worker's cooperative move it
+    // out from under them.
+    await quoteBookingAmount(result.rows[0].id, client);
 
     const booking = await getBooking(client, result.rows[0].id);
     await client.query("insert into booking_status_events (booking_id, status, actor_id, reason, request_id) values ($1, $2, $3, $4, $5)", [result.rows[0].id, status, input.customerId, confirmedWorkerId ? "matched_verified_worker" : "awaiting_worker", input.idempotencyKey ?? null]);

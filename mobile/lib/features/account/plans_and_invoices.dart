@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -232,7 +233,7 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
   }
 
   static String _relative(DateTime at) {
-    final now = DateTime.now();
+    final now = clock.now();
     final target = at.toLocal();
     if (target.isBefore(now)) return 'shortly';
 

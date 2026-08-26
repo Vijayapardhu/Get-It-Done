@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -247,7 +248,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   static String _greeting(String? name) {
-    final hour = DateTime.now().hour;
+    final hour = clock.now().hour;
     final part = hour < 12
         ? 'Good morning'
         : hour < 17

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api/gid_api.dart';
 import 'auth/google_auth_service.dart';
 import 'models/account_models.dart';
+import 'models/payment_models.dart';
 import 'models/models.dart';
 import 'network/api_client.dart';
 import 'network/api_exception.dart';
@@ -322,4 +323,12 @@ final unreadNotificationCountProvider = Provider.autoDispose<int>((ref) {
         data: (items) => items.where((n) => n.isUnread).length,
         orElse: () => 0,
       );
+});
+
+/// The payment order for a booking, or null if the customer has not started
+/// paying yet. Autodisposed so returning to a booking re-checks rather than
+/// showing a stale "unpaid".
+final bookingPaymentProvider =
+    FutureProvider.autoDispose.family<PaymentOrder?, String>((ref, bookingId) async {
+  return ref.watch(apiProvider).paymentOrderForBooking(bookingId);
 });

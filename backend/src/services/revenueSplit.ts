@@ -37,31 +37,43 @@ function money(value: number): number {
 }
 
 /**
- * Split `gross` between the four parties.
+ * Split what the customer paid between tax and the four parties.
  *
- * The worker takes the remainder rather than its own percentage, so the four
- * shares always add back to exactly `gross` no matter how the rates round.
+ * `grossInclusive` is the TAX-INCLUSIVE amount actually charged — the same
+ * number `quote()` produced and the customer approved. Two things follow:
+ *
+ *  1. Tax is extracted from it, not added on top. The previous version treated
+ *     the charged amount as a pre-tax base and added TAX_RATE again, so a
+ *     customer who paid 352.82 was invoiced 416.33.
+ *  2. The four shares divide the NET of tax. Tax is remitted to the state; it
+ *     is not revenue, and crediting a worker a share of the customer's GST
+ *     would have the cooperative paying out money it owes the government.
+ *
+ * The worker takes the remainder rather than its own percentage, so the shares
+ * always add back to exactly `subtotal` no matter how the rates round.
  * `hasCooperative` is false for workers not yet attached to a society; their
  * share of that fee stays with the worker rather than being collected by nobody.
  */
-export function computeSplit(gross: number, hasCooperative: boolean): RevenueSplit {
-  const base = money(Math.max(0, gross));
+export function computeSplit(grossInclusive: number, hasCooperative: boolean): RevenueSplit {
+  const total = money(Math.max(0, grossInclusive));
 
-  const platformFee = money(base * env.PLATFORM_FEE_RATE);
-  const cooperativeShare = hasCooperative ? money(base * env.COOPERATIVE_SHARE_RATE) : 0;
-  const welfareFund = money(base * env.WELFARE_FUND_RATE);
-  const workerShare = money(base - platformFee - cooperativeShare - welfareFund);
-  const tax = money(base * env.TAX_RATE);
+  // Back out the tax component: total = subtotal * (1 + rate).
+  const subtotal = money(total / (1 + env.TAX_RATE));
+  const tax = money(total - subtotal);
+
+  const platformFee = money(subtotal * env.PLATFORM_FEE_RATE);
+  const cooperativeShare = hasCooperative ? money(subtotal * env.COOPERATIVE_SHARE_RATE) : 0;
+  const welfareFund = money(subtotal * env.WELFARE_FUND_RATE);
+  const workerShare = money(subtotal - platformFee - cooperativeShare - welfareFund);
 
   return {
-    gross: base,
+    gross: subtotal,
     platformFee,
     cooperativeShare,
     welfareFund,
     workerShare,
     tax,
-    // Tax is charged on top of the service price; the customer pays base + tax.
-    total: money(base + tax),
+    total,
   };
 }
 
@@ -79,8 +91,11 @@ interface SettlementContext {
 /**
  * Resolve what the booking is actually worth, most authoritative source first:
  *   1. a captured payment order — what the customer really paid
- *   2. bookings.price — the quoted price including surge and travel
+ *   2. bookings.price — the frozen quote the customer agreed to
  *   3. services.base_price — catalogue fallback
+ *
+ * The first two are tax-INCLUSIVE, which is what computeSplit expects. The
+ * third is not, and is only a last resort for bookings that predate quoting.
  */
 async function loadContext(client: PoolClient, bookingId: string): Promise<SettlementContext | null> {
   const result = await client.query(
@@ -140,6 +155,44 @@ export interface SettleResult {
  * Safe to call from both the payment-capture path and the job-completion path;
  * whichever runs second is a no-op. Requires an open transaction on `client`.
  */
+/**
+ * Mark an already-issued invoice paid once money has actually landed.
+ *
+ * Settlement normally runs at COMPLETION, before the customer pays, so the
+ * invoice is issued `pending`. When payment is captured, settleBooking runs
+ * again and correctly declines to re-split — but that left the receipt reading
+ * "Due" forever, for every booking paid after the work was done.
+ *
+ * Idempotent, and a no-op when no captured payment order exists.
+ */
+async function reconcilePaymentStatus(
+  client: PoolClient,
+  bookingId: string,
+  ctx: SettlementContext
+): Promise<void> {
+  if (!ctx.payment_order_id) return;
+
+  const updated = await client.query(
+    "update invoices set payment_status = 'paid' where booking_id = $1 and payment_status <> 'paid' returning id",
+    [bookingId]
+  );
+
+  // The welfare contribution is recorded against the payment order it came
+  // from. Written at completion it has no order id yet, so attach it now —
+  // otherwise the fund cannot be reconciled against money actually received.
+  await client.query(
+    "update welfare_contributions set payment_order_id = $1 where booking_id = $2 and payment_order_id is null",
+    [ctx.payment_order_id, bookingId]
+  );
+
+  if (updated.rows[0]) {
+    logger.info(
+      { bookingId, paymentOrderId: ctx.payment_order_id },
+      "Invoice reconciled to paid after late payment"
+    );
+  }
+}
+
 export async function settleBooking(client: PoolClient, bookingId: string): Promise<SettleResult> {
   const ctx = await loadContext(client, bookingId);
   if (!ctx) return { settled: false, reason: "BOOKING_NOT_FOUND" };
@@ -149,6 +202,10 @@ export async function settleBooking(client: PoolClient, bookingId: string): Prom
   // Already settled? The invoice row is the marker.
   const existing = await client.query("select id from invoices where booking_id = $1", [bookingId]);
   if (existing.rows[0]) {
+    // The split is done, but the money may only just have arrived — see
+    // reconcilePaymentStatus. This is the ordinary path, not an edge case:
+    // completion settles the booking BEFORE the customer pays.
+    await reconcilePaymentStatus(client, bookingId, ctx);
     return { settled: false, reason: "ALREADY_SETTLED", invoiceId: existing.rows[0].id };
   }
 
@@ -191,6 +248,7 @@ export async function settleBooking(client: PoolClient, bookingId: string): Prom
   // nothing, stop here rather than posting a second earnings credit.
   if (!invoiced.rows[0]) {
     const existingInvoice = await client.query("select id from invoices where booking_id = $1", [bookingId]);
+    await reconcilePaymentStatus(client, bookingId, ctx);
     return { settled: false, reason: "ALREADY_SETTLED", invoiceId: existingInvoice.rows[0]?.id };
   }
 
