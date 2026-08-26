@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api/gid_api.dart';
+import 'auth/google_auth_service.dart';
 import 'models/models.dart';
 import 'network/api_client.dart';
 import 'network/api_exception.dart';
@@ -113,15 +114,44 @@ class AuthController extends Notifier<AuthState> {
     await _restore();
   }
 
-  Future<void> requestOtp(String phone) async {
+  /// Request a login code.
+  ///
+  /// Returns the code itself ONLY when the backend is running with
+  /// OTP_ECHO_IN_RESPONSE (refused in production), so a development device
+  /// with no SMS can still sign in. Null in every real build.
+  Future<String?> requestOtp(String phone) async {
     state = state.copyWith(clearError: true);
-    await _api.requestOtp(phone);
+    return _api.requestOtp(phone);
   }
 
   Future<void> verifyOtp({required String phone, required String otp, String? name}) async {
     state = state.copyWith(clearError: true);
     final session = await _api.verifyOtp(phone: phone, otp: otp, name: name);
     await _persist(session);
+  }
+
+  /// Google sign-in.
+  ///
+  /// Returns false when the user backed out of the account picker — that is a
+  /// choice, not a failure, and should not raise an error banner.
+  /// Anything genuinely wrong throws so the screen can explain it.
+  Future<bool> signInWithGoogle() async {
+    state = state.copyWith(clearError: true);
+
+    final result = await ref.read(googleAuthServiceProvider).signIn();
+
+    switch (result) {
+      case GoogleAuthCancelled():
+        return false;
+
+      case GoogleAuthFailure(:final message):
+        throw GoogleSignInFailure(message);
+
+      case GoogleAuthSuccess(:final idToken):
+        final session = await _api.signInWithGoogle(idToken);
+        await _persist(session);
+        return true;
+    }
   }
 
   Future<void> signInWithEmail({required String email, required String password}) async {
@@ -157,6 +187,7 @@ class AuthController extends Notifier<AuthState> {
         await _api.logout(refresh);
       } catch (_) {}
     }
+    await ref.read(googleAuthServiceProvider).signOut();
     await _tokens.clear();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
@@ -178,6 +209,16 @@ class AuthController extends Notifier<AuthState> {
       // Keep the cached user; this is a background refresh.
     }
   }
+}
+
+/// Raised when Google sign-in fails for a reason worth showing the user.
+class GoogleSignInFailure implements Exception {
+  const GoogleSignInFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 final authControllerProvider =

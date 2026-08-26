@@ -126,7 +126,13 @@ export class AuthService {
   }
 
   async createOtpChallenge(phone: string, purpose: string): Promise<string> {
-    const code = env.NODE_ENV === "development" ? "123456" : String(crypto.randomInt(100000, 1000000));
+    // OTP_FIXED_CODE is an explicit opt-in. This used to key off
+    // `NODE_ENV === "development"`, and NODE_ENV DEFAULTS to development — so a
+    // deploy that forgot to set it accepted 123456 for every account on the
+    // platform. env.ts now refuses the flag in production.
+    const code = env.OTP_FIXED_CODE
+      ? "123456"
+      : String(crypto.randomInt(100000, 1000000));
     await pool.query(`UPDATE otp_challenges SET consumed_at = now() WHERE phone = $1 AND purpose = $2 AND consumed_at IS NULL`, [phone, purpose]);
     await pool.query(`INSERT INTO otp_challenges (id, phone, purpose, code_hash, expires_at) VALUES ($1, $2, $3, $4, now() + interval '5 minutes')`, [uuidv4(), phone, purpose, hashToken(code)]);
     return code;

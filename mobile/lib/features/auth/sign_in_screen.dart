@@ -16,9 +16,10 @@ import '../../design/design_system.dart';
 /// a plumber will not remember a password, and the same call signs in an
 /// existing user or creates a new account.
 ///
-/// NOTE: the backend currently logs the OTP to its server console instead of
-/// sending an SMS. Until an SMS provider is wired, a real user cannot receive
-/// the code. In debug the code is surfaced on screen so the flow is testable.
+/// Google is offered as an alternative, but only on the phone step and only
+/// when the build carries a Google client id — a button guaranteed to fail is
+/// worse than no button, and offering an escape route mid-way through code
+/// entry invites people to abandon a flow that is working.
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
@@ -43,6 +44,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   /// share NAT — one impatient user can lock out a whole cell).
   int _resendIn = 0;
   Timer? _resendTimer;
+
+  /// Returned only when the backend runs with OTP_ECHO_IN_RESPONSE, so a
+  /// device without SMS can still get in during development.
+  String? _devOtp;
+
+  bool _googleBusy = false;
 
   @override
   void dispose() {
@@ -75,19 +82,45 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
     setState(() { _busy = true; _error = null; });
     try {
-      await ref.read(authControllerProvider.notifier).requestOtp(_phone);
+      final devOtp = await ref.read(authControllerProvider.notifier).requestOtp(_phone);
       if (!mounted) return;
-      setState(() => _step = _Step.code);
+      setState(() {
+        _step = _Step.code;
+        _devOtp = devOtp;
+      });
       _startResendCooldown();
       // Focus the code field so the keyboard stays up through the transition.
       WidgetsBinding.instance.addPostFrameCallback((_) => _codeFocus.requestFocus());
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.isRateLimited
-          ? 'Too many attempts from this network. Please wait a few minutes.'
-          : e.message);
+      setState(() => _error = switch (e.code) {
+            // The gateway is down or unconfigured — nothing the user can fix,
+            // so point them at the alternative rather than "try again".
+            'SMS_UNAVAILABLE' =>
+              'We cannot send codes right now. Try signing in with Google instead.',
+            'SMS_DELIVERY_FAILED' =>
+              'We could not send a code to that number. Check it and try again.',
+            _ when e.isRateLimited =>
+              'Too many attempts from this network. Please wait a few minutes.',
+            _ => e.message,
+          });
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() { _googleBusy = true; _error = null; });
+    try {
+      // false means the user dismissed the account picker: their choice, so
+      // no error is shown.
+      await ref.read(authControllerProvider.notifier).signInWithGoogle();
+    } on GoogleSignInFailure catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _googleBusy = false);
     }
   }
 
@@ -180,6 +213,34 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   trailingIcon: AppIcons.chevronRight,
                 ),
 
+                // Only on the phone step: offering an alternative mid-way
+                // through code entry invites people to abandon a working flow.
+                // Hidden entirely when the build has no Google client id, since
+                // the button would be guaranteed to fail.
+                if (_step == _Step.phone && AppConfig.googleSignInEnabled) ...[
+                  const SizedBox(height: Space.x4),
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: t.border)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Space.x3),
+                        child: Text(
+                          'or',
+                          style: context.text.bodySmall?.copyWith(color: t.textTertiary),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: t.border)),
+                    ],
+                  ),
+                  const SizedBox(height: Space.x4),
+                  AppButton.secondary(
+                    label: 'Continue with Google',
+                    icon: AppIcons.user,
+                    loading: _googleBusy,
+                    onPressed: _googleBusy || _busy ? null : _signInWithGoogle,
+                  ),
+                ],
+
                 const SizedBox(height: Space.x4),
                 Text(
                   'By continuing you agree to our Terms and Privacy Policy.',
@@ -252,12 +313,18 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               ),
           ],
         ),
-        if (AppConfig.isDebug) ...[
+        if (_devOtp != null) ...[
           const SizedBox(height: Space.x4),
-          const AppBanner(
-            message: 'Development build: SMS delivery is not wired yet. '
-                'The code is printed in the backend console.',
+          AppBanner(
+            // Only ever present when the backend runs with
+            // OTP_ECHO_IN_RESPONSE, which it refuses to do in production.
+            message: 'Development build — your code is $_devOtp.',
             tone: StateTone.warning,
+            actionLabel: 'Fill',
+            onAction: () {
+              _codeController.text = _devOtp!;
+              _verify();
+            },
           ),
         ],
       ];

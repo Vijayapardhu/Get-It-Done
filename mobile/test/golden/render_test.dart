@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:getitdone_customer/core/models/models.dart';
 import 'package:getitdone_customer/design/design_system.dart';
 import 'package:getitdone_customer/features/booking/booking_otp_screen.dart';
+import 'package:getitdone_customer/features/auth/sign_in_screen.dart';
 import 'package:getitdone_customer/features/booking/review_screen.dart';
 
 /// Renders the system to PNGs under `test/golden/` so the visual design can be
@@ -101,6 +102,13 @@ void main() {
         status: 'en_route',
       ),
     );
+  });
+
+  testWidgets('sign in', (tester) async {
+    // The Google button only renders when the build carries
+    // GOOGLE_SERVER_CLIENT_ID, so this golden shows the phone-only variant
+    // unless the suite is run with that --dart-define.
+    await shoot(tester, 'sign_in_light', const ProviderScope(child: SignInScreen()));
   });
 
   testWidgets('review', (tester) async {

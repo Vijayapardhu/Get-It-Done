@@ -64,6 +64,38 @@ const envSchema = z.object({
   WELFARE_FUND_RATE: z.coerce.number().min(0).max(1).default(0.02),
   TAX_RATE: z.coerce.number().min(0).max(1).default(0.18),
 
+  // ── SMS delivery ──────────────────────────────────────────────────────────
+  // OTP login is the only onboarding path, so without a working provider
+  // nobody can sign in. 'console' prints the code to the log for development
+  // and is refused in production below.
+  SMS_PROVIDER: z.enum(["msg91", "twilio", "console"]).default("console"),
+
+  MSG91_AUTH_KEY: z.string().default(""),
+  // DLT-approved template. Required by Indian telecom regulation — the message
+  // body lives in the template, not in our code.
+  MSG91_TEMPLATE_ID: z.string().default(""),
+  MSG91_SENDER_ID: z.string().default(""),
+
+  TWILIO_ACCOUNT_SID: z.string().default(""),
+  TWILIO_AUTH_TOKEN: z.string().default(""),
+  TWILIO_FROM_NUMBER: z.string().default(""),
+
+  /// Returns the OTP in the API response so a device without SMS can still log
+  /// in during development. Refused in production: it turns OTP into theatre.
+  OTP_ECHO_IN_RESPONSE: booleanFromEnv.default(false),
+
+  /// Fixes every OTP to 123456. Previously this was inferred from
+  /// NODE_ENV === "development", which DEFAULTS to development — so a deploy
+  /// that forgot to set NODE_ENV silently accepted 123456 for every account.
+  /// Now it is an explicit opt-in and cannot be set in production.
+  OTP_FIXED_CODE: booleanFromEnv.default(false),
+
+  // ── Google Sign-In ────────────────────────────────────────────────────────
+  // A Google ID token's audience is the client id that requested it, and
+  // Android, iOS and web each have their own. All acceptable ids are listed
+  // here, comma separated, or verification rejects legitimate tokens.
+  GOOGLE_CLIENT_IDS: z.string().default(""),
+
   // ── Background jobs ───────────────────────────────────────────────────────
   JOBS_ENABLED: booleanFromEnv.default(true),
   JOB_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
@@ -88,6 +120,30 @@ if (env.NODE_ENV === "production" && env.ALLOW_UNSIGNED_WEBHOOKS) {
 if (env.NODE_ENV === "production" && env.USE_MOCK_DB) {
   throw new Error("USE_MOCK_DB cannot be enabled in production");
 }
+
+// Each of these turns OTP login into theatre. Fail at boot rather than run a
+// production service where any six digits, or a fixed 123456, signs anyone in.
+if (env.NODE_ENV === "production") {
+  if (env.SMS_PROVIDER === "console") {
+    throw new Error(
+      "SMS_PROVIDER=console cannot be used in production: OTPs would only be logged, never sent. " +
+        "Configure msg91 or twilio."
+    );
+  }
+  if (env.OTP_ECHO_IN_RESPONSE) {
+    throw new Error("OTP_ECHO_IN_RESPONSE cannot be enabled in production");
+  }
+  if (env.OTP_FIXED_CODE) {
+    throw new Error("OTP_FIXED_CODE cannot be enabled in production");
+  }
+}
+
+/// Client ids accepted when verifying a Google ID token. Falls back to the
+/// single GOOGLE_CLIENT_ID so existing deployments keep working.
+export const googleClientIds: string[] = [
+  ...env.GOOGLE_CLIENT_IDS.split(",").map((id) => id.trim()).filter(Boolean),
+  env.GOOGLE_CLIENT_ID,
+].filter((id, index, all) => id.length > 0 && all.indexOf(id) === index);
 
 const splitTotal = env.PLATFORM_FEE_RATE + env.COOPERATIVE_SHARE_RATE + env.WELFARE_FUND_RATE;
 if (splitTotal >= 1) {

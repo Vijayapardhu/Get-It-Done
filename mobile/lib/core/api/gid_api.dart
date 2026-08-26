@@ -15,10 +15,15 @@ class GidApi {
 
   // ─────────────────────────────────────────────────────────────── auth ──
 
-  /// Phone-first signup and sign-in. The code is delivered by SMS in
-  /// production; in development the backend logs it to the server console.
-  Future<void> requestOtp(String phone) =>
-      _client.post('/auth/request-otp', body: {'phone': phone}, auth: false);
+  /// Phone-first signup and sign-in.
+  ///
+  /// Delivered by SMS (MSG91 or Twilio, per the backend's SMS_PROVIDER).
+  /// Returns the code itself only when the backend runs with
+  /// OTP_ECHO_IN_RESPONSE, which env.ts refuses in production.
+  Future<String?> requestOtp(String phone) async {
+    final json = await _client.post('/auth/request-otp', body: {'phone': phone}, auth: false);
+    return asStringOrNull(pick(json, 'devOtp'));
+  }
 
   /// Verifies the code and issues a session. Passing [name] creates the account
   /// when the phone is new, so signup and sign-in are the same call.
@@ -56,6 +61,17 @@ class GidApi {
     final json = await _client.post('/auth/login', auth: false, body: {
       'email': email,
       'password': password,
+    });
+    return AuthSession.fromJson(json);
+  }
+
+  /// Exchange a Google ID token for a GET IT DONE session.
+  ///
+  /// The backend verifies the token's signature and audience against its
+  /// configured client ids, then links or creates the account by email.
+  Future<AuthSession> signInWithGoogle(String idToken) async {
+    final json = await _client.post('/auth/oauth/google', auth: false, body: {
+      'credential': idToken,
     });
     return AuthSession.fromJson(json);
   }

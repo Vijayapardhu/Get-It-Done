@@ -4,7 +4,9 @@ import crypto from "node:crypto";
 import authService from "../services/authService.js";
 import { requireAuth } from "../middleware/auth.js";
 import { recordAuditEvent } from "../services/auditService.js";
-import { env } from "../config/env.js";
+import { env, googleClientIds } from "../config/env.js";
+import { sendOtpSms, isSmsConfigured, toE164 } from "../services/smsService.js";
+import logger from "../core/logger.js";
 
 /**
  * @openapi
@@ -180,9 +182,45 @@ authRouter.post("/register", async (req, res, next) => {
 authRouter.post("/request-otp", async (req, res, next) => {
   try {
     const { phone } = z.object({ phone: phoneSchema }).parse(req.body);
+
+    if (!isSmsConfigured()) {
+      logger.error({ provider: env.SMS_PROVIDER }, "SMS provider is not configured; cannot deliver OTP");
+      res.status(503).json({
+        error: "SMS_UNAVAILABLE",
+        message: "We cannot send verification codes right now. Please try again shortly.",
+      });
+      return;
+    }
+
     const code = await authService.createOtpChallenge(phone, "login");
-    if (process.env.NODE_ENV === "development") console.info(`Development OTP for ${phone}: ${code}`);
-    res.json({ message: "OTP sent", phone });
+    const delivery = await sendOtpSms(phone, code);
+
+    if (!delivery.delivered) {
+      // The challenge row is already written and this code is now the only
+      // valid one — createOtpChallenge consumes any outstanding challenge. A
+      // resend therefore issues a fresh code rather than retrying this one.
+      logger.error({ phone: toE164(phone), provider: delivery.provider, error: delivery.error }, "OTP delivery failed");
+      res.status(502).json({
+        error: "SMS_DELIVERY_FAILED",
+        message: "We could not send the code to that number. Check it and try again.",
+      });
+      return;
+    }
+
+    void recordAuditEvent({
+      action: "auth.otp.requested",
+      resourceType: "otp_challenge",
+      resourceId: toE164(phone),
+      requestId: req.header("x-request-id") ?? undefined,
+      metadata: { provider: delivery.provider },
+    }).catch(() => undefined);
+
+    res.json({
+      message: "OTP sent",
+      phone,
+      // Development only: env.ts refuses this flag in production.
+      ...(env.OTP_ECHO_IN_RESPONSE ? { devOtp: code } : {}),
+    });
   } catch (error) { next(error); }
 });
 
@@ -303,10 +341,45 @@ authRouter.post("/oauth/google", async (req, res, next) => {
   try {
     const input = z.object({ credential: z.string().min(10) }).parse(req.body);
     const { OAuth2Client } = await import("google-auth-library");
-    const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
-    const ticket = await client.verifyIdToken({ idToken: input.credential, audience: env.GOOGLE_CLIENT_ID });
-    const payload = ticket.getPayload();
-    if (!payload?.sub || !payload?.email) { res.status(400).json({ error: "Invalid Google token" }); return; }
+    if (googleClientIds.length === 0) {
+      res.status(503).json({ error: "GOOGLE_SIGNIN_UNAVAILABLE", message: "Google sign-in is not configured." });
+      return;
+    }
+    const client = new OAuth2Client(googleClientIds[0]);
+    // A Google ID token's audience is whichever client id requested it, and
+    // Android, iOS and web each have their own. Verifying against a single id
+    // rejects legitimate tokens from the other two platforms.
+    let payload;
+    try {
+      const ticket = await client.verifyIdToken({ idToken: input.credential, audience: googleClientIds });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      // Malformed, expired, wrong audience or forged — all are the caller's
+      // problem. Log the detail; return a flat 401 rather than surfacing the
+      // library's message, which describes our token internals.
+      logger.warn(
+        { err: verifyError, ip: req.ip },
+        "Google ID token verification failed"
+      );
+      res.status(401).json({ error: "INVALID_GOOGLE_TOKEN", message: "That Google sign-in could not be verified." });
+      return;
+    }
+
+    if (!payload?.sub || !payload?.email) {
+      res.status(401).json({ error: "INVALID_GOOGLE_TOKEN", message: "That Google sign-in could not be verified." });
+      return;
+    }
+
+    // Google says whether it has confirmed the address. An unverified one must
+    // not be trusted to match an existing account by email — that is an
+    // account-takeover route.
+    if (payload.email_verified === false) {
+      res.status(403).json({
+        error: "GOOGLE_EMAIL_UNVERIFIED",
+        message: "Verify your email address with Google before signing in.",
+      });
+      return;
+    }
     let user = await authService.findUserByGoogleId(payload.sub);
     if (!user) user = await authService.findUserByEmail(payload.email);
     if (user) {

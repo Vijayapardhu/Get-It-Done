@@ -52,6 +52,20 @@ abstract final class AppConfig {
   /// the booking as `assignmentExpiresAt`.
   static const workerAcceptWindow = Duration(seconds: 45);
 
+  // ── Google Sign-In ────────────────────────────────────────────────────────
+  // Passed at build time:
+  //   --dart-define=GOOGLE_SERVER_CLIENT_ID=...apps.googleusercontent.com
+  //
+  // serverClientId is the WEB client id from the Google console. It is what
+  // makes Android mint an ID token audienced to the backend rather than to the
+  // Android client — verification fails otherwise. iOS additionally needs its
+  // own client id via GOOGLE_CLIENT_ID.
+  static const googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+  static const googleClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
+
+  /// Google sign-in is only offered when it can actually work.
+  static bool get googleSignInEnabled => googleServerClientId.isNotEmpty;
+
   /// Supported languages, matching GET /i18n/languages.
   static const supportedLanguages = ['en', 'te', 'hi'];
 
