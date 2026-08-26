@@ -1,0 +1,306 @@
+import '../models/models.dart';
+import '../network/api_client.dart';
+import '../network/json.dart';
+
+/// Typed wrapper over the GET IT DONE API.
+///
+/// One place that knows about paths and response envelopes, so a route rename
+/// on the backend lands here rather than in twelve widgets. Endpoint choices
+/// are annotated where the backend offers more than one spelling for the same
+/// thing (it has a compat layer that rewrites blueprint paths onto these).
+class GidApi {
+  GidApi(this._client);
+
+  final ApiClient _client;
+
+  // ─────────────────────────────────────────────────────────────── auth ──
+
+  /// Phone-first signup and sign-in. The code is delivered by SMS in
+  /// production; in development the backend logs it to the server console.
+  Future<void> requestOtp(String phone) =>
+      _client.post('/auth/request-otp', body: {'phone': phone}, auth: false);
+
+  /// Verifies the code and issues a session. Passing [name] creates the account
+  /// when the phone is new, so signup and sign-in are the same call.
+  Future<AuthSession> verifyOtp({
+    required String phone,
+    required String otp,
+    String? name,
+    String role = 'customer',
+  }) async {
+    final json = await _client.post('/auth/verify-otp', auth: false, body: {
+      'phone': phone,
+      'otp': otp,
+      if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+      'role': role,
+    });
+    return AuthSession.fromJson(json);
+  }
+
+  Future<AuthSession> register({
+    required String name,
+    required String email,
+    required String password,
+    String role = 'customer',
+  }) async {
+    final json = await _client.post('/auth/register', auth: false, body: {
+      'name': name,
+      'email': email,
+      'password': password,
+      'role': role,
+    });
+    return AuthSession.fromJson(json);
+  }
+
+  Future<AuthSession> login({required String email, required String password}) async {
+    final json = await _client.post('/auth/login', auth: false, body: {
+      'email': email,
+      'password': password,
+    });
+    return AuthSession.fromJson(json);
+  }
+
+  Future<AppUser> me() async {
+    // `/auth/me` rather than `/users/me`: same resource, but this one returns
+    // camelCase and includes the OAuth linkage.
+    final json = await _client.get('/auth/me');
+    return AppUser.fromJson(asJson(pick(json, 'user')) ?? const {});
+  }
+
+  Future<void> logout(String refreshToken) =>
+      _client.post('/auth/logout', body: {'refreshToken': refreshToken});
+
+  Future<void> setLanguage(String language) =>
+      _client.patch('/users/me/language', body: {'language': language});
+
+  // ────────────────────────────────────────────────────────── catalogue ──
+
+  Future<List<Service>> services() async {
+    final json = await _client.get('/services');
+    return parseList(pick(json, 'services'), Service.fromJson);
+  }
+
+  Future<List<ServiceCategory>> serviceCategories() async {
+    final json = await _client.get('/services/categories');
+    return parseList(pick(json, 'categories'), ServiceCategory.fromJson);
+  }
+
+  Future<Service> service(String id) async {
+    final json = await _client.get('/services/$id');
+    return Service.fromJson(asJson(pick(json, 'service')) ?? json);
+  }
+
+  /// Catalogue search scoped to a location, so results carry worker
+  /// availability and distance rather than just names.
+  Future<List<Service>> searchServices({
+    required double latitude,
+    required double longitude,
+    String? query,
+    String? category,
+  }) async {
+    final json = await _client.get('/services/discovery/search', query: {
+      'latitude': latitude,
+      'longitude': longitude,
+      if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+      if (category != null) 'category': category,
+    });
+    return parseList(pick(json, 'services'), Service.fromJson);
+  }
+
+  Future<List<Service>> nearbyServices({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final json = await _client.get('/services/discovery/nearby', query: {
+      'latitude': latitude,
+      'longitude': longitude,
+    });
+    return parseList(pick(json, 'services'), Service.fromJson);
+  }
+
+  // ──────────────────────────────────────────────────────────── pricing ──
+
+  /// Upfront fare with the full breakdown. Called before the confirm step so
+  /// the customer never sees a price for the first time on the invoice.
+  Future<FareEstimate> estimate({
+    required String serviceId,
+    required double latitude,
+    required double longitude,
+    bool isEmergency = false,
+    DateTime? scheduledAt,
+  }) async {
+    final json = await _client.post('/pricing/estimate', body: {
+      'serviceId': serviceId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'isEmergency': isEmergency,
+      if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+    });
+    return FareEstimate.fromJson(json);
+  }
+
+  // ────────────────────────────────────────────────────────── addresses ──
+
+  Future<List<SavedAddress>> addresses() async {
+    final json = await _client.get('/addresses');
+    return parseList(pick(json, 'addresses'), SavedAddress.fromJson);
+  }
+
+  Future<SavedAddress> createAddress({
+    required String name,
+    required String address,
+    double? latitude,
+    double? longitude,
+    bool isDefault = false,
+    String? instructions,
+  }) async {
+    final json = await _client.post('/addresses', body: {
+      'name': name,
+      'address': address,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      'is_default': isDefault,
+      if (instructions != null && instructions.isNotEmpty) 'instructions': instructions,
+    });
+    return SavedAddress.fromJson(asJson(pick(json, 'address')) ?? json);
+  }
+
+  Future<void> deleteAddress(String id) => _client.delete('/addresses/$id');
+
+  // ─────────────────────────────────────────────────────────── bookings ──
+
+  /// Create a booking.
+  ///
+  /// [idempotencyKey] is REQUIRED by the backend (16–128 chars). Generate it
+  /// when the confirm sheet opens, not when the button is tapped: a double-tap
+  /// or a retry after a dropped response then replays the original booking
+  /// instead of creating a second one.
+  ///
+  /// The response carries the start and completion OTPs exactly ONCE. Persist
+  /// them before navigating.
+  Future<BookingCreated> createBooking({
+    required String serviceId,
+    required double latitude,
+    required double longitude,
+    required String address,
+    required String idempotencyKey,
+    String? description,
+    bool isEmergency = false,
+    DateTime? scheduledAt,
+  }) async {
+    final json = await _client.post(
+      '/bookings',
+      headers: {'idempotency-key': idempotencyKey},
+      body: {
+        'serviceId': serviceId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address,
+        if (description != null && description.isNotEmpty) 'description': description,
+        'isEmergency': isEmergency,
+        if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+      },
+    );
+    return BookingCreated.fromJson(json);
+  }
+
+  Future<List<Booking>> bookings() async {
+    final json = await _client.get('/bookings');
+    return parseList(pick(json, 'bookings'), Booking.fromJson);
+  }
+
+  Future<Booking> booking(String id) async {
+    final json = await _client.get('/bookings/$id');
+    return Booking.fromJson(asJson(pick(json, 'booking')) ?? json);
+  }
+
+  Future<List<BookingEvent>> bookingTimeline(String id) async {
+    final json = await _client.get('/bookings/$id/timeline');
+    return parseList(pick(json, 'timeline'), BookingEvent.fromJson);
+  }
+
+  Future<BookingTracking> trackBooking(String id) async {
+    final json = await _client.get('/customer/bookings/$id/track');
+    return BookingTracking.fromJson(json);
+  }
+
+  Future<void> cancelBooking(String id, {String? reason}) =>
+      _client.post('/bookings/$id/cancel', body: {if (reason != null) 'reason': reason});
+
+  /// Reissue the handshake codes when the customer has lost them. Invalidates
+  /// the previous pair and clears the failed-attempt counters.
+  Future<BookingOtps> reissueOtps(String bookingId) async {
+    final json = await _client.post('/bookings/$bookingId/otp');
+    return BookingOtps.fromJson(json);
+  }
+
+  // ────────────────────────────────────────────────────────── dashboard ──
+
+  Future<CustomerDashboard> dashboard() async {
+    final json = await _client.get('/customer/dashboard');
+    return CustomerDashboard.fromJson(json);
+  }
+
+  Future<List<FavouriteWorker>> favourites() async {
+    final json = await _client.get('/customer/favorites');
+    return parseList(pick(json, 'favorites'), FavouriteWorker.fromJson);
+  }
+
+  Future<void> addFavourite(String workerId) => _client.post('/users/favorites/$workerId');
+
+  Future<void> removeFavourite(String workerId) => _client.delete('/users/favorites/$workerId');
+
+  // ────────────────────────────────────────────────────────────── trust ──
+
+  Future<TrustGraph> trustGraph(String workerId) async {
+    final json = await _client.get('/trust/workers/$workerId');
+    return TrustGraph.fromJson(json);
+  }
+
+  // ────────────────────────────────────────────────────── notifications ──
+
+  Future<List<AppNotification>> notifications({int limit = 30}) async {
+    final json = await _client.get('/notifications', query: {'limit': limit});
+    return parseList(pick(json, 'notifications'), AppNotification.fromJson);
+  }
+
+  Future<void> markNotificationRead(String id) => _client.patch('/notifications/$id/read');
+
+  Future<void> markAllNotificationsRead() => _client.post('/notifications/read-all');
+
+  // ────────────────────────────────────────────────────────── emergency ──
+
+  /// Priority dispatch. A separate path from a normal booking: the backend
+  /// suppresses duplicates within 10 minutes and escalates on a timer.
+  Future<BookingCreated> createEmergencyBooking({
+    required String serviceId,
+    required double latitude,
+    required double longitude,
+    required String address,
+    String? description,
+    String priority = 'high',
+  }) async {
+    final json = await _client.post('/emergency/bookings', body: {
+      'serviceId': serviceId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'address': address,
+      if (description != null && description.isNotEmpty) 'description': description,
+      'priority': priority,
+    });
+    return BookingCreated.fromJson(json);
+  }
+
+  // ─────────────────────────────────────────────────────────────── maps ──
+
+  /// Reverse geocode through the backend, never a client-side Maps key.
+  Future<String?> reverseGeocode({required double latitude, required double longitude}) async {
+    final json = await _client.post('/maps/reverse-geocode', body: {
+      'latitude': latitude,
+      'longitude': longitude,
+    });
+    return asStringOrNull(
+      pick(json, 'formattedAddress', aliases: ['address', 'formatted_address']),
+    );
+  }
+}
