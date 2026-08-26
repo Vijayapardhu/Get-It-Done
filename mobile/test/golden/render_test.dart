@@ -3,10 +3,12 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:getitdone_customer/core/models/models.dart';
 import 'package:getitdone_customer/design/design_system.dart';
 import 'package:getitdone_customer/features/booking/booking_otp_screen.dart';
+import 'package:getitdone_customer/features/booking/review_screen.dart';
 
 /// Renders the system to PNGs under `test/golden/` so the visual design can be
 /// reviewed without a device.
@@ -97,6 +99,23 @@ void main() {
         bookingId: 'b1',
         otps: BookingOtps(startOtp: '937980', completionOtp: '509337'),
         status: 'en_route',
+      ),
+    );
+  });
+
+  testWidgets('review', (tester) async {
+    await shoot(
+      tester,
+      'review_light',
+      ProviderScope(
+        child: ReviewScreen(
+          booking: Booking.fromJson(const {
+            'id': 'b1',
+            'status': 'completed',
+            'service_name': 'Plumbing',
+            'worker_name': 'Ravi Kumar',
+          }),
+        ),
       ),
     );
   });

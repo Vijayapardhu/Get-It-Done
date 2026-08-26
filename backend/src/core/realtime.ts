@@ -87,6 +87,23 @@ export function emitWorkerLocationUpdate(userId: string, data: unknown) {
   io?.to(`worker:${userId}`).emit("worker:location:update", data);
 }
 
+/**
+ * Push a worker's position to the customers currently being served by them.
+ *
+ * `emitWorkerLocationUpdate` targets `worker:{userId}` — the worker's OWN room,
+ * which is of no use to anyone: the worker already knows where they are. The
+ * customer tracking a booking sits in `booking:{id}`, so a live map needs the
+ * fix delivered there instead. Scoping to the worker's active bookings means
+ * only the people actually waiting on them receive it, rather than the whole
+ * platform (which is what the previous unscoped `io.emit` did).
+ */
+export function emitWorkerLocationToBookings(bookingIds: string[], data: unknown) {
+  if (!io || bookingIds.length === 0) return;
+  for (const bookingId of bookingIds) {
+    io.to(`booking:${bookingId}`).emit("worker:location:update", data);
+  }
+}
+
 export function emitNotification(userId: string, data: unknown) {
   io?.to(`user:${userId}`).emit("notification:new", data);
 }

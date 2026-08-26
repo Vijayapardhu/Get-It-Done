@@ -294,13 +294,39 @@ class GidApi {
   // ─────────────────────────────────────────────────────────────── maps ──
 
   /// Reverse geocode through the backend, never a client-side Maps key.
-  Future<String?> reverseGeocode({required double latitude, required double longitude}) async {
+  ///
+  /// The route takes `lat`/`lng` (NOT latitude/longitude) and returns
+  /// `{ results: [...] }`, so the first result is unwrapped here.
+  Future<GeoPlace?> reverseGeocode({required double latitude, required double longitude}) async {
     final json = await _client.post('/maps/reverse-geocode', body: {
-      'latitude': latitude,
-      'longitude': longitude,
+      'lat': latitude,
+      'lng': longitude,
     });
-    return asStringOrNull(
-      pick(json, 'formattedAddress', aliases: ['address', 'formatted_address']),
-    );
+    final results = parseList(pick(json, 'results'), GeoPlace.fromJson);
+    return results.isEmpty ? null : results.first;
   }
+
+  /// Forward geocode a typed address to coordinates.
+  ///
+  /// The booking flow needs coordinates: matching is a PostGIS radius search,
+  /// so an address without a location cannot be dispatched against.
+  Future<List<GeoPlace>> geocode(String address) async {
+    final json = await _client.post('/maps/geocode', body: {'address': address});
+    return parseList(pick(json, 'results'), GeoPlace.fromJson);
+  }
+
+  // ────────────────────────────────────────────────────────────── reviews ──
+
+  /// Rate a completed booking. One review per booking is enforced server-side
+  /// by a unique index, so a duplicate submit returns 409 rather than stacking.
+  Future<void> submitReview({
+    required String bookingId,
+    required int rating,
+    String? feedback,
+  }) =>
+      _client.post('/reviews', body: {
+        'bookingId': bookingId,
+        'rating': rating,
+        if (feedback != null && feedback.trim().isNotEmpty) 'feedback': feedback.trim(),
+      });
 }

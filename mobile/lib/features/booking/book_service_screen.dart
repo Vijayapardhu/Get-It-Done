@@ -5,6 +5,7 @@ import '../../core/models/models.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
+import '../address/address_screen.dart';
 import '../../design/design_system.dart';
 
 /// The booking journey.
@@ -250,7 +251,7 @@ class _AddressStep extends ConsumerWidget {
                 message: 'Add the address where you need the service.',
                 icon: AppIcons.location,
                 actionLabel: 'Add address',
-                onAction: () {},
+                onAction: () => _addAddress(context, onSelect),
               );
             }
             // Auto-select the default on first build so the common case is one
@@ -274,7 +275,7 @@ class _AddressStep extends ConsumerWidget {
                 AppButton.secondary(
                   label: 'Add another address',
                   icon: AppIcons.add,
-                  onPressed: () {},
+                  onPressed: () => _addAddress(context, onSelect),
                 ),
               ],
             );
@@ -282,6 +283,15 @@ class _AddressStep extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// Push the address form and select whatever comes back, so the customer
+  /// lands straight back on Continue rather than having to pick again.
+  static Future<void> _addAddress(BuildContext context, ValueChanged<SavedAddress> onSelect) async {
+    final created = await Navigator.of(context).push<SavedAddress>(
+      MaterialPageRoute(builder: (_) => const AddAddressScreen()),
+    );
+    if (created != null) onSelect(created);
   }
 
   static List<List<dynamic>> _iconFor(String name) {

@@ -7,6 +7,9 @@ import '../design/design_system.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/booking/book_service_screen.dart';
 import '../features/booking/booking_otp_screen.dart';
+import '../features/address/address_screen.dart';
+import '../features/booking/review_screen.dart';
+import '../features/booking/track_booking_screen.dart';
 import '../features/home/home_screen.dart';
 import 'search_screen.dart';
 import 'trust_screen.dart';
@@ -159,6 +162,27 @@ class _AppShellState extends ConsumerState<AppShell> {
         );
   }
 
+  /// Open a booking at the right screen for its state.
+  ///
+  /// A live booking goes to tracking; a finished one that has not been rated
+  /// goes straight to the review, because that is the only action left.
+  void _openBooking(Booking booking) {
+    if (booking.status == 'completed') {
+      _push(ReviewScreen(booking: booking));
+      return;
+    }
+    _push(TrackBookingScreen(
+      bookingId: booking.id,
+      onOpenCodes: () => _push(BookingOtpScreen(
+        bookingId: booking.id,
+        otps: null,
+        status: booking.status,
+      )),
+      onOpenWorker: (workerId) => _push(TrustScreen(workerId: workerId)),
+      onReview: (completed) => _push(ReviewScreen(booking: completed)),
+    ));
+  }
+
   void _openService(Service service) {
     _push(BookServiceScreen(
       service: service,
@@ -174,7 +198,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                     otps: result.otps,
                     status: result.booking.status,
                   )),
-                  onTrack: () => setState(() => _tab = 1),
+                  onTrack: () => _openBooking(result.booking),
                 ),
               ),
             );
@@ -204,24 +228,13 @@ class _AppShellState extends ConsumerState<AppShell> {
               child: HomeScreen(
                 onOpenService: _openService,
                 onOpenSearch: () => _push(SearchScreen(onOpenService: _openService)),
-                onOpenBooking: (booking) => _push(BookingOtpScreen(
-                  bookingId: booking.id,
-                  otps: null,
-                  status: booking.status,
-                )),
+                onOpenBooking: _openBooking,
                 onOpenWorker: (workerId) => _push(TrustScreen(workerId: workerId)),
               ),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[1],
-              child: _BookingsTab(
-                onOpenWorker: (id) => _push(TrustScreen(workerId: id)),
-                onOpenCodes: (booking) => _push(BookingOtpScreen(
-                  bookingId: booking.id,
-                  otps: null,
-                  status: booking.status,
-                )),
-              ),
+              child: _BookingsTab(onOpenBooking: _openBooking),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[2],
@@ -366,10 +379,9 @@ class _EmergencySheet extends ConsumerWidget {
 // ── Placeholder tabs, replaced as each feature lands ──────────────────────
 
 class _BookingsTab extends ConsumerWidget {
-  const _BookingsTab({required this.onOpenWorker, required this.onOpenCodes});
+  const _BookingsTab({required this.onOpenBooking});
 
-  final ValueChanged<String> onOpenWorker;
-  final ValueChanged<Booking> onOpenCodes;
+  final ValueChanged<Booking> onOpenBooking;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -408,7 +420,7 @@ class _BookingsTab extends ConsumerWidget {
               itemBuilder: (context, i) {
                 final booking = list[i];
                 return AppCard(
-                  onTap: () => onOpenCodes(booking),
+                  onTap: () => onOpenBooking(booking),
                   padding: Space.cardInsetsLarge,
                   child: Row(
                     children: [
@@ -561,7 +573,9 @@ class _ProfileTab extends ConsumerWidget {
             title: 'Saved addresses',
             icon: AppIcons.location,
             selected: false,
-            onTap: () {},
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AddressListScreen()),
+            ),
             trailing: const SizedBox.shrink(),
           ),
           const SizedBox(height: Space.x3),

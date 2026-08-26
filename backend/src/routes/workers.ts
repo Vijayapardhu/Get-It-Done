@@ -11,6 +11,7 @@ import { addInsurance, addTraining, getWelfareBundle, setPayoutAccount } from ".
 import { pool } from "../db/pool.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
+import { emitWorkerAvailabilityUpdate, emitWorkerLocationToBookings } from "../core/realtime.js";
 
 /**
  * @openapi
@@ -456,7 +457,9 @@ workersRouter.patch("/me/availability", workerOnly, async (req, res, next) => {
     const { status } = z.object({ status: z.enum(["available", "busy", "offline"]) }).parse(req.body);
     const worker = await updateAvailability(req.user!.id, status);
     if (!worker) { res.status(409).json({ error: "Only verified workers can change availability" }); return; }
-    req.app.get("io")?.emit("worker:availability:update", { userId: req.user!.id, ...worker });
+    // Scoped to the worker's own room: broadcasting availability to every
+    // connected socket leaked worker status and location platform-wide.
+    emitWorkerAvailabilityUpdate(req.user!.id, { userId: req.user!.id, ...worker });
     res.json({ worker });
   } catch (error) { next(error); }
 });
@@ -467,7 +470,25 @@ workersRouter.put(["/me/location"], workerOnly, async (req, res, next) => {
     const input = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), sharingEnabled: z.boolean() }).parse(req.body);
     const location = await updateWorkerLocation(req.user!.id, input.latitude, input.longitude, input.sharingEnabled);
     if (!location) { res.status(404).json({ error: "Worker profile not found" }); return; }
-    req.app.get("io")?.emit("worker:location:update", { userId: req.user!.id, ...location });
+
+    // This used to be an unscoped io.emit, which published every worker's live
+    // GPS to every connected socket. Deliver it only to the bookings this
+    // worker is currently serving, and only while they are sharing.
+    if (input.sharingEnabled) {
+      const active = await pool.query(
+        `select b.id
+           from bookings b
+           join workers w on w.id = b.worker_id
+          where w.user_id = $1
+            and b.status in ('assigned', 'accepted', 'en_route', 'started')`,
+        [req.user!.id]
+      );
+      emitWorkerLocationToBookings(
+        active.rows.map((row) => row.id as string),
+        { workerId: req.user!.id, latitude: input.latitude, longitude: input.longitude, at: new Date().toISOString() }
+      );
+    }
+
     res.json({ location, sharingEnabled: input.sharingEnabled });
   } catch (error) { next(error); }
 });

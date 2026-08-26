@@ -574,3 +574,70 @@ class TrustGraph {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────── geocoding ──
+
+/// A place from /maps/geocode or /maps/reverse-geocode.
+///
+/// The backend proxies Google Maps so no API key ships in the binary, and
+/// normalises the response to camelCase (`formattedAddress`, `location.lat`).
+class GeoPlace {
+  const GeoPlace({
+    required this.formattedAddress,
+    this.latitude,
+    this.longitude,
+    this.placeId,
+  });
+
+  final String formattedAddress;
+  final double? latitude;
+  final double? longitude;
+  final String? placeId;
+
+  bool get hasCoordinates => latitude != null && longitude != null;
+
+  /// A short label for a list row — the first two comma-separated parts, which
+  /// is usually "building, locality" and enough to tell two results apart.
+  String get shortLabel {
+    final parts = formattedAddress.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty);
+    return parts.take(2).join(', ');
+  }
+
+  factory GeoPlace.fromJson(Json json) {
+    final location = asJson(pick(json, 'location'));
+    return GeoPlace(
+      formattedAddress: asString(
+        pick(json, 'formattedAddress', aliases: ['address', 'name']),
+      ),
+      latitude: asDoubleOrNull(pick(location, 'lat') ?? pick(json, 'latitude')),
+      longitude: asDoubleOrNull(pick(location, 'lng') ?? pick(json, 'longitude')),
+      placeId: asStringOrNull(pick(json, 'placeId')),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────── review ──
+
+class WorkerReview {
+  const WorkerReview({
+    required this.id,
+    required this.rating,
+    this.feedback,
+    this.customerName,
+    this.createdAt,
+  });
+
+  final String id;
+  final int rating;
+  final String? feedback;
+  final String? customerName;
+  final DateTime? createdAt;
+
+  factory WorkerReview.fromJson(Json json) => WorkerReview(
+        id: asString(pick(json, 'id')),
+        rating: asInt(pick(json, 'rating')),
+        feedback: asStringOrNull(pick(json, 'feedback', aliases: ['comment'])),
+        customerName: asStringOrNull(pick(json, 'customerName')),
+        createdAt: asDateOrNull(pick(json, 'createdAt')),
+      );
+}

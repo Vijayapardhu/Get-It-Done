@@ -1,0 +1,491 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/models/models.dart';
+import '../../core/providers.dart';
+import '../../core/realtime/realtime_service.dart';
+import '../../design/design_system.dart';
+
+/// Live booking tracking.
+///
+/// Two data paths, deliberately:
+///
+///  * Socket for STATUS. `booking:status_changed` arrives in the booking room
+///    the moment the worker accepts, sets off or starts, so the screen changes
+///    without the user pulling to refresh.
+///  * HTTP for ETA and distance. `/customer/bookings/:id/track` computes those
+///    server-side; a socket event only says the status moved.
+///
+/// The screen re-fetches the track endpoint whenever a status event lands,
+/// rather than polling on a timer — the timer would either lag the change or
+/// hammer the API between changes.
+class TrackBookingScreen extends ConsumerStatefulWidget {
+  const TrackBookingScreen({
+    super.key,
+    required this.bookingId,
+    required this.onOpenCodes,
+    required this.onOpenWorker,
+    required this.onReview,
+  });
+
+  final String bookingId;
+  final VoidCallback onOpenCodes;
+  final ValueChanged<String> onOpenWorker;
+  final ValueChanged<Booking> onReview;
+
+  @override
+  ConsumerState<TrackBookingScreen> createState() => _TrackBookingScreenState();
+}
+
+class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
+  ProviderSubscription<AsyncValue<BookingStatusEvent>>? _statusSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Refresh the server-computed tracking data whenever the status moves.
+    _statusSubscription = ref.listenManual(
+      bookingStatusStreamProvider(widget.bookingId),
+      (previous, next) {
+        next.whenData((_) => ref.invalidate(bookingTrackingProvider(widget.bookingId)));
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _statusSubscription?.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final tracking = ref.watch(bookingTrackingProvider(widget.bookingId));
+    final connected = ref.watch(realtimeConnectedProvider).value ?? false;
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: AppIconButton(
+          icon: AppIcons.chevronLeft,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text('Track booking'),
+        actions: [
+          // Honest about the connection: a stale map with no indicator is
+          // worse than a visibly disconnected one.
+          Padding(
+            padding: const EdgeInsets.only(right: Space.x5),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: connected ? t.success : t.textTertiary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: Space.x2),
+                Text(
+                  connected ? 'Live' : 'Offline',
+                  style: context.text.labelSmall?.copyWith(
+                    color: connected ? t.success : t.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      body: tracking.when(
+        loading: () => const Padding(
+          padding: Space.pageInsets,
+          child: Column(children: [SkeletonCard(), SizedBox(height: Space.x3), SkeletonCard(hasAvatar: false)]),
+        ),
+        error: (_, __) => AppStateView.error(
+          message: 'We could not load this booking.',
+          onAction: () => ref.invalidate(bookingTrackingProvider(widget.bookingId)),
+        ),
+        data: (data) => RefreshIndicator(
+          color: t.primary,
+          onRefresh: () async {
+            ref.invalidate(bookingTrackingProvider(widget.bookingId));
+            await ref.read(bookingTrackingProvider(widget.bookingId).future);
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(Space.x5, Space.x4, Space.x5, Space.x10),
+            children: [
+              _StatusHeadline(tracking: data),
+              const SizedBox(height: Space.x6),
+
+              if (data.worker != null) ...[
+                _WorkerPanel(
+                  worker: data.worker!,
+                  distanceKm: data.distanceKm,
+                  etaMinutes: data.etaMinutes,
+                  onOpenProfile: () => widget.onOpenWorker(data.worker!.workerId),
+                ),
+                const SizedBox(height: Space.x4),
+              ],
+
+              // The handshake is the customer's next action once a worker is
+              // at the door, so it is promoted rather than buried in a menu.
+              if (data.booking.awaitsStartOtp || data.booking.awaitsCompletionOtp) ...[
+                AppCard(
+                  background: t.primarySoft,
+                  border: t.primary,
+                  padding: Space.cardInsetsLarge,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          AppIconBadge(AppIcons.secure, size: 44),
+                          const SizedBox(width: Space.x3),
+                          Expanded(
+                            child: Text(
+                              data.booking.awaitsStartOtp
+                                  ? 'Share your start code when the worker arrives'
+                                  : 'Share your completion code when the work is done',
+                              style: context.text.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: Space.x4),
+                      AppButton.primary(
+                        label: 'Show my code',
+                        size: AppButtonSize.medium,
+                        onPressed: widget.onOpenCodes,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: Space.x4),
+              ],
+
+              if (data.booking.status == 'completed') ...[
+                AppCard(
+                  padding: Space.cardInsetsLarge,
+                  child: Column(
+                    children: [
+                      AppIconBadge(
+                        AppIcons.success,
+                        size: 56,
+                        background: t.successSoft,
+                        foreground: t.success,
+                      ),
+                      const SizedBox(height: Space.x4),
+                      Text('Work completed', style: context.text.titleLarge),
+                      const SizedBox(height: Space.x2),
+                      Text(
+                        'How did it go? Your rating helps the cooperative.',
+                        style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: Space.x4),
+                      AppButton.primary(
+                        label: 'Rate this service',
+                        size: AppButtonSize.medium,
+                        icon: AppIcons.rating,
+                        onPressed: () => widget.onReview(data.booking),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: Space.x4),
+              ],
+
+              Section(
+                title: 'Progress',
+                padding: EdgeInsets.zero,
+                child: _Timeline(events: data.timeline, currentStatus: data.booking.status),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusHeadline extends StatelessWidget {
+  const _StatusHeadline({required this.tracking});
+
+  final BookingTracking tracking;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final booking = tracking.booking;
+    final worker = tracking.worker?.name ?? booking.workerName;
+
+    final headline = switch (booking.status) {
+      'requested' || 'matching' => 'Finding a verified worker',
+      'assigned' => worker == null ? 'Worker assigned' : '$worker was assigned',
+      'accepted' => worker == null ? 'Booking confirmed' : '$worker confirmed',
+      'en_route' => worker == null ? 'On the way' : '$worker is on the way',
+      'started' => 'Work in progress',
+      'completed' => 'Work completed',
+      'cancelled' => 'Booking cancelled',
+      _ => booking.serviceName ?? 'Your booking',
+    };
+
+    final detail = switch (booking.status) {
+      'requested' || 'matching' =>
+        'We are matching you with the nearest available member of a local cooperative society.',
+      'assigned' => 'Waiting for the worker to accept.',
+      'en_route' when tracking.etaMinutes != null =>
+        'Arriving in about ${tracking.etaMinutes} minutes.',
+      'started' => 'Share your completion code once you are satisfied.',
+      _ => booking.address ?? '',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        BookingStatusBadge(booking.status),
+        const SizedBox(height: Space.x3),
+        Text(headline, style: context.text.displayMedium),
+        if (detail.isNotEmpty) ...[
+          const SizedBox(height: Space.x2),
+          Text(detail, style: context.text.bodyLarge?.copyWith(color: t.textSecondary)),
+        ],
+      ],
+    );
+  }
+}
+
+class _WorkerPanel extends StatelessWidget {
+  const _WorkerPanel({
+    required this.worker,
+    required this.distanceKm,
+    required this.etaMinutes,
+    required this.onOpenProfile,
+  });
+
+  final WorkerMatch worker;
+  final double? distanceKm;
+  final int? etaMinutes;
+  final VoidCallback onOpenProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+
+    return AppCard(
+      onTap: onOpenProfile,
+      padding: Space.cardInsetsLarge,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              WorkerAvatar(name: worker.name, verified: true, size: Sizes.avatarLg),
+              const SizedBox(width: Space.x3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(worker.name, style: context.text.titleLarge),
+                    if (worker.rating != null) ...[
+                      const SizedBox(height: Space.x1),
+                      RatingPill(rating: worker.rating!, dense: true),
+                    ],
+                  ],
+                ),
+              ),
+              AppIcon(AppIcons.chevronRight, size: Sizes.iconSm, color: t.textTertiary),
+            ],
+          ),
+          if (distanceKm != null || etaMinutes != null) ...[
+            const Divider(height: Space.x6),
+            Row(
+              children: [
+                if (etaMinutes != null)
+                  Expanded(
+                    child: _Metric(
+                      icon: AppIcons.time,
+                      value: '$etaMinutes min',
+                      label: 'Estimated arrival',
+                    ),
+                  ),
+                if (distanceKm != null)
+                  Expanded(
+                    child: _Metric(
+                      icon: AppIcons.navigate,
+                      value: '${distanceKm!.toStringAsFixed(1)} km',
+                      label: 'Away',
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Metric extends StatelessWidget {
+  const _Metric({required this.icon, required this.value, required this.label});
+
+  final List<List<dynamic>> icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Row(
+      children: [
+        AppIcon(icon, size: Sizes.iconSm, color: t.primary),
+        const SizedBox(width: Space.x2),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: context.text.titleMedium?.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            Text(label, style: context.text.bodySmall?.copyWith(color: t.textTertiary)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Booking history as a vertical stepper.
+///
+/// Shows the FULL expected lifecycle with completed steps filled in, not just
+/// the events that have happened — a customer waiting on a worker wants to see
+/// what comes next, not only what is done.
+class _Timeline extends StatelessWidget {
+  const _Timeline({required this.events, required this.currentStatus});
+
+  final List<BookingEvent> events;
+  final String currentStatus;
+
+  /// The happy path. Cancelled and disputed bookings fall out of it, so those
+  /// render only the events that actually occurred.
+  static const _expected = ['requested', 'assigned', 'accepted', 'en_route', 'started', 'completed'];
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final isDerailed = const {'cancelled', 'expired', 'disputed', 'refunded'}.contains(currentStatus);
+
+    final reached = {for (final event in events) event.status};
+    final steps = isDerailed
+        ? events.map((e) => e.status).toList()
+        : _expected;
+
+    final currentIndex = steps.indexOf(currentStatus);
+
+    return Column(
+      children: [
+        for (var i = 0; i < steps.length; i++)
+          _TimelineRow(
+            label: BookingStatusBadge.describe(steps[i]).$1,
+            at: events.where((e) => e.status == steps[i]).firstOrNull?.at,
+            done: reached.contains(steps[i]) || (currentIndex >= 0 && i < currentIndex),
+            current: steps[i] == currentStatus,
+            isLast: i == steps.length - 1,
+            tone: isDerailed && steps[i] == currentStatus ? t.danger : t.primary,
+          ),
+      ],
+    );
+  }
+}
+
+class _TimelineRow extends StatelessWidget {
+  const _TimelineRow({
+    required this.label,
+    required this.at,
+    required this.done,
+    required this.current,
+    required this.isLast,
+    required this.tone,
+  });
+
+  final String label;
+  final DateTime? at;
+  final bool done;
+  final bool current;
+  final bool isLast;
+  final Color tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final active = done || current;
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: active ? tone : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: active ? tone : t.borderStrong, width: 2),
+                ),
+                child: done
+                    ? Center(child: AppIcon(AppIcons.tick, size: 11, color: t.textOnPrimary, bold: true))
+                    : null,
+              ),
+              if (!isLast)
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    // The connector between two completed steps is filled; the
+                    // rest is muted, so progress reads at a glance.
+                    color: done ? tone : t.border,
+                    margin: const EdgeInsets.symmetric(vertical: 2),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: Space.x3),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : Space.x5),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: context.text.titleMedium?.copyWith(
+                      color: active ? t.textPrimary : t.textTertiary,
+                      fontWeight: current ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                  if (at != null)
+                    Text(
+                      _formatTime(at!),
+                      style: context.text.bodySmall?.copyWith(color: t.textTertiary),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatTime(DateTime at) {
+    final local = at.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${local.hour < 12 ? 'AM' : 'PM'}';
+  }
+}

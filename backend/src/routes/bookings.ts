@@ -6,6 +6,7 @@ import { bookingStatuses, createBooking, getBookingForUser, listBookingsForUser,
 import { recordAuditEvent } from "../services/auditService.js";
 import { requireRoles } from "../middleware/auth.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
+import { emitBookingStatusChange } from "../core/realtime.js";
 import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { generateOtp, sha256Hex } from "../core/otp.js";
@@ -228,7 +229,7 @@ bookingsRouter.patch("/:id/status", async (req, res, next) => {
     if (env.USE_MOCK_DB) {
       const booking = updateDemoBookingStatus(req.params.id, input.status);
       if (!booking) { res.status(404).json({ error: "Booking not found" }); return; }
-      req.app.get("io")?.emit("booking:status_changed", booking);
+      emitBookingStatusChange(String(req.params.id), booking);
       res.json({ booking });
       return;
     }
@@ -236,7 +237,7 @@ bookingsRouter.patch("/:id/status", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot transition booking from ${result.from} to ${input.status}` }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.status.changed", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { status: input.status } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -250,7 +251,7 @@ bookingsRouter.post("/:id/cancel", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot cancel booking from ${result.from}` }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.cancelled", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: input.reason } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -264,7 +265,7 @@ bookingsRouter.post("/:id/reschedule", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot reschedule booking from ${result.from}` }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.rescheduled", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { scheduledAt: input.scheduledAt } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -281,7 +282,7 @@ bookingsRouter.post("/:id/accept", async (req, res, next) => {
     // The worker responded in time; cancel the pending failover job.
     await clearAssignmentTimeout(String(req.params.id));
 
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.accepted", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -296,7 +297,7 @@ bookingsRouter.post("/:id/reject", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot reject booking from ${result.from}` }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.rejected", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: input.reason } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -310,7 +311,7 @@ bookingsRouter.post("/:id/start", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot start booking from ${result.from}` }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.started", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -324,7 +325,7 @@ bookingsRouter.post("/:id/complete", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot complete booking from ${result.from}` }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.completed", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -340,7 +341,7 @@ bookingsRouter.post("/:id/reassign", async (req, res, next) => {
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "worker_not_available") { res.status(409).json({ error: "Worker not available" }); return; }
-    req.app.get("io")?.emit("booking:status_changed", result.booking);
+    emitBookingStatusChange(String(req.params.id), result.booking);
     void recordAuditEvent({ actorId: req.user.id, action: "booking.reassigned", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { newWorkerId: input.workerId } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
@@ -540,7 +541,7 @@ bookingsRouter.post("/:id/verify-start", async (req, res, next) => {
     );
 
     const io = req.app.get("io");
-    io?.emit("booking:status_changed", { id: req.params.id, status: "started" });
+    emitBookingStatusChange(String(req.params.id), { id: req.params.id, status: "started" });
 
     void recordAuditEvent({
       actorId: req.user.id,
@@ -608,7 +609,7 @@ bookingsRouter.post("/:id/verify-complete", async (req, res, next) => {
     }
 
     const io = req.app.get("io");
-    io?.emit("booking:status_changed", { id: req.params.id, status: "completed" });
+    emitBookingStatusChange(String(req.params.id), { id: req.params.id, status: "completed" });
 
     void recordAuditEvent({
       actorId: req.user.id,
