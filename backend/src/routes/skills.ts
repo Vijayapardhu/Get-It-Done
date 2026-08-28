@@ -155,7 +155,15 @@ const workerSkillUpdateSchema = z.object({
 
 skillsRouter.get("/", async (req, res, next) => {
   try {
-    const result = await pool.query(`SELECT * FROM skills WHERE status = 'active' ORDER BY category, name`);
+    // Phase 21: the catalogue is `services`. `skills` was never seeded by any
+    // migration, so this endpoint returned an empty list in every deployment
+    // that has ever run. Shape is preserved -- id, name, category, description,
+    // requires_certification -- so an existing caller sees the same fields, now
+    // with rows in them.
+    const result = await pool.query(
+      `SELECT id, name, category, description, requires_certification, 'active' AS status
+         FROM services ORDER BY category, name`
+    );
     const categorized = result.rows.reduce((acc: Record<string, typeof result.rows>, skill) => {
       if (!acc[skill.category]) acc[skill.category] = [];
       acc[skill.category].push(skill);
@@ -201,7 +209,7 @@ skillsRouter.patch("/:id", requireAuth, requireRoles("system_admin", "federation
 skillsRouter.get("/workers/:workerId/skills", requireAuth, async (req, res, next) => {
   try {
     const workerId = String(req.params.workerId);
-    const result = await pool.query(`SELECT ws.*, s.name, s.category, s.requires_certification FROM worker_skills_new ws JOIN skills s ON s.id = ws.skill_id WHERE ws.worker_id = $1 ORDER BY s.category, s.name`, [workerId]);
+    const result = await pool.query(`SELECT ws.*, ws.service_id AS skill_id, s.name, s.category, s.requires_certification FROM worker_skills ws JOIN services s ON s.id = ws.service_id WHERE ws.worker_id = $1 ORDER BY s.category, s.name`, [workerId]);
     res.json({ skills: result.rows });
   } catch (error) { next(error); }
 });
@@ -210,11 +218,19 @@ skillsRouter.post("/workers/:workerId/skills", requireAuth, async (req, res, nex
   try {
     const workerId = String(req.params.workerId);
     const input = workerSkillSchema.parse(req.body);
-    const worker = await pool.query(`SELECT id FROM workers WHERE id = $1`, [workerId]);
+    // `workers.id` and `users.id` are different uuids, so the previous check --
+    // `worker.rows[0].id === req.user!.id` -- was never true and a worker could
+    // not manage their own skills through this route at all. Compare the
+    // worker's OWNER to the caller.
+    const worker = await pool.query(`SELECT id, user_id FROM workers WHERE id = $1`, [workerId]);
     if (!worker.rows[0]) { res.status(404).json({ error: "Worker not found" }); return; }
-    const canManage = req.user!.role === "worker" && worker.rows[0].id === req.user!.id || ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
+    const canManage =
+      (req.user!.role === "worker" && worker.rows[0].user_id === req.user!.id) ||
+      ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
     if (!canManage) { res.status(403).json({ error: "Cannot manage skills for this worker" }); return; }
-    const result = await pool.query(`INSERT INTO worker_skills_new (worker_id, skill_id, level, years_experience) VALUES ($1, $2, $3, $4) ON CONFLICT (worker_id, skill_id) DO UPDATE SET level = EXCLUDED.level, years_experience = EXCLUDED.years_experience RETURNING *`, [workerId, input.skillId, input.level, input.yearsExperience]);
+    // `skillId` in the request body and the URL is a services(id) since phase
+    // 21. The name is kept so existing callers do not break.
+    const result = await pool.query(`INSERT INTO worker_skills (worker_id, service_id, level, years_experience) VALUES ($1, $2, $3, $4) ON CONFLICT (worker_id, service_id) DO UPDATE SET level = EXCLUDED.level, years_experience = EXCLUDED.years_experience RETURNING *, service_id AS skill_id`, [workerId, input.skillId, input.level, input.yearsExperience]);
     await recordAuditEvent({ actorId: req.user!.id, action: "worker_skill.added", resourceType: "worker_skill", resourceId: workerId, requestId: req.header("x-request-id") ?? undefined, metadata: { skillId: input.skillId } }).catch(() => undefined);
     res.status(201).json({ skill: result.rows[0] });
   } catch (error) { next(error); }
@@ -225,9 +241,15 @@ skillsRouter.patch("/workers/:workerId/skills/:skillId", requireAuth, async (req
     const workerId = String(req.params.workerId);
     const skillId = String(req.params.skillId);
     const input = workerSkillUpdateSchema.parse(req.body);
-    const worker = await pool.query(`SELECT id FROM workers WHERE id = $1`, [workerId]);
+    // `workers.id` and `users.id` are different uuids, so the previous check --
+    // `worker.rows[0].id === req.user!.id` -- was never true and a worker could
+    // not manage their own skills through this route at all. Compare the
+    // worker's OWNER to the caller.
+    const worker = await pool.query(`SELECT id, user_id FROM workers WHERE id = $1`, [workerId]);
     if (!worker.rows[0]) { res.status(404).json({ error: "Worker not found" }); return; }
-    const canManage = req.user!.role === "worker" && worker.rows[0].id === req.user!.id || ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
+    const canManage =
+      (req.user!.role === "worker" && worker.rows[0].user_id === req.user!.id) ||
+      ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
     if (!canManage) { res.status(403).json({ error: "Cannot manage skills for this worker" }); return; }
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -237,7 +259,7 @@ skillsRouter.patch("/workers/:workerId/skills/:skillId", requireAuth, async (req
     }
     if (fields.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
     values.push(workerId, skillId);
-    const result = await pool.query(`UPDATE worker_skills_new SET ${fields.join(", ")} WHERE worker_id = $${index++} AND skill_id = $${index} RETURNING *`, values);
+    const result = await pool.query(`UPDATE worker_skills SET ${fields.join(", ")} WHERE worker_id = $${index++} AND service_id = $${index} RETURNING *, service_id AS skill_id`, values);
     if (!result.rows[0]) { res.status(404).json({ error: "Worker skill not found" }); return; }
     await recordAuditEvent({ actorId: req.user!.id, action: "worker_skill.updated", resourceType: "worker_skill", resourceId: workerId, requestId: req.header("x-request-id") ?? undefined, metadata: { skillId, fields: Object.keys(input) } }).catch(() => undefined);
     res.json({ skill: result.rows[0] });
@@ -248,11 +270,17 @@ skillsRouter.delete("/workers/:workerId/skills/:skillId", requireAuth, async (re
   try {
     const workerId = String(req.params.workerId);
     const skillId = String(req.params.skillId);
-    const worker = await pool.query(`SELECT id FROM workers WHERE id = $1`, [workerId]);
+    // `workers.id` and `users.id` are different uuids, so the previous check --
+    // `worker.rows[0].id === req.user!.id` -- was never true and a worker could
+    // not manage their own skills through this route at all. Compare the
+    // worker's OWNER to the caller.
+    const worker = await pool.query(`SELECT id, user_id FROM workers WHERE id = $1`, [workerId]);
     if (!worker.rows[0]) { res.status(404).json({ error: "Worker not found" }); return; }
-    const canManage = req.user!.role === "worker" && worker.rows[0].id === req.user!.id || ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
+    const canManage =
+      (req.user!.role === "worker" && worker.rows[0].user_id === req.user!.id) ||
+      ["system_admin", "federation_admin", "society_admin"].includes(req.user!.role);
     if (!canManage) { res.status(403).json({ error: "Cannot manage skills for this worker" }); return; }
-    await pool.query(`DELETE FROM worker_skills_new WHERE worker_id = $1 AND skill_id = $2`, [workerId, skillId]);
+    await pool.query(`DELETE FROM worker_skills WHERE worker_id = $1 AND service_id = $2`, [workerId, skillId]);
     await recordAuditEvent({ actorId: req.user!.id, action: "worker_skill.removed", resourceType: "worker_skill", resourceId: workerId, requestId: req.header("x-request-id") ?? undefined, metadata: { skillId } }).catch(() => undefined);
     res.status(204).send();
   } catch (error) { next(error); }
@@ -263,10 +291,10 @@ skillsRouter.post("/workers/:workerId/skills/:skillId/verify", requireAuth, requ
     const workerId = String(req.params.workerId);
     const skillId = String(req.params.skillId);
     const input = z.object({ level: z.enum(["beginner", "intermediate", "expert", "master"]).optional(), verified: z.boolean().default(true) }).parse(req.body);
-    const current = await pool.query(`SELECT * FROM worker_skills_new WHERE worker_id = $1 AND skill_id = $2`, [workerId, skillId]);
+    const current = await pool.query(`SELECT * FROM worker_skills WHERE worker_id = $1 AND service_id = $2`, [workerId, skillId]);
     if (!current.rows[0]) { res.status(404).json({ error: "Worker skill not found" }); return; }
-    const result = await pool.query(`UPDATE worker_skills_new SET verified = $1, verified_at = CASE WHEN $1 THEN now() ELSE null END, verified_by = CASE WHEN $1 THEN $3 ELSE null END, level = COALESCE($2, level) WHERE worker_id = $3 AND skill_id = $4 RETURNING *`, [input.verified, input.level ?? null, req.user!.id, workerId, skillId]);
-    await pool.query(`INSERT INTO skill_verifications (worker_id, skill_id, actor_id, from_level, to_level, from_verified, to_verified, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [workerId, skillId, req.user!.id, current.rows[0].level, result.rows[0].level, current.rows[0].verified, result.rows[0].verified, `Verified by admin`]);
+    const result = await pool.query(`UPDATE worker_skills SET verified = $1, verified_at = CASE WHEN $1 THEN now() ELSE null END, verified_by = CASE WHEN $1 THEN $3 ELSE null END, level = COALESCE($2, level) WHERE worker_id = $3 AND service_id = $4 RETURNING *, service_id AS skill_id`, [input.verified, input.level ?? null, req.user!.id, workerId, skillId]);
+    await pool.query(`INSERT INTO skill_verifications (worker_id, service_id, actor_id, from_level, to_level, from_verified, to_verified, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [workerId, skillId, req.user!.id, current.rows[0].level, result.rows[0].level, current.rows[0].verified, result.rows[0].verified, `Verified by admin`]);
     await recordAuditEvent({ actorId: req.user!.id, action: "worker_skill.verified", resourceType: "worker_skill", resourceId: workerId, requestId: req.header("x-request-id") ?? undefined, metadata: { skillId, verified: input.verified } }).catch(() => undefined);
     res.json({ skill: result.rows[0] });
   } catch (error) { next(error); }

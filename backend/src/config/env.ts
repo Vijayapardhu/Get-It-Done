@@ -22,8 +22,29 @@ const envSchema = z.object({
   STORAGE_DIR: z.string().default(path.resolve(process.cwd(), "storage")),
   DB_POOL_MAX: z.coerce.number().int().positive().max(100).default(20),
   DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
-  ACCESS_TOKEN_TTL: z.string().default("15m"),
-  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // ── Session length ────────────────────────────────────────────────────────
+  //
+  // A phone app is a personal device, and signing in again is not a security
+  // feature there — it is a wall between a customer with a burst pipe and the
+  // plumber. Nobody re-authenticates their food delivery app every month, and
+  // an app that asks gets deleted rather than obeyed.
+  //
+  // The two halves do different jobs and are tuned separately:
+  //
+  //   * The ACCESS token is the one presented on every request and is only a
+  //     bearer string; short-lived so a leaked one expires on its own. The app
+  //     refreshes it transparently on a 401, so its length is invisible.
+  //   * The REFRESH token is stored in the platform keystore, is single-use,
+  //     and ROTATES on every exchange (see rotateRefreshToken). A stolen one
+  //     therefore either fails because it was already spent or reveals itself
+  //     when the real device's next refresh is rejected — which is what makes
+  //     a long life here reasonable rather than reckless.
+  //
+  // A year, then, on a rotating single-use token. Signing out, "sign out of
+  // all devices", and a password reset all still revoke immediately, so the
+  // controls that actually matter are unaffected.
+  ACCESS_TOKEN_TTL: z.string().default("30m"),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(365),
   AI_SERVICE_URL: z.string().default("http://localhost:8001"),
   USE_MOCK_DB: booleanFromEnv.default(false),
   GOOGLE_CLIENT_ID: z.string().default(""),
@@ -31,6 +52,21 @@ const envSchema = z.object({
    *  are public identifiers, served to the app by GET /config/mobile. */
   GOOGLE_IOS_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
+
+  /**
+   * Server-side Google Maps key, for geocoding, distance and static map
+   * tiles.
+   *
+   * This was HARDCODED in googleMaps.ts and committed. Maps keys are billable
+   * and an exposed one is charged to whoever owns it, so that key must be
+   * treated as burned and rotated regardless of this change.
+   *
+   * It is a SERVER key: it is never returned to the app, and the static-map
+   * URL that embeds it is never handed out — see the map proxy. A client that
+   * needs to draw its own map needs a separate key restricted to the app's
+   * package name and signing certificate.
+   */
+  GOOGLE_MAPS_API_KEY: z.string().default(""),
   GOOGLE_CALLBACK_URL: z.string().default("http://localhost:4000/auth/google/callback"),
 
   LOG_LEVEL: z.string().optional(),
@@ -68,9 +104,15 @@ const envSchema = z.object({
   TAX_RATE: z.coerce.number().min(0).max(1).default(0.18),
 
   // ── SMS delivery ──────────────────────────────────────────────────────────
-  // OTP login is the only onboarding path, so without a working provider
-  // nobody can sign in. 'console' prints the code to the log for development
-  // and is refused in production below.
+  // Nothing sends an SMS today. Sign-in is email+password or Google, and the
+  // booking handshake codes are shown in both apps rather than texted, so no
+  // request path reaches a provider.
+  //
+  // The settings survive because the provider adapter does: notifying a worker
+  // who has no data connection is the obvious next use, and re-deriving the
+  // MSG91 DLT template plumbing from scratch would be the expensive part. They
+  // are no longer checked at boot — a deployment cannot be misconfigured for a
+  // feature it does not run.
   SMS_PROVIDER: z.enum(["msg91", "twilio", "console"]).default("console"),
 
   MSG91_AUTH_KEY: z.string().default(""),
@@ -83,32 +125,17 @@ const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().default(""),
   TWILIO_FROM_NUMBER: z.string().default(""),
 
-  /// Returns the OTP in the API response so a device without SMS can still log
-  /// in during development. Refused in production: it turns OTP into theatre.
-  OTP_ECHO_IN_RESPONSE: booleanFromEnv.default(false),
-
-  /// Fixes every OTP to 123456. Previously this was inferred from
-  /// NODE_ENV === "development", which DEFAULTS to development — so a deploy
-  /// that forgot to set NODE_ENV silently accepted 123456 for every account.
-  /// Now it is an explicit opt-in and cannot be set in production.
-  OTP_FIXED_CODE: booleanFromEnv.default(false),
-
-  /// Opens POST /auth/demo: one tap signs in to a shared, pre-populated
-  /// customer account with no credential at all. It exists so a demo build can
-  /// be handed to someone who has neither a Google account on the device nor a
-  /// phone that will receive our SMS.
-  ///
-  /// This is an unauthenticated session endpoint, which is to say a front door
-  /// with no lock. It is refused in production, and the app only offers the
-  /// button when GET /config/mobile says the server has it on — so the demo
-  /// path cannot be reached by a build merely because it was compiled with it.
-  DEMO_LOGIN_ENABLED: booleanFromEnv.default(false),
-
   // ── Google Sign-In ────────────────────────────────────────────────────────
   // A Google ID token's audience is the client id that requested it, and
   // Android, iOS and web each have their own. All acceptable ids are listed
   // here, comma separated, or verification rejects legitimate tokens.
   GOOGLE_CLIENT_IDS: z.string().default(""),
+
+  // ── Admin console ────────────────────────────────────────────────────────
+  /// TOTP issuer name shown in authenticator apps.
+  TOTP_ISSUER: z.string().default("GetItDone Admin"),
+  /// Base32 TOTP secret for admin accounts. Generate with: node -e "console.log(require('otplib').generateSecret())"
+  ADMIN_TOTP_SECRET: z.string().default(""),
 
   // ── Background jobs ───────────────────────────────────────────────────────
   JOBS_ENABLED: booleanFromEnv.default(true),
@@ -135,26 +162,11 @@ if (env.NODE_ENV === "production" && env.USE_MOCK_DB) {
   throw new Error("USE_MOCK_DB cannot be enabled in production");
 }
 
-// Each of these turns OTP login into theatre. Fail at boot rather than run a
-// production service where any six digits, or a fixed 123456, signs anyone in.
-if (env.NODE_ENV === "production") {
-  if (env.SMS_PROVIDER === "console") {
-    throw new Error(
-      "SMS_PROVIDER=console cannot be used in production: OTPs would only be logged, never sent. " +
-        "Configure msg91 or twilio."
-    );
-  }
-  if (env.DEMO_LOGIN_ENABLED) {
-    throw new Error(
-      "DEMO_LOGIN_ENABLED cannot be enabled in production: POST /auth/demo issues a session to anyone who asks"
-    );
-  }
-  if (env.OTP_ECHO_IN_RESPONSE) {
-    throw new Error("OTP_ECHO_IN_RESPONSE cannot be enabled in production");
-  }
-  if (env.OTP_FIXED_CODE) {
-    throw new Error("OTP_FIXED_CODE cannot be enabled in production");
-  }
+// An admin account without TOTP is a single password between the internet and
+// every booking, payout and customer address on the platform. Fail at boot
+// rather than run one.
+if (env.NODE_ENV === "production" && !env.ADMIN_TOTP_SECRET) {
+  throw new Error("ADMIN_TOTP_SECRET must be set in production: admin accounts require TOTP");
 }
 
 /// Client ids accepted when verifying a Google ID token. Falls back to the

@@ -1,3 +1,6 @@
+// MUST be first: Sentry patches http/pg at import time, so anything loaded
+// before init() is never instrumented. See src/instrument.ts.
+import "./instrument.js";
 import { env } from "./config/env.js";
 import { registerJobHandlers, seedRecurringJobs } from "./jobs/index.js";
 import { startJobRunner, stopJobRunner } from "./core/jobQueue.js";

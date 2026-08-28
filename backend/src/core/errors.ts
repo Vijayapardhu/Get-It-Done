@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { env } from "../config/env.js";
 import logger from "./logger.js";
+import * as Sentry from "@sentry/node";
+import { sentryEnabled } from "../instrument.js";
 
 export enum ErrorCode {
   VALIDATION_ERROR = "VALIDATION_ERROR",
@@ -164,6 +166,24 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
     const appErr = AppError.unauthorized(err.message, requestId);
     logger.warn({ err, path: req.path }, "Unauthorized");
     return res.status(appErr.statusCode).json(appErr.toJSON());
+  }
+
+  // Only the catch-all reaches Sentry. Everything above this line is an
+  // EXPECTED failure -- a validation error, a 404, an expired token -- and
+  // reporting those would bury the real crashes under thousands of events a day.
+  if (sentryEnabled) {
+    Sentry.withScope((scope) => {
+      scope.setTag("path", req.path);
+      scope.setTag("method", req.method);
+      // Correlates a Sentry event with the pino line and the audit row, all
+      // three of which already key on this header.
+      if (requestId) scope.setTag("request_id", requestId);
+      const userId = (req as Request & { user?: { id?: string; role?: string } }).user;
+      // Id and role only -- never name, email or phone. See instrument.ts.
+      if (userId?.id) scope.setUser({ id: userId.id });
+      if (userId?.role) scope.setTag("role", userId.role);
+      Sentry.captureException(err);
+    });
   }
 
   logger.error({ err, path: req.path, requestId }, "Unhandled error");

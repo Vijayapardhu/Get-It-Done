@@ -627,7 +627,7 @@ adminRouter.get("/verifications/:id", requireAuth, requireRoles("system_admin", 
     const result = await pool.query(`SELECT w.*, u.name, u.phone, u.email, c.name as cooperative_name FROM workers w JOIN users u ON u.id = w.user_id LEFT JOIN cooperatives c ON c.id = w.cooperative_id WHERE w.id = $1`, [workerId]);
     if (!result.rows[0]) { res.status(404).json({ error: "Worker not found" }); return; }
     const docs = await pool.query(`SELECT * FROM worker_documents WHERE worker_id = $1 ORDER BY created_at DESC`, [workerId]);
-    const skills = await pool.query(`SELECT ws.*, s.name, s.category FROM worker_skills_new ws JOIN skills s ON s.id = ws.skill_id WHERE ws.worker_id = $1`, [workerId]);
+    const skills = await pool.query(`SELECT ws.*, ws.service_id AS skill_id, s.name, s.category FROM worker_skills ws JOIN services s ON s.id = ws.service_id WHERE ws.worker_id = $1`, [workerId]);
     const events = await pool.query(`SELECT wve.*, u.name as actor_name FROM worker_verification_events wve JOIN users u ON u.id = wve.actor_id WHERE wve.worker_id = $1 ORDER BY wve.created_at DESC`, [workerId]);
     res.json({ worker: result.rows[0], documents: docs.rows, skills: skills.rows, events: events.rows });
   } catch (error) { next(error); }
@@ -696,6 +696,16 @@ const serviceCreateSchema = z.object({
   description: z.string().trim().max(500).optional(),
   basePrice: z.number().nonnegative(),
   emergencySupported: z.boolean().default(false),
+  pricePerMinute: z.number().nonnegative().optional(),
+  minMinutes: z.number().int().positive().optional(),
+  maxMinutes: z.number().int().positive().optional(),
+  defaultMinutes: z.number().int().positive().optional(),
+  listPrice: z.number().nonnegative().optional(),
+  heroImageUrl: z.string().url().optional(),
+  includes: z.array(z.string()).optional(),
+  excludes: z.array(z.string()).optional(),
+  steps: z.array(z.string()).optional(),
+  faqs: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
 });
 
 const serviceUpdateSchema = serviceCreateSchema.partial();
@@ -732,8 +742,30 @@ adminRouter.get("/services", requireAuth, requireRoles("system_admin", "federati
 adminRouter.post("/services", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const input = serviceCreateSchema.parse(req.body);
-    const result = await pool.query(`INSERT INTO services (id, name, category, description, base_price, emergency_supported) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [crypto.randomUUID(), input.name, input.category, input.description ?? null, input.basePrice, input.emergencySupported]);
+    const fields = ["id", "name", "category", "description", "base_price", "emergency_supported"];
+    const values = [
+      crypto.randomUUID(),
+      input.name,
+      input.category,
+      input.description ?? null,
+      input.basePrice,
+      input.emergencySupported,
+    ];
+    let index = values.length;
+
+    if (input.pricePerMinute !== undefined) { fields.push("price_per_minute"); values.push(input.pricePerMinute); index++; }
+    if (input.minMinutes !== undefined) { fields.push("min_minutes"); values.push(input.minMinutes); index++; }
+    if (input.maxMinutes !== undefined) { fields.push("max_minutes"); values.push(input.maxMinutes); index++; }
+    if (input.defaultMinutes !== undefined) { fields.push("default_minutes"); values.push(input.defaultMinutes); index++; }
+    if (input.listPrice !== undefined) { fields.push("list_price"); values.push(input.listPrice); index++; }
+    if (input.heroImageUrl !== undefined) { fields.push("hero_image_url"); values.push(input.heroImageUrl); index++; }
+    if (input.includes !== undefined) { fields.push("includes"); values.push(JSON.stringify(input.includes)); index++; }
+    if (input.excludes !== undefined) { fields.push("excludes"); values.push(JSON.stringify(input.excludes)); index++; }
+    if (input.steps !== undefined) { fields.push("steps"); values.push(JSON.stringify(input.steps)); index++; }
+    if (input.faqs !== undefined) { fields.push("faqs"); values.push(JSON.stringify(input.faqs)); index++; }
+
+    const placeholders = fields.map((_, i) => `$${i + 1}`).join(", ");
+    const result = await pool.query(`INSERT INTO services (${fields.join(", ")}) VALUES (${placeholders}) RETURNING *`, values);
     await recordAuditEvent({ actorId: req.user!.id, action: "service.created", resourceType: "service", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(201).json({ service: result.rows[0] });
   } catch (error) { next(error); }
@@ -753,9 +785,36 @@ adminRouter.patch("/services/:id", requireAuth, requireRoles("system_admin", "fe
     const fields: string[] = [];
     const values: unknown[] = [];
     let index = 1;
+
+    const columnMap: Record<string, string> = {
+      name: "name",
+      category: "category",
+      description: "description",
+      basePrice: "base_price",
+      emergencySupported: "emergency_supported",
+      pricePerMinute: "price_per_minute",
+      minMinutes: "min_minutes",
+      maxMinutes: "max_minutes",
+      defaultMinutes: "default_minutes",
+      listPrice: "list_price",
+      heroImageUrl: "hero_image_url",
+      includes: "includes",
+      excludes: "excludes",
+      steps: "steps",
+      faqs: "faqs",
+    };
+
     for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined) { fields.push(`${key} = $${index++}`); values.push(value); }
+      if (value !== undefined && columnMap[key]) {
+        fields.push(`${columnMap[key]} = $${index++}`);
+        if (key === "includes" || key === "excludes" || key === "steps" || key === "faqs") {
+          values.push(JSON.stringify(value));
+        } else {
+          values.push(value);
+        }
+      }
     }
+
     if (fields.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
     values.push(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const result = await pool.query(`UPDATE services SET ${fields.join(", ")}, updated_at = now() WHERE id = $${index} RETURNING *`, values);

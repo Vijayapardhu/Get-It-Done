@@ -82,9 +82,14 @@ let query = `
       st_distance(wl.location, st_setsrid(st_makepoint($1, $2), 4326)::geography) / 1000 as "distanceKm",
       coalesce(w.rating, 0) as rating,
       coalesce(today_jobs.jobs_today, 0) as "jobsToday",
+      -- Phase 21: reads worker_skills, keyed on services(id), which is the
+      -- table that PUT /workers/me/skills actually writes. It used to read
+      -- worker_skills_new joined to the skills table -- a taxonomy seeded by
+      -- nothing, so this was false for every worker who has ever existed and
+      -- the certification sub-score sat on its floor permanently.
       exists (
-        select 1 from worker_skills_new ws
-        join skills s on s.id = ws.skill_id
+        select 1 from worker_skills ws
+        join services s on s.id = ws.service_id
         where ws.worker_id = w.id
           and s.category = (select category from services where id = $3)
           and ws.verified = true
@@ -113,6 +118,21 @@ let query = `
         ($4 * 1000)::double precision
       )
       and st_distance(wl.location, st_setsrid(st_makepoint($1, $2), 4326)::geography) <= (wsa.radius_km * 1000)::double precision
+      -- Phase 21: services.requires_certification is finally read. Some work
+      -- must not be dispatched to an uncertified worker at any score -- gas,
+      -- anything electrical, childcare, eldercare. This is a hard filter, not a
+      -- weight, because "the best of the unqualified" is not an answer here.
+      -- Default false, so no existing service changes behaviour.
+      and (
+        not (select requires_certification from services where id = $3)
+        or exists (
+          select 1 from worker_skills ws
+          join services s on s.id = ws.service_id
+          where ws.worker_id = w.id
+            and s.category = (select category from services where id = $3)
+            and ws.verified = true
+        )
+      )
   `;
 
   const params_list: any[] = [params.longitude, params.latitude, params.serviceId, radiusKm];

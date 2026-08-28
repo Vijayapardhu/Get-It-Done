@@ -2,7 +2,6 @@ import cors from "cors";
 import path from "node:path";
 import express, { type Express } from "express";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import crypto from "node:crypto";
 import swaggerUi from "swagger-ui-express";
 import { fileURLToPath } from "node:url";
@@ -57,6 +56,7 @@ import { compatRewrite } from "./routes/compat.js";
 import { getLiveness, getReadiness } from "./core/health.js";
 import { getMetrics, getMetricsContentType } from "./core/metrics.js";
 import { errorHandler, notFoundHandler } from "./core/errors.js";
+import { authLimiter, strictLimiter, meteredLimiter, writeLimiter } from "./core/rateLimits.js";
 import logger from "./core/logger.js";
 import { httpRequestDuration, httpRequestTotal } from "./core/metrics.js";
 
@@ -112,13 +112,44 @@ export function createApp(): Express {
     next();
   });
 
-  // Blueprint-spelling aliases (e.g. /auth/otp/send -> /auth/request-otp).
+  // Blueprint-spelling aliases (e.g. /auth/password/reset-request).
   // Rewrites req.url before routing, so alias and canonical share one handler.
   app.use(compatRewrite);
 
-  app.use("/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false }));
+  // -- Rate limits -----------------------------------------------------------
+  // Declared in core/rateLimits.ts; mounted here, BEFORE the routers, so a
+  // limited request never reaches a handler. Ordering matters: the webhook
+  // limiter has to precede the "/payments/webhooks" mount below.
+  app.use("/auth", authLimiter);
 
-  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "GET IT DONE API Docs" }));
+  // Guessable or forceable work: the six-digit booking OTPs, and the webhook
+  // HMAC check an unauthenticated caller can make the server perform.
+  app.post("/bookings/:id/verify-start", strictLimiter);
+  app.post("/bookings/:id/verify-complete", strictLimiter);
+  app.post("/bookings/:id/otp", strictLimiter);
+  app.use("/payments/webhooks", strictLimiter);
+
+  // Billed per call -- Google Maps on the server key, and the AI sidecar.
+  app.use("/maps", meteredLimiter);
+  app.use("/ai", meteredLimiter);
+
+  // Durable writes. Idempotency makes a REPLAY cheap; a fresh key on every
+  // request is a new row, a new matching run and a new PostGIS scan.
+  app.post("/bookings", writeLimiter);
+  app.post("/orders", writeLimiter);
+  app.post("/emergency/bookings", writeLimiter);
+
+  app.use(
+    "/docs",
+    helmet({
+      contentSecurityPolicy: false,
+    }),
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, {
+      customCss: ".swagger-ui .topbar { display: none }",
+      customSiteTitle: "GET IT DONE API Docs",
+    })
+  );
   app.get("/docs.json", (_req, res) => res.json(swaggerSpec));
 
   app.get("/health/live", async (_req, res) => { res.json(await getLiveness()); });

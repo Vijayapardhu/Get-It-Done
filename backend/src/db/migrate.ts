@@ -40,6 +40,12 @@ export const MIGRATIONS = [
   "migration_phase15_service_detail.sql",  // includes/excludes/steps/faqs for the detail page
   "migration_phase16_orders.sql",          // service_orders: one checkout, several bookings
   "migration_phase17_time_pricing.sql",    // per-minute rates and duration bounds
+  "migration_phase18_admin_totp.sql",      // users.totp_secret for operator sign-in
+  "migration_phase19_catalogue_expansion.sql", // six categories, 21 services with time pricing
+  "migration_phase20_order_contact.sql", // who to call at the door, per order
+  "migration_phase21_skill_consolidation.sql", // one worker-skill table, keyed on services
+  "migration_phase22_totp_replay.sql",     // users.totp_last_step: each operator code single-use
+  "migration_phase23_booking_locality.sql", // grid_cell + locality: a real area key for forecasting
 ] as const;
 
 const CREATE_TRACKING_TABLE = `

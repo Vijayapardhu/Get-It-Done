@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
 import authService from "../services/authService.js";
-import { requireAuth } from "../middleware/auth.js";
-import { recordAuditEvent } from "../services/auditService.js";
-import { env, googleClientIds } from "../config/env.js";
-import { sendOtpSms, isSmsConfigured, toE164 } from "../services/smsService.js";
+import { requireAuth, requireRoles } from "../middleware/auth.js";
+import { googleClientIds } from "../config/env.js";
 import logger from "../core/logger.js";
+import * as totpService from "../services/totpService.js";
+import { recordAuditEvent } from "../services/auditService.js";
 
 /**
  * @openapi
@@ -20,33 +21,16 @@ import logger from "../core/logger.js";
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, email, password]
+ *             required: [name, email, phone, password]
  *             properties:
  *               name: { type: string, minLength: 2 }
  *               email: { type: string, format: email }
+ *               phone: { type: string, description: Both identifiers are required }
  *               password: { type: string, minLength: 8 }
  *               role: { type: string, enum: [customer, worker] }
  *     responses:
  *       201: { description: Account created }
  *       409: { description: Account already exists }
- * /auth/request-otp:
- *   post:
- *     summary: Request a phone OTP
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema: { type: object, required: [phone], properties: { phone: { type: string } } }
- *     responses:
- *       200: { description: OTP requested }
- * /auth/verify-otp:
- *   post:
- *     summary: Verify a phone OTP
- *     tags: [Authentication]
- *     responses:
- *       200: { description: Authenticated session }
- *       401: { description: Invalid or expired OTP }
  * /auth/login:
  *   post:
  *     summary: Sign in with email and password
@@ -159,19 +143,25 @@ const loginSchema = z
     path: ["identifier"],
   });
 
-/// Registration needs a name, a password and exactly one identifier.
-const registerSchema = z
-  .object({
-    name: z.string().trim().min(2).max(100),
-    email: z.string().email().max(320).optional(),
-    phone: phoneSchema.optional(),
-    password: passwordSchema,
-    role: roleSchema.default("customer"),
-  })
-  .refine((v) => Boolean(v.email) !== Boolean(v.phone), {
-    message: "Provide either an email address or a phone number, not both",
-    path: ["email"],
-  });
+/// Registration needs a name, a password, an email address AND a phone number.
+///
+/// Both, not either. This used to accept exactly one, which produced accounts
+/// the platform could not actually operate: a booking has to reach a worker's
+/// phone and a customer's inbox, a receipt has nowhere to go without an email,
+/// and a password reset is impossible for a phone-only account because the
+/// only reset channel is email. Half the support load was accounts missing the
+/// one field the situation needed.
+///
+/// Google sign-up is the deliberate exception — it creates an email-only
+/// account, because Google does not hand over a phone number and blocking that
+/// path would be worse than a profile that is one field short.
+const registerSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  email: z.string().email().max(320),
+  phone: phoneSchema,
+  password: passwordSchema,
+  role: roleSchema.default("customer"),
+});
 
 const publicUser = (user: NonNullable<Awaited<ReturnType<typeof authService.findUserById>>>) => ({
   id: user.id,
@@ -203,83 +193,34 @@ authRouter.post("/register", async (req, res, next) => {
   try {
     const input = registerSchema.parse(req.body);
 
-    // Phone accounts store exactly what the client sent, so normalise here or
+    // Phones are stored exactly as they arrive, so normalise here or
     // "98765 43210" and "9876543210" become two different accounts.
-    const phone = input.phone?.replace(/[\s()-]/g, "");
+    const phone = input.phone.replace(/[\s()-]/g, "");
 
-    if (input.email && (await authService.findUserByEmail(input.email))) {
+    // Checked separately so the message names the field the user has to
+    // change. "An account already exists" against a two-identifier form leaves
+    // them guessing which half collided.
+    if (await authService.findUserByEmail(input.email)) {
       res.status(409).json({ error: "ACCOUNT_EXISTS", message: "An account with that email already exists." });
       return;
     }
-    if (phone && (await authService.findUserByPhone(phone))) {
+    if (await authService.findUserByPhone(phone)) {
       res.status(409).json({ error: "ACCOUNT_EXISTS", message: "An account with that phone number already exists." });
       return;
     }
 
-    const user = input.email
-      ? await authService.createUserFromEmail(input.name, input.email, input.password, input.role)
-      : await authService.createUserFromPhone(phone!, input.name, input.role, input.password);
+    const user = await authService.createUser({
+      name: input.name,
+      email: input.email,
+      phone,
+      password: input.password,
+      role: input.role,
+    });
 
     await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), {
-      method: input.email ? "register_email" : "register_phone",
+      method: "register",
     });
     res.status(201).json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
-  } catch (error) { next(error); }
-});
-
-authRouter.post("/request-otp", async (req, res, next) => {
-  try {
-    const { phone } = z.object({ phone: phoneSchema }).parse(req.body);
-
-    if (!isSmsConfigured()) {
-      logger.error({ provider: env.SMS_PROVIDER }, "SMS provider is not configured; cannot deliver OTP");
-      res.status(503).json({
-        error: "SMS_UNAVAILABLE",
-        message: "We cannot send verification codes right now. Please try again shortly.",
-      });
-      return;
-    }
-
-    const code = await authService.createOtpChallenge(phone, "login");
-    const delivery = await sendOtpSms(phone, code);
-
-    if (!delivery.delivered) {
-      // The challenge row is already written and this code is now the only
-      // valid one — createOtpChallenge consumes any outstanding challenge. A
-      // resend therefore issues a fresh code rather than retrying this one.
-      logger.error({ phone: toE164(phone), provider: delivery.provider, error: delivery.error }, "OTP delivery failed");
-      res.status(502).json({
-        error: "SMS_DELIVERY_FAILED",
-        message: "We could not send the code to that number. Check it and try again.",
-      });
-      return;
-    }
-
-    void recordAuditEvent({
-      action: "auth.otp.requested",
-      resourceType: "otp_challenge",
-      resourceId: toE164(phone),
-      requestId: req.header("x-request-id") ?? undefined,
-      metadata: { provider: delivery.provider },
-    }).catch(() => undefined);
-
-    res.json({
-      message: "OTP sent",
-      phone,
-      // Development only: env.ts refuses this flag in production.
-      ...(env.OTP_ECHO_IN_RESPONSE ? { devOtp: code } : {}),
-    });
-  } catch (error) { next(error); }
-});
-
-authRouter.post("/verify-otp", async (req, res, next) => {
-  try {
-    const input = z.object({ phone: phoneSchema, otp: z.string().regex(/^\d{6}$/), name: z.string().trim().min(2).max(100).optional(), role: roleSchema.default("customer") }).parse(req.body);
-    if (!(await authService.consumeOtp(input.phone, input.otp, "login"))) { res.status(401).json({ error: "Invalid or expired OTP" }); return; }
-    let user = await authService.findUserByPhone(input.phone);
-    if (!user) user = await authService.createUserFromPhone(input.phone, input.name ?? `User ${input.phone.slice(-4)}`, input.role);
-    await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), { method: "otp" });
-    res.json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
   } catch (error) { next(error); }
 });
 
@@ -347,54 +288,198 @@ authRouter.post("/login", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-/**
- * The demo account's phone number.
- *
- * Matches the seeded "Demo Customer" so a demo build lands on the account that
- * already has bookings, invoices and a chat thread against it — an empty
- * account demonstrates nothing. If the seed has not been run the account is
- * created on first use, so the endpoint never depends on seed order.
- */
-const DEMO_PHONE = "+919999990001";
+// --- Operator second factor -------------------------------------------------
+//
+// migration_phase18_admin_totp.sql added `users.totp_secret` and its header
+// claimed "POST /auth/admin/login already reads user.totpSecret". The column
+// and the SELECT in authService were real; the route was not, and no code was
+// ever verified anywhere. Everything below is that missing half.
 
 /**
  * @openapi
- * /auth/demo:
+ * /auth/admin/login:
  *   post:
- *     summary: Sign in to the shared demo account (non-production only)
+ *     summary: Operator sign-in with a second factor
  *     tags: [Authentication]
- *     description: >
- *       Issues a session with no credential. Available only while
- *       DEMO_LOGIN_ENABLED is set, which the config refuses in production.
- *       Responds 404 when disabled, so a probe cannot tell the route exists.
  *     responses:
- *       200: { description: Session issued }
- *       404: { description: Demo login is not enabled on this server }
+ *       200: { description: Signed in }
+ *       401: { description: Invalid credentials or code }
+ *       403: { description: Not an operator account, or no authenticator enrolled }
  */
-authRouter.post("/demo", async (req, res, next) => {
+authRouter.post("/admin/login", async (req, res, next) => {
   try {
-    // 404, not 403. A 403 confirms the route is there and the operator merely
-    // turned it off, which is a map of where to push on the next deployment.
-    if (!env.DEMO_LOGIN_ENABLED) {
-      res.status(404).json({ error: "Not found" });
+    const input = z
+      .object({
+        identifier: z.string().min(3),
+        password: z.string().min(1),
+        totp: z.string().regex(/^[0-9]{6}$/).optional(),
+      })
+      .parse(req.body);
+
+    const identifier = input.identifier.trim();
+    const user = await authService.findUserByIdentifier(identifier);
+
+    // Same single failure shape as /auth/login: distinguishing "no such
+    // account" from "wrong password" lets anyone enumerate operator accounts.
+    if (!user?.passwordHash || !(await authService.verifyPassword(input.password, user.passwordHash))) {
+      await authService.recordSecurityEvent(user?.id ?? null, "login_failed", req.ip, req.get("user-agent"), {
+        method: "admin_password",
+      });
+      res.status(401).json({ error: "Invalid credentials" });
       return;
     }
 
-    let user = await authService.findUserByPhone(DEMO_PHONE);
-    if (!user) {
-      user = await authService.createUserFromPhone(DEMO_PHONE, "Demo Customer", "customer");
-      logger.warn({ phone: DEMO_PHONE }, "Demo account did not exist and was created on first demo sign-in");
+    // Customers and workers have no console. Refusing here rather than issuing
+    // a token stops this becoming a second way in for everyone else.
+    const isOperator = totpService.requiresSecondFactor(user.role) || user.role === "support_staff";
+    if (!isOperator) {
+      res.status(403).json({ error: "Not an operator account" });
+      return;
     }
 
-    // Deliberately audited like any other sign-in. A shared account that
-    // several people use at once is exactly the one where you want a record of
-    // when and from where it was opened.
+    if (totpService.requiresSecondFactor(user.role)) {
+      if (!user.totpSecret) {
+        // Enrolment is a separate, authenticated step, so an operator who has
+        // never enrolled cannot reach the console at all. That is the safe
+        // default phase 18 describes, which is why this says what to do next
+        // rather than only refusing.
+        await authService.recordSecurityEvent(user.id, "login_failed", req.ip, req.get("user-agent"), {
+          method: "admin_password",
+          reason: "totp_not_enrolled",
+        });
+        res.status(403).json({
+          error: "This account has no authenticator enrolled. Ask a system administrator to enrol you.",
+          code: "TOTP_NOT_ENROLLED",
+        });
+        return;
+      }
+
+      if (!input.totp) {
+        res.status(401).json({ error: "Authenticator code required", code: "TOTP_REQUIRED" });
+        return;
+      }
+
+      const check = await totpService.verifyToken(user.id, user.totpSecret, input.totp);
+      if (!check.ok) {
+        await authService.recordSecurityEvent(user.id, "login_failed", req.ip, req.get("user-agent"), {
+          method: "admin_totp",
+          reason: check.reason,
+        });
+        res.status(401).json({ error: "Invalid authenticator code" });
+        return;
+      }
+    }
+
     await authService.updateLastLogin(user.id);
     await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), {
-      method: "demo",
+      method: totpService.requiresSecondFactor(user.role) ? "admin_password_totp" : "admin_password",
     });
-
     res.json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /auth/admin/totp/enrol:
+ *   post:
+ *     summary: Begin authenticator enrolment; returns a secret and QR code
+ *     tags: [Authentication]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Secret, otpauth URI and a QR data URL }
+ *       409: { description: Already enrolled }
+ */
+authRouter.post("/admin/totp/enrol", requireAuth, requireRoles("society_admin", "federation_admin", "system_admin"), async (req, res, next) => {
+  try {
+    // Re-enrolling would silently invalidate a working device. A lost phone
+    // goes through the reset route below, which is auditable.
+    if (await totpService.hasEnrolled(req.user!.id)) {
+      res.status(409).json({ error: "An authenticator is already enrolled. A system administrator must reset it first." });
+      return;
+    }
+
+    const account = await authService.findUserById(req.user!.id);
+    const challenge = await totpService.beginEnrolment(account?.email ?? account?.phone ?? req.user!.id);
+
+    // The secret is returned and NOT stored. It becomes real only when
+    // /confirm proves a device can produce a code from it -- see totpService.
+    res.json(challenge);
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /auth/admin/totp/confirm:
+ *   post:
+ *     summary: Confirm enrolment by proving the authenticator works
+ *     tags: [Authentication]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       204: { description: Enrolled }
+ *       400: { description: Code did not match the secret }
+ */
+authRouter.post("/admin/totp/confirm", requireAuth, requireRoles("society_admin", "federation_admin", "system_admin"), async (req, res, next) => {
+  try {
+    const input = z
+      .object({ secret: z.string().min(16).max(128), totp: z.string().regex(/^[0-9]{6}$/) })
+      .parse(req.body);
+
+    if (await totpService.hasEnrolled(req.user!.id)) {
+      res.status(409).json({ error: "An authenticator is already enrolled." });
+      return;
+    }
+
+    const ok = await totpService.confirmEnrolment(req.user!.id, input.secret, input.totp);
+    if (!ok) {
+      res.status(400).json({ error: "That code does not match. Check your authenticator and try again." });
+      return;
+    }
+
+    await authService.recordSecurityEvent(req.user!.id, "totp_enrolled", req.ip, req.get("user-agent"), {});
+    await recordAuditEvent({
+      actorId: req.user!.id,
+      action: "auth.totp_enrolled",
+      resourceType: "user",
+      resourceId: req.user!.id,
+      requestId: req.header("x-request-id") ?? undefined,
+    }).catch(() => undefined);
+
+    res.status(204).send();
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /auth/admin/totp/{userId}:
+ *   delete:
+ *     summary: Reset an operator's authenticator (lost device)
+ *     tags: [Authentication]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       204: { description: Reset; the operator must enrol again before signing in }
+ */
+authRouter.delete("/admin/totp/:userId", requireAuth, requireRoles("system_admin"), async (req, res, next) => {
+  try {
+    const userId = z.string().uuid().parse(req.params.userId);
+
+    // Never self-service. An account that can remove its own second factor by
+    // being signed in does not have one.
+    if (userId === req.user!.id) {
+      res.status(403).json({ error: "Another system administrator must reset your authenticator." });
+      return;
+    }
+
+    await totpService.resetEnrolment(userId);
+    await authService.recordSecurityEvent(userId, "totp_reset", req.ip, req.get("user-agent"), { by: req.user!.id });
+    await recordAuditEvent({
+      actorId: req.user!.id,
+      action: "auth.totp_reset",
+      resourceType: "user",
+      resourceId: userId,
+      requestId: req.header("x-request-id") ?? undefined,
+    }).catch(() => undefined);
+
+    res.status(204).send();
   } catch (error) { next(error); }
 });
 

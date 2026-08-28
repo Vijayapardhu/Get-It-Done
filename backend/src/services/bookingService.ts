@@ -172,6 +172,13 @@ export type CreateOrderInput = {
   addressId?: string | null;
   description?: string;
   scheduledAt?: string | null;
+
+  /// Who the worker should ask for and ring. Falls back to the account when
+  /// absent -- see migration_phase20_order_contact.sql for why this is not
+  /// simply read from the customer record at dispatch time.
+  contactName?: string | null;
+  contactPhone?: string | null;
+
   idempotencyKey?: string;
 };
 
@@ -206,10 +213,10 @@ export async function createOrder(input: CreateOrderInput) {
     }
 
     const order = await client.query(
-      `insert into service_orders (customer_id, mode, scheduled_at, address, address_id, location, notes)
-       values ($1, $2, $3, $4, $5, ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography, $8)
+      `insert into service_orders (customer_id, mode, scheduled_at, address, address_id, location, notes, contact_name, contact_phone)
+       values ($1, $2, $3, $4, $5, ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography, $8, $9, $10)
        returning id, created_at as "createdAt"`,
-      [input.customerId, input.mode, input.scheduledAt ?? null, input.address, input.addressId ?? null, input.longitude, input.latitude, input.description ?? null]
+      [input.customerId, input.mode, input.scheduledAt ?? null, input.address, input.addressId ?? null, input.longitude, input.latitude, input.description ?? null, input.contactName ?? null, input.contactPhone ?? null]
     );
     const orderId: string = order.rows[0].id;
 

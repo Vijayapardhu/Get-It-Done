@@ -11,6 +11,16 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 const publicUserColumns = "id, name, phone, email, role, language, status, display_name, date_of_birth, gender, preferred_language, timezone, last_login_at, avatar_url, oauth_provider, oauth_subject";
 
+/// A user plus the two secrets sign-in needs and nothing else may see.
+///
+/// Kept separate from [User] so that returning one of these from a route is a
+/// visible mistake rather than an accident: [User] is what gets serialised.
+export type AuthenticatableUser = User & {
+  passwordHash?: string;
+  /// Base32 TOTP shared secret. Undefined until the operator has enrolled.
+  totpSecret?: string;
+};
+
 export interface User {
   id: string;
   name: string;
@@ -72,15 +82,19 @@ export class AuthService {
     return result.rows[0] ? this.toUser(result.rows[0]) : null;
   }
 
-  async findUserByPhone(phone: string): Promise<(User & { passwordHash?: string }) | null> {
+  async findUserByPhone(phone: string): Promise<AuthenticatableUser | null> {
     // Returns the hash like findUserByEmail does, so phone+password sign-in
     // works the same way. Callers that do not need it simply ignore it.
     const result = await pool.query(
-      `SELECT ${publicUserColumns}, password_hash FROM users WHERE phone = $1`,
+      `SELECT ${publicUserColumns}, password_hash, totp_secret FROM users WHERE phone = $1`,
       [phone]
     );
     if (!result.rows[0]) return null;
-    return { ...this.toUser(result.rows[0]), passwordHash: result.rows[0].password_hash ?? undefined };
+    return {
+      ...this.toUser(result.rows[0]),
+      passwordHash: result.rows[0].password_hash ?? undefined,
+      totpSecret: result.rows[0].totp_secret ?? undefined,
+    };
   }
 
   /**
@@ -90,7 +104,7 @@ export class AuthService {
    * what they signed up with and should not have to tell us which kind of thing
    * it is. An '@' is the only signal needed.
    */
-  async findUserByIdentifier(identifier: string): Promise<(User & { passwordHash?: string }) | null> {
+  async findUserByIdentifier(identifier: string): Promise<AuthenticatableUser | null> {
     const value = identifier.trim();
     if (value.includes("@")) return this.findUserByEmail(value);
 
@@ -100,23 +114,55 @@ export class AuthService {
     return this.findUserByPhone(digits);
   }
 
-  async findUserByEmail(email: string): Promise<(User & { passwordHash?: string }) | null> {
-    const result = await pool.query(`SELECT ${publicUserColumns}, password_hash FROM users WHERE lower(email) = lower($1)`, [email]);
+  async findUserByEmail(email: string): Promise<AuthenticatableUser | null> {
+    const result = await pool.query(
+      `SELECT ${publicUserColumns}, password_hash, totp_secret FROM users WHERE lower(email) = lower($1)`,
+      [email]
+    );
     if (!result.rows[0]) return null;
-    return { ...this.toUser(result.rows[0]), passwordHash: result.rows[0].password_hash ?? undefined };
+    return {
+      ...this.toUser(result.rows[0]),
+      passwordHash: result.rows[0].password_hash ?? undefined,
+      totpSecret: result.rows[0].totp_secret ?? undefined,
+    };
   }
 
   /**
    * Create a phone-first account.
    *
-   * [password] is optional because OTP sign-up has no password to set; passing
-   * one enables phone+password sign-in for that account afterwards.
+   * [password] is optional because an account seeded from a cooperative's
+   * worker roster has no password yet; passing one enables phone+password
+   * sign-in for that account afterwards.
    */
   async createUserFromPhone(phone: string, name: string, role = "customer", password?: string): Promise<User> {
     const passwordHash = password ? await this.hashPassword(password) : null;
     const result = await pool.query(
       `INSERT INTO users (id, name, phone, role, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING ${publicUserColumns}`,
       [uuidv4(), name, phone, role, passwordHash]
+    );
+    return this.toUser(result.rows[0]);
+  }
+
+  /**
+   * Create an account that has both identifiers.
+   *
+   * The registration form's path. [createUserFromEmail] stays for Google
+   * sign-up, which never learns a phone number, and [createUserFromPhone] for
+   * accounts seeded from the worker roster — neither is a form the public
+   * fills in, which is why only this one demands the full set.
+   */
+  async createUser(input: {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+    role?: string;
+  }): Promise<User> {
+    const passwordHash = await this.hashPassword(input.password);
+    const result = await pool.query(
+      `INSERT INTO users (id, name, email, phone, password_hash, role)
+       VALUES ($1, $2, lower($3), $4, $5, $6) RETURNING ${publicUserColumns}`,
+      [uuidv4(), input.name, input.email, input.phone, passwordHash, input.role ?? "customer"]
     );
     return this.toUser(result.rows[0]);
   }
@@ -159,32 +205,6 @@ export class AuthService {
 
   async revokeRefreshToken(token: string): Promise<void> {
     await pool.query("UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL", [hashToken(token)]);
-  }
-
-  async createOtpChallenge(phone: string, purpose: string): Promise<string> {
-    // OTP_FIXED_CODE is an explicit opt-in. This used to key off
-    // `NODE_ENV === "development"`, and NODE_ENV DEFAULTS to development — so a
-    // deploy that forgot to set it accepted 123456 for every account on the
-    // platform. env.ts now refuses the flag in production.
-    const code = env.OTP_FIXED_CODE
-      ? "123456"
-      : String(crypto.randomInt(100000, 1000000));
-    await pool.query(`UPDATE otp_challenges SET consumed_at = now() WHERE phone = $1 AND purpose = $2 AND consumed_at IS NULL`, [phone, purpose]);
-    await pool.query(`INSERT INTO otp_challenges (id, phone, purpose, code_hash, expires_at) VALUES ($1, $2, $3, $4, now() + interval '5 minutes')`, [uuidv4(), phone, purpose, hashToken(code)]);
-    return code;
-  }
-
-  async consumeOtp(phone: string, code: string, purpose: string): Promise<boolean> {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const challenge = await client.query(`SELECT id, code_hash FROM otp_challenges WHERE phone = $1 AND purpose = $2 AND consumed_at IS NULL AND expires_at > now() AND attempts < 5 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [phone, purpose]);
-      if (!challenge.rows[0]) { await client.query("ROLLBACK"); return false; }
-      const valid = challenge.rows[0].code_hash === hashToken(code);
-      await client.query(`UPDATE otp_challenges SET attempts = attempts + 1, consumed_at = CASE WHEN $2 THEN now() ELSE consumed_at END WHERE id = $1`, [challenge.rows[0].id, valid]);
-      await client.query("COMMIT");
-      return valid;
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
   async requestPasswordReset(email: string): Promise<void> {

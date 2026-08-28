@@ -12,6 +12,7 @@ export default {
   extensionsToTreatAsEsm: [".ts"],
   moduleFileExtensions: ["ts", "js", "json"],
   moduleNameMapper: {
+    // Our own ESM-style ".js" specifiers resolve to ".ts" sources under ts-jest.
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   testMatch: ["**/tests/**/*.test.ts"],

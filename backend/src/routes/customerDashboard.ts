@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod";
 import { requireAuth, requireRoles } from "../middleware/auth.js";
 import { pool } from "../db/pool.js";
+import { getStaticMapUrl, isMapsConfigured, calculateDistance } from "../services/googleMaps.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 
@@ -148,18 +149,39 @@ customerDashboardRouter.get("/bookings/:id/track", requireAuth, async (req, res,
 
     const b = booking.rows[0];
     
-    // Calculate ETA if worker has location
+    // How far a worker can plausibly be from a job they are assigned to.
+    //
+    // Beyond this the position is not a position, it is bad data: a device
+    // reporting a default, a boundary value from a test, a fix taken before
+    // GPS locked. The coordinates (-180, -90) are LEGAL and pass every bounds
+    // check, and this endpoint dutifully turned one into "11,827 km away,
+    // arriving in 23,655 minutes" — an ETA of sixteen days presented to a
+    // customer as fact, which is worse than admitting we do not know.
+    const PLAUSIBLE_RADIUS_KM = 150;
+
     let etaMinutes: number | null = null;
     let distanceKm: number | null = null;
-    if (b.worker_lat != null && b.worker_lng != null) {
+    let locationIsPlausible = b.worker_lat != null && b.worker_lng != null;
+
+    if (locationIsPlausible) {
       const distResult = await pool.query(
         `SELECT ST_Distance(b.location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) / 1000 as distance_km
          FROM bookings b WHERE b.id = $3`,
         [b.worker_lat, b.worker_lng, req.params.id]
       );
-      distanceKm = distResult.rows[0]?.distance_km != null ? Number(distResult.rows[0].distance_km) : null;
-      // Rough ETA: assume 30 km/h average speed in city
-      if (distanceKm != null) etaMinutes = Math.round((distanceKm / 30) * 60);
+      const measured = distResult.rows[0]?.distance_km != null
+        ? Number(distResult.rows[0].distance_km)
+        : null;
+
+      if (measured != null && measured <= PLAUSIBLE_RADIUS_KM) {
+        distanceKm = measured;
+        // Rough ETA: assume 30 km/h average speed in city
+        etaMinutes = Math.round((measured / 30) * 60);
+      } else {
+        // Withhold the whole thing, not just the ETA. A map pin in the wrong
+        // hemisphere is as misleading as the number derived from it.
+        locationIsPlausible = false;
+      }
     }
 
     // Get status timeline
@@ -188,11 +210,13 @@ customerDashboardRouter.get("/bookings/:id/track", requireAuth, async (req, res,
         name: b.worker_name,
         phone: b.worker_phone,
         avatarUrl: b.worker_avatar,
-        location: b.worker_lat != null && b.worker_lng != null ? {
+        location: locationIsPlausible ? {
           type: "Point",
           coordinates: [b.worker_lng, b.worker_lat]
         } : null,
-        locationUpdatedAt: b.location_updated_at,
+        // Null alongside a null location, so a client cannot show "updated 2
+        // minutes ago" over a position we have just refused to stand behind.
+        locationUpdatedAt: locationIsPlausible ? b.location_updated_at : null,
       } : null,
       tracking: {
         distanceKm,
@@ -470,3 +494,75 @@ customerDashboardRouter.get("/bookings/history", requireAuth, async (req, res, n
 });
 
 export default customerDashboardRouter;
+
+/**
+ * @openapi
+ * /customer/bookings/{id}/map:
+ *   get:
+ *     summary: A map of the worker's position and the job address
+ *     tags: [Bookings]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: PNG image }
+ *       404: { description: Booking not found, or no plausible worker position }
+ *       503: { description: Maps is not configured on this deployment }
+ */
+customerDashboardRouter.get("/bookings/:id/map", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    if (!isMapsConfigured()) {
+      // Said plainly rather than served as a broken image. The tracking screen
+      // then shows the address and the ETA it already has, which is most of
+      // what the map was for.
+      res.status(503).json({ error: "MAPS_NOT_CONFIGURED" });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT ST_Y(b.location::geometry) AS job_lat,
+              ST_X(b.location::geometry) AS job_lng,
+              ST_Y(wl.location::geometry) AS worker_lat,
+              ST_X(wl.location::geometry) AS worker_lng
+         FROM bookings b
+         LEFT JOIN workers w ON w.id = b.worker_id
+         LEFT JOIN worker_locations wl ON wl.worker_id = w.id
+        WHERE b.id = $1 AND b.customer_id = $2`,
+      [req.params.id, req.user.id]
+    );
+
+    const row = result.rows[0];
+    if (!row) { res.status(404).json({ error: "Booking not found" }); return; }
+
+    const job = { lat: Number(row.job_lat), lng: Number(row.job_lng) };
+
+    // Same plausibility rule as the tracking payload: a pin in the wrong
+    // hemisphere is worse than no pin.
+    const hasWorker =
+      row.worker_lat != null &&
+      row.worker_lng != null &&
+      calculateDistance(job.lat, job.lng, Number(row.worker_lat), Number(row.worker_lng)) <= 150;
+
+    const markers = [
+      { lat: job.lat, lng: job.lng, label: "You", color: "blue" },
+      ...(hasWorker
+        ? [{ lat: Number(row.worker_lat), lng: Number(row.worker_lng), label: "Worker", color: "green" }]
+        : [])
+    ];
+
+    const url = getStaticMapUrl(job, hasWorker ? 13 : 15, "640x360", markers);
+    const upstream = await fetch(url);
+
+    if (!upstream.ok || !upstream.body) {
+      res.status(502).json({ error: "MAP_UNAVAILABLE" });
+      return;
+    }
+
+    // A worker moves, so this is cached briefly and privately -- never by a
+    // shared cache, since the image discloses where a customer lives.
+    res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "image/png");
+    res.setHeader("Cache-Control", "private, max-age=20");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) { next(error); }
+});

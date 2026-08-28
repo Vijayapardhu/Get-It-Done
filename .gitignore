@@ -7,8 +7,19 @@ __pycache__/
 *.pyc
 coverage/
 .DS_Store
+*.pem
 
 
 # Generated API test output
 api-test-results.json
 **/api-test-results.json
+
+# Golden-test diff artifacts. Regenerated on every failing run; the MASTERS in
+# mobile/test/golden/ are tracked, the diffs are not.
+**/test/golden/failures/
+
+# Generated localisations (see mobile/l10n.yaml). Derived output -- a stale
+# checked-in copy is only a merge conflict waiting to happen.
+**/.dart_tool/
+mobile/lib/l10n/app_localizations*.dart
+mobile/lib/l10n/untranslated.json

@@ -5,8 +5,8 @@ import type { NextFunction, Request, Response } from "express";
  *
  * SYSTEM_INTEGRATION_AND_ARCHITECTURE_BLUEPRINT.md documents a set of routes as
  * "Implemented" that the code actually serves under different spellings
- * (`/auth/otp/send` vs `/auth/request-otp`, `/emergency/request` vs
- * `/emergency/bookings`, and so on). A client written against the specification
+ * (`/emergency/request` vs `/emergency/bookings`, and so on). A client written
+ * against the specification
  * got a 404 from every one of them.
  *
  * This runs BEFORE the routers and rewrites `req.url` in place, so the alias and
@@ -20,8 +20,9 @@ import type { NextFunction, Request, Response } from "express";
 /** Exact-match aliases: documented path -> path actually served. */
 const EXACT_ALIASES: Record<string, string> = {
   // ── Module 1: Authentication ──
-  "/auth/otp/send": "/auth/request-otp",
-  "/auth/otp/verify": "/auth/verify-otp",
+  // The blueprint's /auth/otp/* pair is deliberately absent: SMS sign-in was
+  // removed, so there is no served path to alias them onto. They 404 like any
+  // other unknown route rather than aliasing onto something that would answer.
   "/auth/password/reset-request": "/auth/forgot-password",
   "/auth/password/reset": "/auth/reset-password",
 

@@ -301,7 +301,7 @@ serviceDiscoveryRouter.get("/:id/workers", requireAuth, async (req, res, next) =
               END as distance_km
        FROM workers w
        JOIN users u ON u.id = w.user_id
-       JOIN worker_skills_new ws ON ws.worker_id = w.id
+       JOIN worker_skills ws ON ws.worker_id = w.id
        LEFT JOIN worker_locations wl ON wl.worker_id = w.id
        WHERE ${whereClause}
        ORDER BY w.rating DESC NULLS LAST, distance_km ASC NULLS LAST

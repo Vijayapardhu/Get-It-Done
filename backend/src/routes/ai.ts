@@ -93,16 +93,92 @@ export const aiRouter = Router();
 // "invalid input syntax for type uuid" and surface as a 500.
 aiRouter.param("id", rejectNonUuidParam);
 
+/**
+ * Demand, grouped by an area that actually repeats.
+ *
+ * This used to `GROUP BY b.address` -- the free-text address the customer
+ * typed. Every booking was therefore its own "area", the group-by returned one
+ * row per booking, and the area dimension carried no signal. Downstream it was
+ * worse: the sidecar filtered incoming history against its own hardcoded area
+ * names, street addresses matched none of them, the history filtered to empty,
+ * and the model was never fitted at all.
+ *
+ * `grid_cell` is a generated ~2km square derived from the booking's own
+ * geography (migration_phase23), so it exists for every row including all
+ * history, and neighbouring bookings land in the same bucket. `locality` is the
+ * human name when reverse geocoding has supplied one -- shown to operators,
+ * never grouped on, because it is nullable forever.
+ */
 async function loadDemandHistory() {
   const result = await pool.query(
-    `SELECT b.created_at::date as date, b.address as area, s.name as service, count(*)::int as requests
+    `SELECT b.created_at::date          AS date,
+            b.grid_cell                 AS area,
+            max(b.locality)             AS locality,
+            s.name                      AS service,
+            count(*)::int               AS requests
      FROM bookings b
      JOIN services s ON s.id = b.service_id
      WHERE b.created_at >= current_date - interval '90 days'
-     GROUP BY b.created_at::date, b.address, s.name
+       AND b.grid_cell IS NOT NULL
+     GROUP BY b.created_at::date, b.grid_cell, s.name
      ORDER BY date`
   );
-  return result.rows.map((row) => ({ date: row.date, area: row.area, service: row.service, requests: row.requests }));
+  return result.rows.map((row) => ({
+    date: row.date,
+    area: row.area,
+    locality: row.locality ?? null,
+    service: row.service,
+    requests: row.requests,
+  }));
+}
+
+/**
+ * How many workers could actually take a job in each area, per service.
+ *
+ * The sidecar used to compute this as `available = 12 + area_index +
+ * service_index` -- a literal, in the file, that never touched the database.
+ * `predicted_shortage` is `expected - available`, so that one line made the
+ * entire output of the module, the allocation recommendations built on it, and
+ * anything downstream that scores on shortage, fiction.
+ *
+ * Counted the way matching actually selects: verified, active, sharing
+ * location, with a service area for the service's category that reaches the
+ * cell. The cell centre is reconstructed from the key so a worker is only
+ * counted for areas they would really be offered.
+ */
+async function loadWorkerSupply() {
+  const result = await pool.query(
+    `WITH cells AS (
+       SELECT DISTINCT grid_cell,
+              split_part(grid_cell, ',', 1)::double precision AS lat,
+              split_part(grid_cell, ',', 2)::double precision AS lng
+         FROM bookings
+        WHERE grid_cell IS NOT NULL
+          AND created_at >= current_date - interval '90 days'
+     )
+     SELECT c.grid_cell AS area,
+            s.name      AS service,
+            count(DISTINCT w.id)::int AS available
+       FROM cells c
+       CROSS JOIN services s
+       LEFT JOIN worker_service_areas wsa
+              ON wsa.service_id IN (SELECT id FROM services WHERE category = s.category)
+       LEFT JOIN workers w
+              ON w.id = wsa.worker_id
+             AND w.verification_status = 'verified'
+             AND w.location_sharing_enabled = true
+       LEFT JOIN users u ON u.id = w.user_id AND u.status = 'active'
+       LEFT JOIN worker_locations wl
+              ON wl.worker_id = w.id
+             AND ST_DWithin(
+                   wl.location,
+                   ST_SetSRID(ST_MakePoint(c.lng, c.lat), 4326)::geography,
+                   (wsa.radius_km * 1000)::double precision
+                 )
+      WHERE u.id IS NOT NULL AND wl.worker_id IS NOT NULL
+      GROUP BY c.grid_cell, s.name`
+  );
+  return result.rows.map((row) => ({ area: row.area, service: row.service, available: row.available }));
 }
 
 interface AiAllocation {
@@ -276,10 +352,12 @@ async function handleForecast(req: Request, res: Response, next: NextFunction): 
     // Blueprint asks for a 7-14 day horizon; this used to always request 1 day.
     const days = Math.min(Math.max(parseInt(String(source.days ?? 7), 10) || 7, 1), 14);
 
-    const history = await loadDemandHistory();
+    const [history, supply] = await Promise.all([loadDemandHistory(), loadWorkerSupply()]);
     const result = await callAiService("/forecast/demand", {
       days,
       history,
+      // Real counts, so predicted_shortage stops being arithmetic on a literal.
+      supply,
       area: typeof source.area === "string" ? source.area : undefined,
       service: typeof source.service === "string" ? source.service : undefined,
     });

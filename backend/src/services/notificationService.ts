@@ -1,4 +1,6 @@
 import { pool } from "../db/pool.js";
+import { emitNotification } from "../core/realtime.js";
+import logger from "../core/logger.js";
 
 export interface Notification {
   id: string;
@@ -185,15 +187,34 @@ export async function processOutboxEvents(): Promise<number> {
       try {
         if (event.event_type === "notification.created") {
           const payload = event.payload;
-          // Get device tokens for the user
+
+          // Deliver over the socket the app is already holding open.
+          //
+          // This is the step that was missing: every booking notification was
+          // written to the table, queued here, logged, and marked processed --
+          // so it only ever reached a customer if they happened to pull the
+          // notifications tab to refresh. `emitNotification` was written for
+          // exactly this and called from nowhere but chat.
+          //
+          // Delivery is best-effort by design. A customer with no socket open
+          // is not an outbox failure; the row is in `notifications` either way
+          // and the tab shows it on next load.
+          emitNotification(payload.userId, payload);
+
+          // The other half -- reaching a device whose app is not running --
+          // needs FCM, which needs a Firebase project and a service account
+          // this deployment does not have. Left explicit rather than silent:
+          // registered tokens are counted so the log says what would be sent.
           const tokens = await pool.query(
             `select token, platform from device_tokens where user_id = $1`,
             [payload.userId]
           );
-          
-          // Here you would integrate with Firebase/APNs/Web Push
-          // For now, we just mark as processed
-          console.log(`Would send push notification to ${tokens.rows.length} devices for user ${payload.userId}`);
+          if (tokens.rows.length > 0) {
+            logger.debug(
+              { userId: payload.userId, devices: tokens.rows.length },
+              "FCM not configured: notification delivered over socket only"
+            );
+          }
         }
         
         await client.query(

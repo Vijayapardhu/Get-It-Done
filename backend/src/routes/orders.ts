@@ -80,7 +80,15 @@ const createOrderSchema = z.object({
   longitude: z.number().min(-180).max(180),
   address: z.string().trim().min(3).max(500),
   addressId: z.string().uuid().nullable().optional(),
-  description: z.string().trim().max(2000).optional()
+  description: z.string().trim().max(2000).optional(),
+
+  // Who to ask for at the door. Required, because a booking nobody can be
+  // called about is a booking that fails silently -- the worker arrives, finds
+  // a locked gate, and dispatch has no number to try. The app prefills both
+  // from the account, so for most orders this costs the customer nothing; the
+  // point is that it can be CHANGED when the job is for somebody else.
+  contactName: z.string().trim().min(2).max(100),
+  contactPhone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/, "Invalid phone number")
 });
 
 /** Order failures are the caller's fault, not a server fault. */
@@ -118,6 +126,9 @@ ordersRouter.post("/", async (req, res, next) => {
       address: input.address,
       addressId: input.addressId ?? null,
       description: input.description,
+      contactName: input.contactName,
+      // Stored exactly as the register route stores a phone, so the two agree.
+      contactPhone: input.contactPhone.replace(/[\s()-]/g, ""),
       idempotencyKey
     });
 
@@ -148,7 +159,8 @@ ordersRouter.get("/:id", async (req, res, next) => {
     if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
 
     const order = await pool.query(
-      `select id, mode, scheduled_at as "scheduledAt", address, created_at as "createdAt"
+      `select id, mode, scheduled_at as "scheduledAt", address, created_at as "createdAt",
+              contact_name as "contactName", contact_phone as "contactPhone"
          from service_orders
         where id = $1 and customer_id = $2`,
       [req.params.id, req.user.id]
@@ -157,9 +169,11 @@ ordersRouter.get("/:id", async (req, res, next) => {
 
     const bookings = await pool.query(
       `select b.id, b.status, b.scheduled_at as "scheduledAt", b.address, b.price,
-              b.service_id as "serviceId", s.name as "serviceName", s.category as "serviceCategory"
+              b.service_id as "serviceId", s.name as "serviceName", s.category as "serviceCategory",
+              b.worker_id as "workerId", w.name as "workerName"
          from bookings b
          join services s on s.id = b.service_id
+         left join users w on w.id = b.worker_id
         where b.order_id = $1
         order by b.created_at`,
       [req.params.id]

@@ -40,17 +40,11 @@ configRouter.get("/mobile", (_req, res) => {
       googleIosClientId: env.GOOGLE_IOS_CLIENT_ID || null,
       googleSignInEnabled: Boolean(env.GOOGLE_CLIENT_ID),
       passwordSignInEnabled: true,
-      /** `console` only logs the code, so OTP sign-in is offered but is a
-       *  development affordance, not a delivered SMS. */
-      otpSignInEnabled: true,
-      smsProvider: env.SMS_PROVIDER,
-      /**
-       * Whether POST /auth/demo will issue a session. The app hides the demo
-       * button unless this is true, so the shared no-credential account cannot
-       * be reached just because a build was compiled with the button in it —
-       * the server has to be running with it on as well.
-       */
-      demoSignInEnabled: env.DEMO_LOGIN_ENABLED,
+      // There is no `otpSignInEnabled`, and no SMS provider is reported. SMS
+      // sign-in is gone from the platform: the endpoints, the app screen and
+      // the capability flag all went together, so there is nothing here for a
+      // client to switch on. An old build asking for the flag gets `null`,
+      // which its parser already reads as "off".
     },
     payments: {
       provider: "razorpay",

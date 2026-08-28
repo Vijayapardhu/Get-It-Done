@@ -142,9 +142,9 @@ cooperativeDashboardRouter.get("/workforce", ...adminAuth, async (req, res, next
               COUNT(b.id) FILTER (WHERE b.status IN ('assigned', 'accepted', 'en_route', 'started')) as active_jobs,
               COUNT(b.id) FILTER (WHERE b.status = 'completed' AND b.created_at >= CURRENT_DATE - INTERVAL '30 days') as jobs_last_30_days,
               COALESCE(
-                 (SELECT json_agg(json_build_object('skillId', ws.skill_id, 'name', s.name, 'category', s.category, 'level', ws.level, 'verified', ws.verified))
-                 FROM worker_skills_new ws
-                 JOIN skills s ON s.id = ws.skill_id
+                 (SELECT json_agg(json_build_object('skillId', ws.service_id, 'name', s.name, 'category', s.category, 'level', ws.level, 'verified', ws.verified))
+                 FROM worker_skills ws
+                 JOIN services s ON s.id = ws.service_id
                  WHERE ws.worker_id = w.id
                  LIMIT 10),
                 '[]'::json

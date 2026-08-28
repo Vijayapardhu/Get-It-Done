@@ -36,9 +36,30 @@ export async function replaceWorkerSkills(userId: string, skills: Array<{ servic
     await client.query("begin");
     const worker = await client.query("select id from workers where user_id = $1 for update", [userId]);
     if (!worker.rows[0]) { await client.query("rollback"); return null; }
-    await client.query("delete from worker_skills where worker_id = $1", [worker.rows[0].id]);
+    const workerId = worker.rows[0].id;
+    const serviceIds = skills.map((skill) => skill.serviceId);
+
+    // Upsert-and-prune, NOT delete-and-reinsert.
+    //
+    // Since phase 21 this row carries `verified`, `verified_at` and
+    // `verified_by` -- an operator's decision about the worker, not part of the
+    // worker's own claim. Wiping the row and putting it back would silently
+    // revoke that verification every time the worker edited their list, which
+    // (now that matching reads this table) would quietly cost them the
+    // certification sub-score and any certification-gated service.
+    //
+    // Removing a skill and adding it back DOES drop the verification, which is
+    // correct: the operator verified a claim that the worker has withdrawn.
+    await client.query("delete from worker_skills where worker_id = $1 and service_id <> all($2::uuid[])", [workerId, serviceIds]);
+
     for (const skill of skills) {
-      await client.query("insert into worker_skills (worker_id, service_id, certification_level) values ($1, $2, $3)", [worker.rows[0].id, skill.serviceId, skill.certificationLevel ?? null]);
+      await client.query(
+        `insert into worker_skills (worker_id, service_id, certification_level)
+         values ($1, $2, $3)
+         on conflict (worker_id, service_id) do update
+           set certification_level = excluded.certification_level`,
+        [workerId, skill.serviceId, skill.certificationLevel ?? null]
+      );
     }
     await client.query("commit");
     return getWorkerSkills(worker.rows[0].id);
@@ -46,7 +67,7 @@ export async function replaceWorkerSkills(userId: string, skills: Array<{ servic
 }
 
 export async function getWorkerSkills(workerId: string) {
-  const result = await pool.query(`select ws.service_id as "serviceId", s.name, s.category, ws.certification_level as "certificationLevel" from worker_skills ws join services s on s.id = ws.service_id where ws.worker_id = $1 order by s.category, s.name`, [workerId]);
+  const result = await pool.query(`select ws.service_id as "serviceId", s.name, s.category, ws.certification_level as "certificationLevel", ws.level, ws.years_experience as "yearsExperience", ws.verified, ws.verified_at as "verifiedAt", s.requires_certification as "requiresCertification" from worker_skills ws join services s on s.id = ws.service_id where ws.worker_id = $1 order by s.category, s.name`, [workerId]);
   return result.rows;
 }
 

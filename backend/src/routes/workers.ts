@@ -355,6 +355,100 @@ workersRouter.post("/:workerId/verification/submit", requireRoles("society_admin
   } catch (error) { next(error); }
 });
 
+/**
+ * @openapi
+ * /workers/me/dispatch-readiness:
+ *   get:
+ *     summary: Why this worker is or is not reachable by matching
+ *     tags: [Workers]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Per-condition checklist and an overall verdict }
+ *       404: { description: No worker profile for this account }
+ */
+workersRouter.get("/me/dispatch-readiness", workerOnly, async (req, res, next) => {
+  try {
+    const worker = await getWorkerByUserId(req.user!.id);
+    if (!worker) { res.status(404).json({ error: "Worker profile not found" }); return; }
+
+    // findMatchingWorkers requires five things, and every one of them is
+    // silent. Two are INNER JOINs -- worker_locations and worker_service_areas
+    // -- so a worker who is verified, has declared their trades and simply
+    // never turned on location sharing is invisible to dispatch forever, with
+    // nothing anywhere telling them why. This endpoint is that missing answer;
+    // it mirrors the matching query condition for condition, so the two must be
+    // changed together.
+    const [location, areas, skills, account] = await Promise.all([
+      pool.query("select 1 from worker_locations where worker_id = $1", [worker.id]),
+      pool.query("select count(*)::int as count from worker_service_areas where worker_id = $1", [worker.id]),
+      pool.query("select count(*)::int as count from worker_skills where worker_id = $1", [worker.id]),
+      pool.query("select status from users where id = $1", [req.user!.id]),
+    ]);
+
+    const checks = [
+      {
+        key: "verified",
+        ok: worker.verificationStatus === "verified",
+        label: "Identity verified",
+        detail:
+          worker.verificationStatus === "verified"
+            ? "Your documents have been approved."
+            : `Verification is ${worker.verificationStatus}. Jobs start once an administrator approves your documents.`,
+      },
+      {
+        key: "account_active",
+        ok: account.rows[0]?.status === "active",
+        label: "Account active",
+        detail: account.rows[0]?.status === "active" ? "Your account is in good standing." : "Your account is not active. Contact support.",
+      },
+      {
+        key: "location_sharing",
+        ok: Boolean(worker.locationSharingEnabled),
+        label: "Location sharing on",
+        detail: worker.locationSharingEnabled
+          ? "Jobs near you can find you."
+          : "Turn on location sharing. Jobs are matched by distance, so without it you are not offered any.",
+      },
+      {
+        key: "location_known",
+        ok: (location.rowCount ?? 0) > 0,
+        label: "Location received",
+        detail: (location.rowCount ?? 0) > 0
+          ? "We have your last position."
+          : "We have not received your position yet. Open the app with location on.",
+      },
+      {
+        key: "service_areas",
+        ok: (areas.rows[0]?.count ?? 0) > 0,
+        label: "Service areas set",
+        detail: (areas.rows[0]?.count ?? 0) > 0
+          ? `${areas.rows[0].count} service area(s) set.`
+          : "Set at least one service area. It is how we know which jobs to send you and how far you will travel.",
+      },
+      {
+        key: "skills",
+        ok: (skills.rows[0]?.count ?? 0) > 0,
+        label: "Trades declared",
+        detail: (skills.rows[0]?.count ?? 0) > 0
+          ? `${skills.rows[0].count} trade(s) declared.`
+          : "Add the trades you work in.",
+      },
+    ];
+
+    const blocking = checks.filter((check) => !check.ok);
+
+    res.json({
+      // Everything above must hold for the worker to appear as a candidate at
+      // all. `skills` is the one exception -- matching's eligibility filter is
+      // on service areas, and trades only feed the certification sub-score --
+      // so it is reported but does not block.
+      ready: blocking.filter((check) => check.key !== "skills").length === 0,
+      checks,
+      blocking: blocking.map((check) => check.key),
+    });
+  } catch (error) { next(error); }
+});
+
 workersRouter.get("/me", workerOnly, async (req, res, next) => {
   try {
     const worker = await getWorkerByUserId(req.user!.id);
@@ -714,7 +808,7 @@ workersRouter.get("/:id", async (req, res, next) => {
     const result = await pool.query(`SELECT w.id, w.worker_code, w.verification_status, w.rating, w.current_status, w.experience_years, w.service_radius_km, w.bio, w.total_jobs, w.completed_jobs, w.cancelled_jobs, u.name, u.avatar_url, c.name as cooperative_name, c.district, c.state FROM workers w JOIN users u ON u.id = w.user_id LEFT JOIN cooperatives c ON c.id = w.cooperative_id WHERE w.id = $1`, [req.params.id]);
     if (!result.rows[0]) { res.status(404).json({ error: "Worker not found" }); return; }
     const worker = result.rows[0];
-    const skills = await pool.query(`SELECT ws.skill_id, s.name, s.category, ws.level, ws.years_experience, ws.verified FROM worker_skills_new ws JOIN skills s ON s.id = ws.skill_id WHERE ws.worker_id = $1`, [worker.id]);
+    const skills = await pool.query(`SELECT ws.service_id AS skill_id, s.name, s.category, ws.level, ws.years_experience, ws.verified FROM worker_skills ws JOIN services s ON s.id = ws.service_id WHERE ws.worker_id = $1`, [worker.id]);
     const serviceAreas = await pool.query(`SELECT wsa.service_id, s.name, wsa.radius_km FROM worker_service_areas wsa JOIN services s ON s.id = wsa.service_id WHERE wsa.worker_id = $1`, [worker.id]);
     res.json({ worker, skills: skills.rows, serviceAreas: serviceAreas.rows });
   } catch (error) { next(error); }

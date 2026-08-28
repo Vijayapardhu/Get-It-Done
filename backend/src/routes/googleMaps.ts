@@ -12,6 +12,8 @@ import {
   getEmbedMapUrl,
   getNavigationUrl,
   calculateDistance,
+  autocompleteAddress,
+  isMapsConfigured,
 } from "../services/googleMaps.js";
 
 export const googleMapsRouter = Router();
@@ -361,3 +363,46 @@ googleMapsRouter.post("/distance", requireAuth, async (req, res, next) => {
 });
 
 export default googleMapsRouter;
+
+/**
+ * @openapi
+ * /maps/places/autocomplete:
+ *   post:
+ *     summary: Address suggestions for a partially typed query
+ *     tags: [Maps]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Ranked predictions }
+ *       503: { description: Maps is not configured on this deployment }
+ */
+googleMapsRouter.post("/places/autocomplete", requireAuth, async (req, res, next) => {
+  try {
+    if (!isMapsConfigured()) {
+      res.status(503).json({ error: "MAPS_NOT_CONFIGURED", predictions: [] });
+      return;
+    }
+
+    const input = z.object({
+      input: z.string().trim().min(1).max(200),
+      lat: z.coerce.number().min(-90).max(90).optional(),
+      lng: z.coerce.number().min(-180).max(180).optional(),
+      sessionToken: z.string().trim().max(64).optional(),
+    }).parse(req.body);
+
+    // Below three characters every Indian city matches and the list is noise,
+    // so the request is not worth making or paying for.
+    if (input.input.length < 3) {
+      res.json({ predictions: [] });
+      return;
+    }
+
+    const predictions = await autocompleteAddress(input.input, {
+      location: input.lat != null && input.lng != null
+        ? { lat: input.lat, lng: input.lng }
+        : undefined,
+      sessionToken: input.sessionToken,
+    });
+
+    res.json({ predictions });
+  } catch (error) { next(error); }
+});
