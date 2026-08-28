@@ -1,3 +1,28 @@
+import java.util.Properties
+
+// The Maps SDK key, kept out of the repository.
+//
+// Android has no way to hide a key inside an APK -- it ships with the app and
+// can be read out of it -- so the protection is a Cloud console restriction to
+// this package name plus signing certificate, NOT secrecy. Keeping it out of
+// git still matters: a key in history is a key in every fork and every clone.
+val mapsApiKey: String = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}.getProperty("MAPS_API_KEY") ?: ""
+
+// Whether this build may speak plain HTTP to any host.
+//
+// The developer settings screen repoints the app at a server chosen at
+// runtime, and those hosts cannot be listed in a static Android cleartext
+// policy at build time. A demo build therefore needs the permissive config; a
+// build for real users must not have it, so this defaults to false and has to
+// be asked for explicitly in local.properties.
+val allowCleartext: Boolean = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}.getProperty("ALLOW_CLEARTEXT")?.toBoolean() ?: false
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -22,6 +47,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // flutter_local_notifications uses java.time, which arrived in API 26.
+        // minSdk here is 23, so the build fails outright without desugaring
+        // rather than degrading on old devices.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -41,6 +70,16 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Substituted into the com.google.android.geo.API_KEY meta-data. An
+        // empty value builds fine and shows a blank grey map at runtime, which
+        // is the honest failure for a missing key.
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+
+        // Strict by default: plain HTTP only to the three development hosts
+        // named in network_security_config.xml.
+        manifestPlaceholders["NETWORK_SECURITY_CONFIG"] =
+            if (allowCleartext) "network_security_config_dev" else "network_security_config"
     }
 
     buildTypes {
@@ -54,4 +93,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

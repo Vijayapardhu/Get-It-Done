@@ -18,56 +18,43 @@ class GidApi {
 
   // ─────────────────────────────────────────────────────────────── auth ──
 
-  /// Phone-first signup and sign-in.
+  /// Create an account.
   ///
-  /// Delivered by SMS (MSG91 or Twilio, per the backend's SMS_PROVIDER).
-  /// Returns the code itself only when the backend runs with
-  /// OTP_ECHO_IN_RESPONSE, which env.ts refuses in production.
-  Future<String?> requestOtp(String phone) async {
-    final json = await _client.post('/auth/request-otp', body: {'phone': phone}, auth: false);
-    return asStringOrNull(pick(json, 'devOtp'));
-  }
-
-  /// Verifies the code and issues a session. Passing [name] creates the account
-  /// when the phone is new, so signup and sign-in are the same call.
-  Future<AuthSession> verifyOtp({
-    required String phone,
-    required String otp,
-    String? name,
-    String role = 'customer',
-  }) async {
-    final json = await _client.post('/auth/verify-otp', auth: false, body: {
-      'phone': phone,
-      'otp': otp,
-      if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
-      'role': role,
-    });
-    return AuthSession.fromJson(json);
-  }
-
-  /// Create an account with EITHER an email or a phone number, plus a password.
-  ///
-  /// The backend rejects both or neither, so exactly one must be supplied.
+  /// Both identifiers, not one: a booking has to reach the customer's phone
+  /// and their inbox, and email is the only channel a password reset can use.
+  /// The backend rejects a request missing either.
   Future<AuthSession> register({
     required String name,
+    required String email,
+    required String phone,
     required String password,
-    String? email,
-    String? phone,
     String role = 'customer',
   }) async {
-    assert(
-      (email == null) != (phone == null),
-      'register requires exactly one of email or phone',
-    );
-
     final json = await _client.post('/auth/register', auth: false, body: {
       'name': name,
-      if (email != null) 'email': email,
-      if (phone != null) 'phone': phone,
+      'email': email,
+      'phone': phone,
       'password': password,
       'role': role,
     });
     return AuthSession.fromJson(json);
+  }
+
+  /// Start a password reset.
+  ///
+  /// Always succeeds, whether or not the address is registered — the response
+  /// is identical either way, so this cannot be used to discover which email
+  /// addresses have accounts.
+  Future<void> forgotPassword(String email) async {
+    await _client.post('/auth/forgot-password', auth: false, body: {'email': email});
+  }
+
+  /// Finish a password reset with the token from the email.
+  Future<void> resetPassword({required String token, required String password}) async {
+    await _client.post('/auth/reset-password', auth: false, body: {
+      'token': token,
+      'password': password,
+    });
   }
 
   /// Sign in with a password.
@@ -91,17 +78,6 @@ class GidApi {
     final json = await _client.post('/auth/oauth/google', auth: false, body: {
       'credential': idToken,
     });
-    return AuthSession.fromJson(json);
-  }
-
-  /// Sign in to the shared demo account.
-  ///
-  /// No credential, by design: it exists so the app can be handed to someone
-  /// with neither a Google account on the device nor a phone that will receive
-  /// our SMS. The server answers 404 unless it was started with demo login on,
-  /// so this cannot open a door on a deployment that did not ask for one.
-  Future<AuthSession> signInAsDemo() async {
-    final json = await _client.post('/auth/demo', auth: false);
     return AuthSession.fromJson(json);
   }
 
@@ -138,6 +114,8 @@ class GidApi {
     required double latitude,
     required double longitude,
     required String address,
+    required String contactName,
+    required String contactPhone,
     required String idempotencyKey,
     String? addressId,
     DateTime? scheduledAt,
@@ -155,6 +133,10 @@ class GidApi {
         'latitude': latitude,
         'longitude': longitude,
         'address': address,
+        // Who the worker asks for at the door. Required by the server: a
+        // booking with nobody to call fails silently at a locked gate.
+        'contactName': contactName,
+        'contactPhone': contactPhone,
         if (addressId != null) 'addressId': addressId,
         if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
         if (description != null && description.trim().isNotEmpty)
@@ -259,6 +241,26 @@ class GidApi {
     return SavedAddress.fromJson(asJson(pick(json, 'address')) ?? json);
   }
 
+  Future<SavedAddress> updateAddress(
+    String id, {
+    String? name,
+    String? address,
+    double? latitude,
+    double? longitude,
+    bool? isDefault,
+    String? instructions,
+  }) async {
+    final json = await _client.patch('/addresses/$id', body: {
+      if (name != null) 'name': name,
+      if (address != null) 'address': address,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (isDefault != null) 'is_default': isDefault,
+      if (instructions != null) 'instructions': instructions,
+    });
+    return SavedAddress.fromJson(asJson(pick(json, 'address')) ?? json);
+  }
+
   Future<void> deleteAddress(String id) => _client.delete('/addresses/$id');
 
   // ─────────────────────────────────────────────────────────── bookings ──
@@ -317,6 +319,19 @@ class GidApi {
     final json = await _client.get('/customer/bookings/$id/track');
     return BookingTracking.fromJson(json);
   }
+
+  /// The booking's map, as PNG bytes.
+  ///
+  /// Bytes rather than a URL for an image widget, because the route is behind
+  /// `requireAuth`: a URL would have to carry a bearer token baked in at build
+  /// time, and that token rotates every fifteen minutes. Going through the
+  /// client means the map refreshes its credentials like every other call.
+  ///
+  /// The backend fetches the tiles itself -- the Maps key is a server key, and
+  /// a static-map URL carries it in a query parameter, so the URL can never be
+  /// handed to a client.
+  Future<List<int>> bookingMapBytes(String bookingId) =>
+      _client.getBytes('/customer/bookings/$bookingId/map');
 
   Future<void> cancelBooking(String id, {String? reason}) =>
       _client.post('/bookings/$id/cancel', body: {if (reason != null) 'reason': reason});
@@ -644,6 +659,37 @@ class GidApi {
     });
     final results = parseList(pick(json, 'results'), GeoPlace.fromJson);
     return results.isEmpty ? null : results.first;
+  }
+
+  /// Suggestions for an address the user is still typing.
+  ///
+  /// Autocomplete, not the text-search endpoint: it answers on three
+  /// characters and returns the two lines a suggestion row wants, already
+  /// split. [sessionToken] groups the keystrokes of one search with the
+  /// [placeDetails] call that resolves the chosen one, so Google bills the
+  /// sequence once rather than per letter — generate it when the field gains
+  /// focus and keep it until a selection is made.
+  Future<List<PlacePrediction>> autocompleteAddress(
+    String input, {
+    double? latitude,
+    double? longitude,
+    String? sessionToken,
+  }) async {
+    final json = await _client.post('/maps/places/autocomplete', body: {
+      'input': input,
+      if (latitude != null) 'lat': latitude,
+      if (longitude != null) 'lng': longitude,
+      if (sessionToken != null) 'sessionToken': sessionToken,
+    });
+    return parseList(pick(json, 'predictions'), PlacePrediction.fromJson);
+  }
+
+  /// Resolve a chosen prediction to an address with coordinates.
+  Future<GeoPlace?> placeDetails(String placeId) async {
+    final json = await _client.get('/maps/places/$placeId');
+    final place = asJson(pick(json, 'place')) ?? asJson(pick(json, 'result'));
+    if (place == null) return null;
+    return GeoPlace.fromJson(place);
   }
 
   /// Forward geocode a typed address to coordinates.

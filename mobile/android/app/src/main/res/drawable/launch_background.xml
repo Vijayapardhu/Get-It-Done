@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+<!--
+  What Android paints between tapping the icon and Flutter's first frame.
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+  Previously a bare white window, which meant the opening sequence was: white
+  flash, then the app's real background, then the splash content — three
+  distinct states before anything had happened. Painting the brand ground and
+  the mark here makes that gap invisible: the native window and the Flutter
+  splash that replaces it are the same picture, so the handover cannot be seen.
+
+  The mark is inset well away from the edges because this drawable is not
+  masked or scaled — it is the raw window on every screen size.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background" />
+    <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:src="@mipmap/ic_launcher" />
+    </item>
 </layer-list>

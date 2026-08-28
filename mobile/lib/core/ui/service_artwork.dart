@@ -48,8 +48,12 @@ class ServiceArtwork extends ConsumerWidget {
   final Service? service;
   final double size;
 
-  /// Off by default. A grid of looping animations is a battery drain and reads
-  /// as noise; motion is opt-in, for the one tile that deserves it.
+  /// Whether the Lottie plays or holds its first frame.
+  ///
+  /// It no longer decides whether the animation is FETCHED -- that is what
+  /// made Lottie artwork invisible everywhere, since the dense surfaces that
+  /// have pictures are the ones that switch motion off. A still Lottie is a
+  /// picture; a dropped one is a glyph.
   final bool animate;
 
   final BorderRadius? radius;
@@ -91,9 +95,7 @@ class ServiceArtwork extends ConsumerWidget {
     return AppArtwork(
       fallbackIcon: visual.icon,
       imageUrl: resolveArtworkUrl(service?.artworkImage ?? _imageUrl, base),
-      animationUrl: animate
-          ? resolveArtworkUrl(service?.artworkAnimation ?? _animationUrl, base)
-          : null,
+      animationUrl: resolveArtworkUrl(service?.artworkAnimation ?? _animationUrl, base),
       size: size,
       radius: radius,
       padding: padding,
@@ -134,7 +136,7 @@ class CategoryArtwork extends ConsumerWidget {
     return AppArtwork(
       fallbackIcon: visual.icon,
       imageUrl: resolveArtworkUrl(category.imageUrl, base),
-      animationUrl: animate ? resolveArtworkUrl(category.animationUrl, base) : null,
+      animationUrl: resolveArtworkUrl(category.animationUrl, base),
       size: size,
       background: background,
       foreground: foreground,

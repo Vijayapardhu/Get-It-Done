@@ -13,6 +13,16 @@ enum AppButtonVariant {
   /// Outlined. Secondary path — "Add another address".
   secondary,
 
+  /// A filled white card with a hairline border.
+  ///
+  /// Exists for one job: carrying somebody else's logo. A third-party mark has
+  /// fixed colours, so the button has to supply a surface those colours were
+  /// designed against rather than the other way round. Google's blue arc
+  /// disappears entirely on our primary blue, which is how this variant came
+  /// to be. Unlike [secondary] the fill is opaque, so the mark sits on white
+  /// regardless of what the page behind it is doing.
+  surface,
+
   /// Text only. Tertiary — "Skip", "Not now".
   tertiary,
 
@@ -42,6 +52,7 @@ class AppButton extends StatefulWidget {
     this.trailingIcon,
     this.loading = false,
     this.expand = true,
+    this.leading,
   });
 
   /// Convenience for the common full-width primary CTA.
@@ -54,6 +65,7 @@ class AppButton extends StatefulWidget {
     this.trailingIcon,
     this.loading = false,
     this.expand = true,
+    this.leading,
   }) : variant = AppButtonVariant.primary;
 
   const AppButton.secondary({
@@ -65,6 +77,7 @@ class AppButton extends StatefulWidget {
     this.trailingIcon,
     this.loading = false,
     this.expand = true,
+    this.leading,
   }) : variant = AppButtonVariant.secondary;
 
   const AppButton.tertiary({
@@ -76,6 +89,7 @@ class AppButton extends StatefulWidget {
     this.trailingIcon,
     this.loading = false,
     this.expand = false,
+    this.leading,
   }) : variant = AppButtonVariant.tertiary;
 
   final String label;
@@ -83,6 +97,13 @@ class AppButton extends StatefulWidget {
   final AppButtonVariant variant;
   final AppButtonSize size;
   final AppIconData? icon;
+
+  /// A widget in place of [icon], sized to the same box.
+  ///
+  /// For the one case a glyph cannot serve: a third party's own mark, which
+  /// has to be their artwork and their colours rather than our icon set tinted
+  /// to match the button.
+  final Widget? leading;
   final AppIconData? trailingIcon;
 
   /// Shows a spinner and blocks input. The label stays laid out underneath so
@@ -124,6 +145,7 @@ class _AppButtonState extends State<AppButton> {
     final (Color background, Color foreground, Color? border) = switch (widget.variant) {
       AppButtonVariant.primary => (_pressed ? t.primaryPressed : t.primary, t.textOnPrimary, null),
       AppButtonVariant.secondary => (_pressed ? t.surfaceAlt : Colors.transparent, t.textPrimary, t.borderStrong),
+      AppButtonVariant.surface => (_pressed ? t.surfaceAlt : t.surface, t.textPrimary, t.border),
       AppButtonVariant.tertiary => (_pressed ? t.surfaceAlt : Colors.transparent, t.primary, null),
       AppButtonVariant.soft => (_pressed ? t.surfaceBlueStrong : t.primarySoft, t.primary, null),
       AppButtonVariant.danger => (_pressed ? t.danger.withValues(alpha: 0.85) : t.danger, Colors.white, null),
@@ -140,7 +162,10 @@ class _AppButtonState extends State<AppButton> {
       mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (widget.icon != null) ...[
+        if (widget.leading != null) ...[
+          SizedBox(width: _iconSize, height: _iconSize, child: widget.leading),
+          const SizedBox(width: Space.x2),
+        ] else if (widget.icon != null) ...[
           AppIcon(widget.icon!, size: _iconSize, color: foreground, bold: true),
           const SizedBox(width: Space.x2),
         ],

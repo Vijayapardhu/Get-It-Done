@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cart/cart.dart';
@@ -8,6 +9,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../core/ui/service_artwork.dart';
 import '../../design/design_system.dart';
+import '../auth/account_gate.dart';
 import '../address/address_picker.dart';
 import 'slot_picker_screen.dart';
 
@@ -36,6 +38,35 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   bool _placing = false;
   String? _error;
 
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Prefill from the account ONCE, after the first frame so the providers
+    // are readable. Doing it in build would fight the customer for the field
+    // every time they cleared it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final user = ref.read(currentUserProvider);
+      ref.read(checkoutProvider.notifier).prefillContact(
+            name: user?.name,
+            phone: user?.phone,
+          );
+      final checkout = ref.read(checkoutProvider);
+      _nameController.text = checkout.contactName;
+      _phoneController.text = checkout.contactPhone;
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
   /// Fixed for the life of this screen.
   ///
   /// The server requires it, and it is what makes a retry after a timeout safe:
@@ -53,6 +84,14 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   }
 
   Future<void> _place(List<SavedAddress> addresses) async {
+    // The account wall is HERE, not at "add to cart". Filling a basket is how
+    // somebody decides they want the thing; asking them to register before
+    // they know what it costs loses the ones who were only curious. The cart
+    // is local, so nothing is lost by signing in at this point and coming
+    // back to it.
+    if (!await requireAccount(context, ref, action: 'book this')) return;
+    if (!mounted) return;
+
     final cart = ref.read(cartProvider);
     final checkout = ref.read(checkoutProvider);
 
@@ -65,10 +104,26 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       // Matching is a geographic query; an address with no coordinates cannot
       // reach any worker, and failing here is clearer than an empty match.
       setState(() => _error =
-          'That address has no location saved. Edit it and set the map pin, so '
+          'That address has no location saved. Open it and set the map pin, so '
           'we can find workers near it.');
       return;
     }
+    if (!checkout.hasContact) {
+      setState(() => _error =
+          'Add a name and a 10-digit mobile number for whoever will meet the '
+          'worker.');
+      return;
+    }
+
+    // Last look before money and a worker's time are committed.
+    //
+    // Everything on this sheet is already on the screen behind it, which is
+    // the point: the cart is a form the customer has been editing, and the
+    // moment of commitment should be a different shape from editing. It is
+    // also the only place all four facts — what, when, where, who — appear
+    // together in the order they will be used.
+    if (!await _confirm(address, checkout, cart)) return;
+    if (!mounted) return;
 
     setState(() { _placing = true; _error = null; });
 
@@ -83,6 +138,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
             longitude: address.longitude!,
             address: address.address,
             addressId: address.id,
+            contactName: checkout.contactName.trim(),
+            contactPhone: checkout.contactDigits,
             scheduledAt: checkout.scheduledAt,
             description: checkout.notes,
             idempotencyKey: _idempotencyKey,
@@ -153,16 +210,35 @@ class _CartScreenState extends ConsumerState<CartScreen> {
             ],
           ),
           const SizedBox(height: Space.x3),
-          Text(
-            switch (checkout.mode) {
-              CheckoutMode.instant =>
-                'Matched with the nearest available worker for each service.',
-              CheckoutMode.scheduled =>
-                'Held for the day and time you choose.',
-              CheckoutMode.recurring =>
-                'The same slot, repeating every week, until you stop it.',
-            },
-            style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppIcon(
+                switch (checkout.mode) {
+                  CheckoutMode.instant => AppIcons.flash,
+                  CheckoutMode.scheduled => AppIcons.calendar,
+                  CheckoutMode.recurring => AppIcons.repeat,
+                },
+                size: Sizes.iconSm,
+                color: t.textTertiary,
+                bold: true,
+              ),
+              const SizedBox(width: Space.x2),
+              Expanded(
+                child: Text(
+                  switch (checkout.mode) {
+                    CheckoutMode.instant =>
+                      'Matched with the nearest available worker for each service.',
+                    CheckoutMode.scheduled =>
+                      'Held for the day and time you choose.',
+                    CheckoutMode.recurring =>
+                      'The same slot, repeating every week, until you stop it.',
+                  },
+                  style: context.text.bodySmall
+                      ?.copyWith(color: t.textSecondary, height: 1.45),
+                ),
+              ),
+            ],
           ),
 
           const SizedBox(height: Space.x6),
@@ -196,7 +272,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
               children: [
                 if (checkout.needsSlot)
                   _DetailRow(
-                    icon: AppIcons.bookings,
+                    // A calendar for a date, not the clipboard that means
+                    // "a booking" everywhere else in the app.
+                    icon: AppIcons.calendar,
                     label: checkout.mode == CheckoutMode.recurring
                         ? 'First visit'
                         : 'Scheduled for',
@@ -215,6 +293,48 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                   value: selected?.address ?? 'Choose an address',
                   missing: selected == null,
                   onTap: () => showAddressPicker(context, ref),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: Space.x6),
+          _SectionHeading(title: 'Who is meeting the worker'),
+          AppCard(
+            elevated: false,
+            child: Column(
+              children: [
+                AppTextField(
+                  label: 'Name',
+                  hint: 'Who should the worker ask for?',
+                  controller: _nameController,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  prefixIcon: AppIcons.user,
+                  onChanged: (value) {
+                    setState(() => _error = null);
+                    ref.read(checkoutProvider.notifier).setContactName(value);
+                  },
+                ),
+                const SizedBox(height: Space.x4),
+                AppTextField(
+                  label: 'Mobile number',
+                  hint: '98765 43210',
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.done,
+                  maxLength: 10,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  prefixIcon: AppIcons.call,
+                  // Said here rather than in a tooltip, because "why do you
+                  // need this again, you have my number" is the actual
+                  // question and the answer is that this one may not be theirs.
+                  helper: 'The worker calls this on the way. Change it if the '
+                      'booking is for someone else.',
+                  onChanged: (value) {
+                    setState(() => _error = null);
+                    ref.read(checkoutProvider.notifier).setContactPhone(value);
+                  },
                 ),
               ],
             ),
@@ -253,6 +373,167 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     );
   }
 
+}
+
+/// The final review, as a sheet.
+///
+/// Returns true when the customer confirms. Cancelling returns them to the
+/// cart with everything intact — nothing here edits, so backing out is free.
+extension on _CartScreenState {
+  Future<bool> _confirm(
+    SavedAddress address,
+    CheckoutState checkout,
+    Cart cart,
+  ) async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => _ConfirmSheet(
+        address: address,
+        checkout: checkout,
+        cart: cart,
+      ),
+    );
+    return confirmed ?? false;
+  }
+}
+
+class _ConfirmSheet extends StatelessWidget {
+  const _ConfirmSheet({
+    required this.address,
+    required this.checkout,
+    required this.cart,
+  });
+
+  final SavedAddress address;
+  final CheckoutState checkout;
+  final Cart cart;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final scheduled = checkout.scheduledAt;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Space.x5, 0, Space.x5, Space.x5),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Confirm your booking', style: context.text.headlineSmall),
+            const SizedBox(height: Space.x5),
+
+            _ConfirmRow(
+              icon: AppIcons.bookings,
+              label: cart.serviceCount == 1 ? 'Service' : '${cart.serviceCount} services',
+              value: [for (final line in cart.lines) line.service.name].join(', '),
+            ),
+            _ConfirmRow(
+              icon: checkout.mode == CheckoutMode.instant
+                  ? AppIcons.flash
+                  : AppIcons.calendar,
+              label: 'When',
+              value: switch (checkout.mode) {
+                CheckoutMode.instant => 'As soon as a worker is free',
+                CheckoutMode.scheduled =>
+                  scheduled == null ? 'Not set' : formatSlot(scheduled),
+                CheckoutMode.recurring => scheduled == null
+                    ? 'Not set'
+                    : 'From ${formatSlot(scheduled)}, weekly',
+              },
+            ),
+            _ConfirmRow(
+              icon: AppIcons.location,
+              label: 'Where',
+              value: address.address,
+            ),
+            _ConfirmRow(
+              icon: AppIcons.user,
+              label: 'Who to ask for',
+              // Name and number together, because the two are checked as one
+              // fact: "is that the right person and the right phone".
+              value: '${checkout.contactName.trim()} · ${checkout.contactDigits}',
+              last: true,
+            ),
+
+            const SizedBox(height: Space.x5),
+            Row(
+              children: [
+                Text('Total before taxes', style: context.text.bodyMedium?.copyWith(color: t.textSecondary)),
+                const Spacer(),
+                Text(
+                  formatRupees(cart.subtotal, paise: true),
+                  style: context.text.titleMedium,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: Space.x6),
+            AppButton.primary(
+              label: 'Confirm and book',
+              icon: AppIcons.tick,
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+            const SizedBox(height: Space.x2),
+            Center(
+              child: AppButton.tertiary(
+                label: 'Go back and change something',
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfirmRow extends StatelessWidget {
+  const _ConfirmRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.last = false,
+  });
+
+  final AppIconData icon;
+  final String label;
+  final String value;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : Space.x4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIconBadge(icon, size: 38, iconSize: 18),
+          const SizedBox(width: Space.x3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: context.text.labelSmall?.copyWith(
+                    color: t.textTertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(value, style: context.text.titleSmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionHeading extends StatelessWidget {
@@ -486,7 +767,16 @@ class _DetailRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: Space.x4, vertical: Space.x4),
         child: Row(
           children: [
-            AppIcon(icon, size: Sizes.iconMd, color: t.textTertiary),
+            // A badge rather than a bare glyph, and tinted when the answer is
+            // still missing. These two rows are the whole booking — when and
+            // where — and they were the quietest thing on the screen.
+            AppIconBadge(
+              icon,
+              size: 44,
+              iconSize: 22,
+              background: missing ? t.primarySoft : t.surfaceAlt,
+              foreground: missing ? t.primary : t.textSecondary,
+            ),
             const SizedBox(width: Space.x4),
             Expanded(
               child: Column(
@@ -495,16 +785,19 @@ class _DetailRow extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: context.text.bodySmall?.copyWith(color: t.textTertiary),
+                    style: context.text.labelSmall?.copyWith(
+                      color: t.textTertiary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  const SizedBox(height: 1),
+                  const SizedBox(height: 3),
                   Text(
                     value,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: context.text.bodyMedium?.copyWith(
+                    style: context.text.titleSmall?.copyWith(
                       color: missing ? t.primary : t.textPrimary,
-                      fontWeight: missing ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: missing ? FontWeight.w700 : FontWeight.w600,
                     ),
                   ),
                 ],
@@ -549,19 +842,24 @@ class _DayPicker extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               child: AnimatedContainer(
                 duration: Motion.fast,
-                width: 40,
-                height: 40,
+                curve: Motion.curve,
+                // 48, which is the platform minimum touch target. At 40 with a
+                // single letter in it, picking Thursday over Wednesday on a
+                // recurring plan was a genuine aim.
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: selected.contains(day) ? t.primary : t.surface,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: selected.contains(day) ? t.primary : t.border,
+                    width: selected.contains(day) ? 1.6 : 1,
                   ),
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   _labels[day - 1],
-                  style: context.text.labelLarge?.copyWith(
+                  style: context.text.titleSmall?.copyWith(
                     color: selected.contains(day) ? t.textOnPrimary : t.textSecondary,
                     fontWeight: FontWeight.w700,
                   ),

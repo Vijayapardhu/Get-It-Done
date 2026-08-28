@@ -12,7 +12,7 @@ import 'json.dart';
 
 /// HTTP client for the GET IT DONE API.
 ///
-/// The important part is the refresh queue. Access tokens live 15 minutes and
+/// The important part is the refresh queue. Access tokens are short-lived and
 /// the backend ROTATES the refresh token on use, so the naive
 /// "on 401, call /auth/refresh" interceptor is actively harmful: five parallel
 /// requests expiring together fire five refreshes, the first invalidates the

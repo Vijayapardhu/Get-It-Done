@@ -1,0 +1,76 @@
+{
+  "@@locale": "te",
+
+  "navHome": "హోమ్",
+  "navBookings": "బుకింగ్‌లు",
+  "navAlerts": "సూచనలు",
+
+  "actionRetry": "మళ్లీ ప్రయత్నించండి",
+  "actionTryAgain": "మళ్లీ ప్రయత్నించండి",
+  "actionSignIn": "సైన్ ఇన్",
+  "actionCreateAccount": "ఖాతా సృష్టించండి",
+  "actionContinueWithGoogle": "Googleతో కొనసాగండి",
+  "actionBrowseWithoutSigningIn": "సైన్ ఇన్ చేయకుండా చూడండి",
+  "actionPayNow": "ఇప్పుడే చెల్లించండి",
+  "actionCancel": "రద్దు చేయండి",
+  "actionClose": "మూసివేయండి",
+  "actionSave": "సేవ్ చేయండి",
+  "actionDone": "పూర్తయింది",
+
+  "signInWelcomeBack": "మళ్లీ స్వాగతం",
+  "signInSubtitle": "ఒక ఖాతాతో మీ ప్రాంతంలోని ఏ సేవనైనా బుక్ చేయండి.",
+  "signInCreateTitle": "మీ ఖాతాను సృష్టించండి",
+  "signInNewHere": "కొత్తగా వచ్చారా?",
+  "signInForgotPassword": "పాస్‌వర్డ్ మర్చిపోయారా?",
+  "signInCooperativeServices": "సహకార సేవలు",
+
+  "fieldEmail": "ఇమెయిల్",
+  "fieldEmailAddress": "ఇమెయిల్ చిరునామా",
+  "fieldPassword": "పాస్‌వర్డ్",
+  "fieldYourName": "మీ పేరు",
+  "fieldYourPassword": "మీ పాస్‌వర్డ్",
+  "fieldMobileNumber": "మొబైల్ నంబర్",
+
+  "validationEnterName": "మీ పేరు నమోదు చేయండి.",
+  "validationEnterPassword": "మీ పాస్‌వర్డ్ నమోదు చేయండి.",
+  "validationEmailInvalid": "సరైన ఇమెయిల్ చిరునామా నమోదు చేయండి.",
+  "validationPhoneInvalid": "సరైన 10 అంకెల మొబైల్ నంబర్ నమోదు చేయండి.",
+  "validationPasswordLength": "పాస్‌వర్డ్‌కు కనీసం 8 అక్షరాలు ఉపయోగించండి.",
+  "hintPasswordLength": "కనీసం 8 అక్షరాలు",
+  "hintEnterSignupEmail": "మీరు నమోదు చేసిన ఇమెయిల్ చిరునామాను ఇవ్వండి.",
+
+  "bookingsTitle": "మీ బుకింగ్‌లు",
+  "bookingsUpcoming": "రాబోయేవి",
+  "bookingsPast": "గతంలోనివి",
+  "bookingsNothingScheduled": "ఏమీ షెడ్యూల్ కాలేదు",
+  "bookingsNoPast": "గత బుకింగ్‌లు లేవు",
+  "bookingsPastHint": "పూర్తయిన, రద్దయిన బుకింగ్‌లు ఇక్కడ ఉంటాయి.",
+  "bookingsLoadFailed": "మీ బుకింగ్‌లను లోడ్ చేయలేకపోయాము.",
+
+  "notificationsTitle": "నోటిఫికేషన్లు",
+  "notificationsSettings": "నోటిఫికేషన్ సెట్టింగ్‌లు",
+  "notificationsAllCaughtUp": "అన్నీ చూశారు",
+  "notificationsEmptyHint": "మీ బుకింగ్‌ల నవీకరణలు ఇక్కడ కనిపిస్తాయి.",
+  "notificationsLoadFailed": "మీ నోటిఫికేషన్లను లోడ్ చేయలేకపోయాము.",
+
+  "emergencyTitle": "అత్యవసరం",
+  "emergencyDispatchNote": "మేము వెంటనే ప్రాధాన్యత ఇచ్చి పంపుతాము.",
+  "emergencyLoadFailed": "అత్యవసర సేవలను లోడ్ చేయలేకపోయాము.",
+
+  "errorSomethingWentWrong": "ఏదో తప్పు జరిగింది",
+  "errorWhatHappened": "ఏమి జరిగింది?",
+  "errorOffline": "మీరు ఆఫ్‌లైన్‌లో ఉన్నారు. కనెక్షన్ వచ్చాక మళ్లీ ప్రయత్నిస్తాము.",
+
+  "timeTodayAt": "ఈరోజు {time}కి",
+  "timeTomorrowAt": "రేపు {time}కి",
+
+  "contactDoorNote": "కార్మికుడు మీ ఇంటి వద్ద మిమ్మల్ని ఎలా సంప్రదించాలి.",
+  "labelService": "సేవ",
+  "labelMessages": "సందేశాలు",
+
+  "languageEnglish": "ఇంగ్లీష్",
+  "languageTelugu": "తెలుగు",
+  "languageHindi": "హిందీ",
+  "languageChoose": "మీ భాషను ఎంచుకోండి",
+  "languageChooseHint": "దీన్ని తర్వాత మీ ప్రొఫైల్‌లో మార్చుకోవచ్చు."
+}

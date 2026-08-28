@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Cleartext HTTP is off by default, which is what Android has done since API 28
-  and what production must keep: api.getitdone.in is https and nothing about
-  this file weakens that.
+  and what production must keep: getitdone.vijayapardhu.tech is https (HSTS,
+  max-age one year) and nothing about this file weakens that.
 
   The exceptions below are development hosts only. A demo build points at a
   backend running on someone's laptop over the LAN, which has no certificate
@@ -11,6 +11,7 @@
     10.0.2.2    the Android emulator's alias for the host machine's loopback
     localhost   an app and a server on the same device
     192.168.*   the LAN address of the machine serving a demo build
+    10.16.*     the same, on the network this build was made on
 
   The LAN entry is the one that goes stale: it is whatever `ipconfig` reported
   when the APK was built. Change it and rebuild, or the app will refuse the
@@ -24,5 +25,6 @@
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">192.168.1.11</domain>
+        <domain includeSubdomains="false">10.16.49.131</domain>
     </domain-config>
 </network-security-config>

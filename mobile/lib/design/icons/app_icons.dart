@@ -63,11 +63,32 @@ abstract final class AppIcons {
 
   // ── Booking lifecycle ─────────────────────────────────────────────────────
   static const AppIconData time = PhosphorIcons.clock;
+  static const AppIconData calendar = PhosphorIcons.calendarBlank;
+
+  /// The three parts of a working day.
+  ///
+  /// Scheduling is the one flow where a customer is reading a wall of numbers,
+  /// and 7:30 against 19:30 is a mental conversion every single time. A sun on
+  /// the horizon, a sun overhead and a moon say it before the digits are read
+  /// at all — which is what lets the times themselves be grouped rather than
+  /// listed.
+  static const AppIconData morning = PhosphorIcons.sunHorizon;
+  static const AppIconData afternoon = PhosphorIcons.sun;
+  static const AppIconData evening = PhosphorIcons.moonStars;
   static const AppIconData location = PhosphorIcons.mapPin;
   static const AppIconData locationPin = PhosphorIcons.mapPinLine;
   static const AppIconData navigate = PhosphorIcons.navigationArrow;
   static const AppIconData call = PhosphorIcons.phone;
   static const AppIconData message = PhosphorIcons.chatCircle;
+
+  /// An email ADDRESS, not a conversation. [message] is a speech bubble and
+  /// was standing in for this on the account form, where it read as "chat to
+  /// us" rather than "type your address here".
+  static const AppIconData email = PhosphorIcons.envelopeSimple;
+
+  /// A padlock, for password fields. [secure] is a shield-with-tick and means
+  /// "we protect this"; a field the user types a secret into wants the lock.
+  static const AppIconData password = PhosphorIcons.lockSimple;
   static const AppIconData chat = PhosphorIcons.chatsCircle;
   static const AppIconData send = PhosphorIcons.paperPlaneTilt;
   static const AppIconData camera = PhosphorIcons.camera;

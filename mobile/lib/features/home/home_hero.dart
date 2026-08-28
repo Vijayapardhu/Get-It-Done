@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cart/checkout.dart';
+import '../../core/location/current_location.dart';
 import '../../core/models/models.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
@@ -40,6 +41,11 @@ class HomeHero extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
 
     final chosen = ref.watch(checkoutProvider).addressId;
+
+    // Asking the phone where it is, on open, rather than waiting for a tap.
+    // Warms the picker and fills the header on a first run; never overrides an
+    // address the customer has already saved.
+    ref.watch(locationBootstrapProvider);
 
     final list = addresses.maybeWhen(
       data: (value) => value,
@@ -83,7 +89,7 @@ class HomeHero extends ConsumerWidget {
             children: [
               _AddressRow(
                 label: address?.name ?? 'Set your location',
-                detail: address?.address,
+                detail: address?.shortAddress,
                 initials: user?.initials,
                 onOpenProfile: onOpenProfile,
                 onChangeAddress: () => showAddressPicker(context, ref),
@@ -136,6 +142,12 @@ class HomeHero extends ConsumerWidget {
   }
 }
 
+/// Where you are, and who you are: the two things the coloured panel says
+/// about the person holding the phone.
+///
+/// The address is the consequential half. It decides which workers can be
+/// offered at all, and checkout then uses it rather than asking again — which
+/// is why the chevron beside it is not decoration.
 class _AddressRow extends StatelessWidget {
   const _AddressRow({
     required this.label,
@@ -149,9 +161,6 @@ class _AddressRow extends StatelessWidget {
   final String? detail;
   final String? initials;
   final VoidCallback onOpenProfile;
-
-  /// The chevron beside the address is not decoration: this is where the
-  /// location is chosen, and checkout then uses it rather than asking again.
   final VoidCallback onChangeAddress;
 
   @override
@@ -163,61 +172,78 @@ class _AddressRow extends StatelessWidget {
             onTap: onChangeAddress,
             behavior: HitTestBehavior.opaque,
             child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(AppIcons.location, size: 16, color: AppColors.n0, bold: true),
-                  const SizedBox(width: Space.x2),
-                  Flexible(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(AppIcons.location, size: 16, color: AppColors.n0, bold: true),
+                    const SizedBox(width: Space.x2),
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.titleMedium?.copyWith(color: AppColors.n0),
+                      ),
+                    ),
+                    const SizedBox(width: Space.x1),
+                    AppIcon(AppIcons.chevronDown, size: 14, color: AppColors.blue200),
+                  ],
+                ),
+                if (detail != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, left: 24),
                     child: Text(
-                      label,
+                      detail!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.text.titleMedium?.copyWith(color: AppColors.n0),
+                      style: context.text.bodySmall?.copyWith(color: AppColors.blue200),
                     ),
                   ),
-                  const SizedBox(width: Space.x1),
-                  AppIcon(AppIcons.chevronDown, size: 14, color: AppColors.blue200),
-                ],
-              ),
-              if (detail != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2, left: 24),
-                  child: Text(
-                    detail!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.text.bodySmall?.copyWith(color: AppColors.blue200),
-                  ),
-                ),
               ],
             ),
           ),
         ),
         const SizedBox(width: Space.x3),
-        GestureDetector(
-          onTap: onOpenProfile,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(color: AppColors.n0, shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: initials == null || initials!.isEmpty
-                ? AppIcon(AppIcons.user, size: 20, color: AppColors.blue700)
-                : Text(
-                    initials!,
-                    style: context.text.labelLarge?.copyWith(
-                      color: AppColors.blue700,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-          ),
-        ),
+        _Avatar(initials: initials, onTap: onOpenProfile),
       ],
+    );
+  }
+}
+
+/// The profile target.
+///
+/// A white disc on the coloured panel, carrying initials where we have a name
+/// and the person glyph where we do not. It is the only round thing in the
+/// hero, which is what makes it read as "you" rather than as another card.
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.initials, required this.onTap});
+
+  final String? initials;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: const BoxDecoration(color: AppColors.n0, shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: initials == null || initials!.isEmpty
+            ? AppIcon(AppIcons.user, size: 20, color: AppColors.blue700)
+            : Text(
+                initials!,
+                style: context.text.labelLarge?.copyWith(
+                  color: AppColors.blue700,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+      ),
     );
   }
 }

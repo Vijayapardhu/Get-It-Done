@@ -1,0 +1,87 @@
+{
+  "@@locale": "en",
+
+  "navHome": "Home",
+  "@navHome": { "description": "Bottom navigation: the service catalogue." },
+  "navBookings": "Bookings",
+  "@navBookings": { "description": "Bottom navigation: this customer's bookings." },
+  "navAlerts": "Alerts",
+  "@navAlerts": { "description": "Bottom navigation: notifications. Kept short — it sits under an icon in an 11pt label." },
+
+  "actionRetry": "Retry",
+  "actionTryAgain": "Try again",
+  "actionSignIn": "Sign in",
+  "actionCreateAccount": "Create account",
+  "actionContinueWithGoogle": "Continue with Google",
+  "actionBrowseWithoutSigningIn": "Browse without signing in",
+  "actionPayNow": "Pay now",
+  "actionCancel": "Cancel",
+  "actionClose": "Close",
+  "actionSave": "Save",
+  "actionDone": "Done",
+
+  "signInWelcomeBack": "Welcome back",
+  "signInSubtitle": "One account books any service in your area.",
+  "signInCreateTitle": "Create your account",
+  "signInNewHere": "New here?",
+  "signInForgotPassword": "Forgot password?",
+  "signInCooperativeServices": "Cooperative services",
+
+  "fieldEmail": "Email",
+  "fieldEmailAddress": "Email address",
+  "fieldPassword": "Password",
+  "fieldYourName": "Your name",
+  "fieldYourPassword": "Your password",
+  "fieldMobileNumber": "Mobile number",
+
+  "validationEnterName": "Enter your name.",
+  "validationEnterPassword": "Enter your password.",
+  "validationEmailInvalid": "Enter a valid email address.",
+  "validationPhoneInvalid": "Enter a valid 10-digit mobile number.",
+  "validationPasswordLength": "Use at least 8 characters for your password.",
+  "hintPasswordLength": "At least 8 characters",
+  "hintEnterSignupEmail": "Enter the email address you signed up with.",
+
+  "bookingsTitle": "Your bookings",
+  "bookingsUpcoming": "Upcoming",
+  "bookingsPast": "Past",
+  "bookingsNothingScheduled": "Nothing scheduled",
+  "bookingsNoPast": "No past bookings",
+  "bookingsPastHint": "Completed and cancelled bookings are kept here.",
+  "bookingsLoadFailed": "We could not load your bookings.",
+
+  "notificationsTitle": "Notifications",
+  "notificationsSettings": "Notification settings",
+  "notificationsAllCaughtUp": "All caught up",
+  "notificationsEmptyHint": "Updates about your bookings will appear here.",
+  "notificationsLoadFailed": "We could not load your notifications.",
+
+  "emergencyTitle": "Emergency",
+  "emergencyDispatchNote": "We prioritise and dispatch immediately.",
+  "emergencyLoadFailed": "Could not load emergency services.",
+
+  "errorSomethingWentWrong": "Something went wrong",
+  "errorWhatHappened": "What happened?",
+  "errorOffline": "You are offline. We will retry when you are back.",
+
+  "timeTodayAt": "Today at {time}",
+  "@timeTodayAt": {
+    "description": "A booking scheduled for later today.",
+    "placeholders": { "time": { "type": "String", "example": "3:30 pm" } }
+  },
+  "timeTomorrowAt": "Tomorrow at {time}",
+  "@timeTomorrowAt": {
+    "description": "A booking scheduled for tomorrow.",
+    "placeholders": { "time": { "type": "String", "example": "9:00 am" } }
+  },
+
+  "contactDoorNote": "How the worker reaches you at the door.",
+  "labelService": "Service",
+  "labelMessages": "Messages",
+
+  "languageEnglish": "English",
+  "languageTelugu": "Telugu",
+  "languageHindi": "Hindi",
+  "languageChoose": "Choose your language",
+  "languageChooseHint": "You can change this later in your profile."
+}

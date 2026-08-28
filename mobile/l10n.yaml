@@ -1,0 +1,21 @@
+# Localisation codegen.
+#
+# The app bundled Noto Sans Telugu and Noto Sans Devanagari, swapped the
+# typeface by locale, offered a language screen, stored the choice on the user's
+# account and advertised ["en","te","hi"] from /config/mobile -- and then
+# rendered every word in English, because there were no .arb files, no
+# flutter_localizations, and no AppLocalizations anywhere in 82 Dart files. The
+# fonts changed; the words did not.
+#
+# Generated output is NOT committed: it is derived, and a stale checked-in copy
+# is a merge conflict waiting to happen. `flutter pub get` regenerates it, and
+# CI runs `flutter gen-l10n` before analyze.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppL10n
+# Fall back to the template rather than throwing on a key a translator has not
+# reached yet. A missing Telugu string should show English, not crash a worker's
+# phone mid-job.
+untranslated-messages-file: lib/l10n/untranslated.json
+nullable-getter: false

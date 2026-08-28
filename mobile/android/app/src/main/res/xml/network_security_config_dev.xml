@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The permissive config, for demo and development builds ONLY.
+
+  Selected at build time by ALLOW_CLEARTEXT=true in local.properties, which
+  gradle turns into the NETWORK_SECURITY_CONFIG manifest placeholder. Without
+  that flag the app uses network_security_config.xml, which permits plain HTTP
+  to three known development hosts and nothing else.
+
+  Why this file exists: the developer settings screen lets the server URL be
+  changed at runtime, and the whole point is pointing the app at a laptop on
+  whatever network it happens to be on today. Those hosts cannot be known when
+  the APK is built, and Android's cleartext policy can only be expressed as a
+  static list of hostnames — so a build that needs to reach arbitrary LAN
+  addresses has to permit cleartext broadly.
+
+  This must never ship to the Play Store. A release for real users is built
+  without ALLOW_CLEARTEXT, gets the strict config, and talks to https only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

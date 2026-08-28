@@ -4,6 +4,7 @@ import '../icons/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../tokens/motion.dart';
 import '../tokens/spacing.dart';
+import 'app_artwork.dart';
 import 'app_button.dart';
 
 /// Shimmer skeleton block.
@@ -136,6 +137,7 @@ class AppStateView extends StatelessWidget {
     required this.title,
     required this.message,
     this.icon,
+    this.animation,
     this.tone = StateTone.neutral,
     this.actionLabel,
     this.onAction,
@@ -149,6 +151,7 @@ class AppStateView extends StatelessWidget {
     required this.title,
     required this.message,
     this.icon,
+    this.animation,
     this.actionLabel,
     this.onAction,
     this.secondaryActionLabel,
@@ -161,6 +164,7 @@ class AppStateView extends StatelessWidget {
     this.title = 'Something went wrong',
     required this.message,
     this.icon,
+    this.animation,
     this.actionLabel = 'Try again',
     this.onAction,
     this.secondaryActionLabel,
@@ -173,6 +177,7 @@ class AppStateView extends StatelessWidget {
     this.title = "You're offline",
     this.message = "We'll reconnect automatically.",
     this.icon,
+    this.animation,
     this.actionLabel,
     this.onAction,
     this.secondaryActionLabel,
@@ -181,7 +186,19 @@ class AppStateView extends StatelessWidget {
 
   final String title;
   final String message;
+
+  /// The fallback if the animation cannot be loaded, and nothing else. Every
+  /// state now leads with artwork; see [animation].
   final AppIconData? icon;
+
+  /// A bundled Lottie, overriding the one [tone] would choose.
+  ///
+  /// Pass this where a screen has something more specific to say than "empty"
+  /// — the sign-in artwork above a signed-out list, say. Most callers should
+  /// not: the four tone animations are a set, and a screen that brings its own
+  /// picture to say the same thing makes the app look assembled from parts.
+  final String? animation;
+
   final StateTone tone;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -192,11 +209,18 @@ class AppStateView extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
 
-    final (Color fg, Color bg, AppIconData defaultIcon) = switch (tone) {
-      StateTone.neutral => (t.primary, t.primarySoft, AppIcons.idea),
-      StateTone.error => (t.danger, t.dangerSoft, AppIcons.alertCircle),
-      StateTone.warning => (t.warning, t.warningSoft, AppIcons.info),
-      StateTone.success => (t.success, t.successSoft, AppIcons.success),
+    // Artwork, not a glyph.
+    //
+    // An icon in a tinted circle labels a state; these draw themselves and
+    // then breathe, which is the difference between a screen that looks empty
+    // and one that looks attended to. The glyph stays as the fallback inside
+    // AppIllustration for the case where the asset cannot be decoded -- an
+    // empty state must never itself fail to render.
+    final (Color fg, Color bg, AppIconData defaultIcon, String art) = switch (tone) {
+      StateTone.neutral => (t.primary, t.primarySoft, AppIcons.idea, 'empty'),
+      StateTone.error => (t.danger, t.dangerSoft, AppIcons.alertCircle, 'error'),
+      StateTone.warning => (t.warning, t.warningSoft, AppIcons.info, 'offline'),
+      StateTone.success => (t.success, t.successSoft, AppIcons.success, 'done'),
     };
 
     return Center(
@@ -205,8 +229,12 @@ class AppStateView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppIconBadge(icon ?? defaultIcon, size: 88, background: bg, foreground: fg, iconSize: 40),
-            const SizedBox(height: Space.x6),
+            AppIllustration(
+              assetAnimation: animation ?? 'assets/lottie/$art.json',
+              fallbackIcon: icon ?? defaultIcon,
+              height: 150,
+            ),
+            const SizedBox(height: Space.x4),
             Text(title, style: context.text.headlineSmall, textAlign: TextAlign.center),
             const SizedBox(height: Space.x2),
             Text(

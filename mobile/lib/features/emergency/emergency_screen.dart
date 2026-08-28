@@ -6,6 +6,7 @@ import '../../core/models/models.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
+import '../auth/account_gate.dart';
 
 /// Emergency dispatch.
 ///
@@ -105,6 +106,11 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   Future<void> _dispatch() async {
     final point = _dispatchPoint;
     if (point == null || _submitting) return;
+
+    // Emergency dispatch sends a real person to a real address at a
+    // surcharge. There is no version of that which works anonymously.
+    if (!await requireAccount(context, ref, action: 'send help to your address')) return;
+    if (!mounted) return;
 
     setState(() {
       _submitting = true;

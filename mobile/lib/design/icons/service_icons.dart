@@ -90,6 +90,12 @@ abstract final class ServiceVisuals {
     accentSoft: AppColors.servicePestSoft,
   );
 
+  static const gardening = ServiceVisual(
+    icon: AppIcons.gardening,
+    accent: AppColors.servicePest,
+    accentSoft: AppColors.servicePestSoft,
+  );
+
   static const other = ServiceVisual(
     icon: AppIcons.tools,
     accent: AppColors.serviceOther,
@@ -124,6 +130,31 @@ abstract final class ServiceVisuals {
     'cooling': climate,
     'pest': pest,
     'termite': pest,
+    // ── The trades added with the expanded catalogue ──────────────────────
+    // Keys are substrings of the admin-editable service name, most specific
+    // first: 'geyser' has to beat 'water', which would otherwise claim it for
+    // plumbing.
+    'geyser': climate,
+    'chimney': appliance,
+    'sofa': cleaning,
+    'carpet': cleaning,
+    'upholster': cleaning,
+    'laundry': cleaning,
+    'iron': cleaning,
+    'garden': gardening,
+    'lawn': gardening,
+    'plant': gardening,
+    'tile': carpentry,
+    'floor': carpentry,
+    'weld': carpentry,
+    'grill': carpentry,
+    'mason': carpentry,
+    'plaster': carpentry,
+    'borewell': plumbing,
+    'motor': plumbing,
+    'pump': plumbing,
+    'tank': plumbing,
+    'seepage': plumbing,
   };
 
   /// Resolve a service or category name to its visual, falling back to a

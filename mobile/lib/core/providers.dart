@@ -1,17 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api/gid_api.dart';
 import 'auth/google_auth_service.dart';
 import 'config/app_config.dart';
+import 'config/server_config.dart';
 import 'config/remote_config.dart';
 import 'models/account_models.dart';
 import 'models/payment_models.dart';
 import 'models/models.dart';
 import 'network/api_client.dart';
 import 'network/api_exception.dart';
+import 'storage/guest_store.dart';
 import 'storage/otp_store.dart';
 import 'storage/token_store.dart';
+import 'storage/user_store.dart';
 
 /// Composition root.
 ///
@@ -24,6 +29,13 @@ final tokenStoreProvider = Provider<TokenStore>((ref) => TokenStore());
 /// the app has to keep them rather than asking for them again.
 final otpStoreProvider = Provider<OtpStore>((ref) => OtpStore());
 
+/// Whether the user chose to look around without an account. See [GuestStore].
+final guestStoreProvider = Provider<GuestStore>((ref) => GuestStore());
+
+/// The last confirmed user, so a launch with no network still opens the app.
+/// See [UserStore] — a cache, never an authority.
+final userStoreProvider = Provider<UserStore>((ref) => UserStore());
+
 /// The stored codes for one booking, or null if this device never had them.
 final bookingOtpsProvider =
     FutureProvider.autoDispose.family<BookingOtps?, String>((ref, bookingId) async {
@@ -31,7 +43,13 @@ final bookingOtpsProvider =
 });
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  final client = ApiClient(tokenStore: ref.watch(tokenStoreProvider));
+  // Watched, not read: changing the server in developer settings disposes this
+  // client and builds another against the new host, so every provider holding
+  // one picks the change up without a restart.
+  final client = ApiClient(
+    tokenStore: ref.watch(tokenStoreProvider),
+    baseUrl: ref.watch(serverUrlProvider),
+  );
 
   // A refresh that fails is unrecoverable: drop the session so the router
   // redirects to sign-in rather than leaving the user on a screen that 401s.
@@ -49,6 +67,15 @@ enum AuthStatus {
   /// Reading stored tokens; the splash screen holds here.
   unknown,
   authenticated,
+
+  /// Browsing without an account.
+  ///
+  /// Chosen, not inferred: it is what "Browse without signing in" sets, and it
+  /// survives a restart so the choice is not re-asked every launch. A guest
+  /// sees the catalogue and nothing that belongs to a person — see
+  /// [AuthState.needsAccount].
+  guest,
+
   unauthenticated,
 }
 
@@ -62,6 +89,22 @@ class AuthState {
 
   bool get isAuthenticated => status == AuthStatus.authenticated && user != null;
   bool get isResolving => status == AuthStatus.unknown;
+  bool get isGuest => status == AuthStatus.guest;
+
+  /// Whether the app should be showing its own screens at all.
+  ///
+  /// True for a signed-in customer AND for a guest: both get the shell, and
+  /// the difference between them is expressed inside it rather than by a
+  /// different root.
+  bool get isBrowsing => isAuthenticated || isGuest;
+
+  /// Whether an action the user just reached for needs an account first.
+  ///
+  /// The single question every guarded control asks. Phrased as a property of
+  /// the state rather than as `!isAuthenticated`, because the two are not the
+  /// same during launch: while the stored session is still resolving nothing
+  /// should be prompting for sign-in.
+  bool get needsAccount => isGuest;
 
   AuthState copyWith({AuthStatus? status, AppUser? user, String? error, bool clearError = false}) =>
       AuthState(
@@ -82,6 +125,8 @@ class AuthController extends Notifier<AuthState> {
 
   GidApi get _api => ref.read(apiProvider);
   TokenStore get _tokens => ref.read(tokenStoreProvider);
+  GuestStore get _guest => ref.read(guestStoreProvider);
+  UserStore get _cachedUser => ref.read(userStoreProvider);
 
   /// Resolve the stored session on launch.
   ///
@@ -100,49 +145,74 @@ class AuthController extends Notifier<AuthState> {
 
     final token = await _tokens.accessToken;
     if (token == null) {
-      state = const AuthState(status: AuthStatus.unauthenticated);
+      // No session, but possibly a standing decision not to have one.
+      state = AuthState(
+        status: await _guest.isGuest() ? AuthStatus.guest : AuthStatus.unauthenticated,
+      );
       return;
     }
 
     try {
       final user = await _api.me();
       state = AuthState(status: AuthStatus.authenticated, user: user);
+      await _cachedUser.write(user);
     } on ApiException catch (e) {
       if (e.isNetwork) {
+        // The token is probably fine — we simply could not ask. Open the app
+        // on the cached user rather than throwing the customer back to sign-in
+        // over a tunnel or a dead Wi-Fi router; the first request that does
+        // get through will 401 and sign them out properly if it really is
+        // dead. Only if there is no cache is there nothing to show.
+        final cached = await _cachedUser.read();
+        if (cached != null) {
+          state = AuthState(status: AuthStatus.authenticated, user: cached);
+          return;
+        }
         state = const AuthState(
           status: AuthStatus.unauthenticated,
           error: "Couldn't reach GET IT DONE. Check your connection and try again.",
         );
         return;
       }
-      await _tokens.clear();
+      await _forget();
       state = const AuthState(status: AuthStatus.unauthenticated);
     } catch (_) {
-      await _tokens.clear();
+      await _forget();
       state = const AuthState(status: AuthStatus.unauthenticated);
     }
+  }
+
+  /// Drop everything that says who this device belongs to.
+  Future<void> _forget() async {
+    await _tokens.clear();
+    await _cachedUser.clear();
+  }
+
+  /// Look around without an account.
+  ///
+  /// Nothing is created server-side and no anonymous session is issued — this
+  /// is purely a client-side decision to show the catalogue and withhold
+  /// everything that belongs to a person. Signing in later is a first sign-in,
+  /// not an upgrade, so there is no anonymous state to migrate.
+  Future<void> continueAsGuest() async {
+    state = const AuthState(status: AuthStatus.guest);
+    await _guest.setGuest(true);
+  }
+
+  /// Leave guest mode for the sign-in screen.
+  ///
+  /// Clears the stored flag first: a guest who taps "Sign in" and then kills
+  /// the app should get the sign-in screen next launch, not be dropped back
+  /// into the mode they were trying to leave.
+  Future<void> exitGuest() async {
+    await _guest.setGuest(false);
+    state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
   /// Re-attempt session restoration after a connectivity failure.
   Future<void> retryRestore() async {
     state = const AuthState();
     await _restore();
-  }
-
-  /// Request a login code.
-  ///
-  /// Returns the code itself ONLY when the backend is running with
-  /// OTP_ECHO_IN_RESPONSE (refused in production), so a development device
-  /// with no SMS can still sign in. Null in every real build.
-  Future<String?> requestOtp(String phone) async {
-    state = state.copyWith(clearError: true);
-    return _api.requestOtp(phone);
-  }
-
-  Future<void> verifyOtp({required String phone, required String otp, String? name}) async {
-    state = state.copyWith(clearError: true);
-    final session = await _api.verifyOtp(phone: phone, otp: otp, name: name);
-    await _persist(session);
   }
 
   /// Google sign-in.
@@ -176,31 +246,28 @@ class AuthController extends Notifier<AuthState> {
     await _persist(session);
   }
 
-  /// Sign in to the shared demo account, if the server offers one.
-  Future<void> signInAsDemo() async {
-    state = state.copyWith(clearError: true);
-    final session = await _api.signInAsDemo();
-    await _persist(session);
-  }
-
-  /// Create an account with exactly one of [email] or [phone].
+  /// Create an account. Both identifiers are required; see [GidApi.register].
   Future<void> registerWithPassword({
     required String name,
+    required String email,
+    required String phone,
     required String password,
-    String? email,
-    String? phone,
   }) async {
     state = state.copyWith(clearError: true);
     final session = await _api.register(
       name: name,
-      password: password,
       email: email,
       phone: phone,
+      password: password,
     );
     await _persist(session);
   }
 
   Future<void> _persist(AuthSession session) async {
+    // An account beats the standing "no account" decision, or signing out
+    // later would land back in guest mode rather than at sign-in.
+    await _guest.setGuest(false);
+    await _cachedUser.write(session.user);
     await _tokens.save(
       accessToken: session.accessToken,
       refreshToken: session.refreshToken,
@@ -219,13 +286,15 @@ class AuthController extends Notifier<AuthState> {
     }
     await ref.read(googleAuthServiceProvider).signOut();
     await ref.read(otpStoreProvider).clear();
-    await _tokens.clear();
+    await _forget();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
   /// Called by the client when refresh fails mid-session.
   void forceSignOut() {
-    _tokens.clear();
+    // Fire and forget, as before: this is called from the client's 401 path
+    // and must not be awaited there.
+    unawaited(_forget());
     state = const AuthState(
       status: AuthStatus.unauthenticated,
       error: 'Your session expired. Please sign in again.',
@@ -236,6 +305,7 @@ class AuthController extends Notifier<AuthState> {
     try {
       final user = await _api.me();
       state = state.copyWith(user: user);
+      await _cachedUser.write(user);
     } catch (_) {
       // Keep the cached user; this is a background refresh.
     }
@@ -269,9 +339,24 @@ final serviceCategoriesProvider = FutureProvider<List<ServiceCategory>>((ref) as
   return ref.watch(apiProvider).serviceCategories();
 });
 
+/// Whether there is a session to make an authenticated request with.
+///
+/// Every provider below that hits an endpoint behind `requireAuth` watches
+/// this and returns empty rather than calling. A guest browsing the catalogue
+/// would otherwise fire a handful of requests guaranteed to 401, and each 401
+/// surfaces as "Could not load…" on a screen where nothing is actually wrong.
+///
+/// Watched, not read: signing in flips it, which invalidates these providers
+/// and fetches the real data without anything having to remember to refresh.
+final _hasSession = Provider<bool>(
+  (ref) => ref.watch(authControllerProvider).isAuthenticated,
+);
+
 /// Home screen payload — one request for active booking, recents and
 /// favourites.
 final dashboardProvider = FutureProvider.autoDispose<CustomerDashboard>((ref) async {
+  if (!ref.watch(_hasSession)) return const CustomerDashboard();
+
   // Held briefly after the screen leaves so tab switching does not refetch.
   final link = ref.keepAlive();
   Future<void>.delayed(const Duration(minutes: 2), link.close);
@@ -279,10 +364,12 @@ final dashboardProvider = FutureProvider.autoDispose<CustomerDashboard>((ref) as
 });
 
 final addressesProvider = FutureProvider.autoDispose<List<SavedAddress>>((ref) async {
+  if (!ref.watch(_hasSession)) return const [];
   return ref.watch(apiProvider).addresses();
 });
 
 final bookingsProvider = FutureProvider.autoDispose<List<Booking>>((ref) async {
+  if (!ref.watch(_hasSession)) return const [];
   return ref.watch(apiProvider).bookings();
 });
 
@@ -291,12 +378,28 @@ final bookingTrackingProvider =
   return ref.watch(apiProvider).trackBooking(bookingId);
 });
 
+/// The booking's map image, or null when there is nothing to draw.
+///
+/// Null rather than an error for the two ways this legitimately comes back
+/// empty: 503 when the deployment has no Maps key configured, 502 when the
+/// tile fetch itself failed. Neither is worth an error state on a screen whose
+/// address and ETA already carry the answer -- the panel just collapses.
+final bookingMapProvider =
+    FutureProvider.autoDispose.family<Uint8List?, String>((ref, bookingId) async {
+  try {
+    return Uint8List.fromList(await ref.watch(apiProvider).bookingMapBytes(bookingId));
+  } on ApiException {
+    return null;
+  }
+});
+
 final trustGraphProvider =
     FutureProvider.autoDispose.family<TrustGraph, String>((ref, workerId) async {
   return ref.watch(apiProvider).trustGraph(workerId);
 });
 
 final notificationsProvider = FutureProvider.autoDispose<List<AppNotification>>((ref) async {
+  if (!ref.watch(_hasSession)) return const [];
   return ref.watch(apiProvider).notifications();
 });
 

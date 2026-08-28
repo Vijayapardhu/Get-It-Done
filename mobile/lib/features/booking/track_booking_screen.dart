@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -56,7 +57,12 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
     _statusSubscription = ref.listenManual(
       bookingStatusStreamProvider(widget.bookingId),
       (previous, next) {
-        next.whenData((_) => ref.invalidate(bookingTrackingProvider(widget.bookingId)));
+        next.whenData((_) {
+          ref.invalidate(bookingTrackingProvider(widget.bookingId));
+          // The map illustrates the distance and ETA above it. Leaving it on a
+          // stale tile while those numbers move is worse than a brief reload.
+          ref.invalidate(bookingMapProvider(widget.bookingId));
+        });
       },
     );
   }
@@ -146,40 +152,28 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
                   phone: data.worker?.phone ?? data.booking.workerPhone,
                 ),
                 const SizedBox(height: Space.x4),
+                _TrackingMap(
+                  bookingId: widget.bookingId,
+                  hasWorkerLocation: data.worker?.hasLocation ?? false,
+                ),
+                const SizedBox(height: Space.x4),
               ],
 
-              // The handshake is the customer's next action once a worker is
-              // at the door, so it is promoted rather than buried in a menu.
+              // The handshake, with the code itself rather than a button that
+              // promises one.
+              //
+              // This is the FIRST place the codes appear. The order
+              // confirmation deliberately does not show them -- at that moment
+              // there is no worker to read them to. Here there is: the card
+              // names who is asking, what they are here for, and which of the
+              // two codes is the one they want.
               if (data.booking.awaitsStartOtp || data.booking.awaitsCompletionOtp) ...[
-                AppCard(
-                  background: t.primarySoft,
-                  border: t.primary,
-                  padding: Space.cardInsetsLarge,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          AppIconBadge(AppIcons.secure, size: 44),
-                          const SizedBox(width: Space.x3),
-                          Expanded(
-                            child: Text(
-                              data.booking.awaitsStartOtp
-                                  ? 'Share your start code when the worker arrives'
-                                  : 'Share your completion code when the work is done',
-                              style: context.text.titleMedium,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: Space.x4),
-                      AppButton.primary(
-                        label: 'Show my code',
-                        size: AppButtonSize.medium,
-                        onPressed: widget.onOpenCodes,
-                      ),
-                    ],
-                  ),
+                _HandshakeCard(
+                  bookingId: widget.bookingId,
+                  workerName: data.worker?.name ?? data.booking.workerName,
+                  serviceName: data.booking.serviceName,
+                  arriving: data.booking.awaitsStartOtp,
+                  onOpenCodes: widget.onOpenCodes,
                 ),
                 const SizedBox(height: Space.x4),
               ],
@@ -253,6 +247,67 @@ class _TrackBookingScreenState extends ConsumerState<TrackBookingScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The job address, and the worker if we have a position we believe.
+///
+/// A picture from the backend rather than an embedded map SDK. That keeps the
+/// Maps key server-side — the app never holds one — and it costs no extra
+/// dependency for what is a glance at where somebody is, not a navigation
+/// experience. It refreshes with the tracking poll.
+///
+/// It disappears entirely when the server has no map for it, rather than
+/// showing a grey box: the address and ETA above already say most of what the
+/// map was for.
+class _TrackingMap extends ConsumerWidget {
+  const _TrackingMap({required this.bookingId, required this.hasWorkerLocation});
+
+  final String bookingId;
+
+  /// Drives the caption, not whether the map is drawn: the map is worth showing
+  /// for the destination alone.
+  final bool hasWorkerLocation;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final map = ref.watch(bookingMapProvider(bookingId));
+
+    return map.maybeWhen(
+      // No map is not an error state -- Maps may not be configured on this
+      // deployment at all. Collapse rather than announce it: the address and
+      // the ETA above already say most of what the map was for.
+      data: (bytes) => bytes == null
+          ? const SizedBox.shrink()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(Radii.xl),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true),
+                  ),
+                ),
+                const SizedBox(height: Space.x2),
+                Text(
+                  hasWorkerLocation
+                      ? 'Updated as the worker moves.'
+                      : 'The worker has not shared their location yet.',
+                  style: context.text.bodySmall?.copyWith(color: t.textTertiary),
+                ),
+              ],
+            ),
+      error: (_, __) => const SizedBox.shrink(),
+      orElse: () => ClipRRect(
+        borderRadius: BorderRadius.circular(Radii.xl),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(color: t.surfaceAlt),
         ),
       ),
     );
@@ -690,5 +745,148 @@ class _TimelineRow extends StatelessWidget {
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     return '$hour:$minute ${local.hour < 12 ? 'AM' : 'PM'}';
+  }
+}
+
+/// The code to read aloud, with who is asking for it.
+///
+/// Three facts, in the order the customer needs them: WHO is at the door,
+/// WHAT they are here to do, and the six digits. A card that showed only the
+/// digits made the customer check the worker's name somewhere else before
+/// reading a number to a stranger, which is exactly backwards.
+///
+/// The code comes from this device's [OtpStore], written when the order was
+/// placed. It is NOT a one-time reveal: this card can be opened as often as
+/// the customer likes, for as long as the booking is live. The server keeps
+/// only hashes, so the alternative — reissuing — mints a different pair and
+/// invalidates whatever was already read out.
+class _HandshakeCard extends ConsumerWidget {
+  const _HandshakeCard({
+    required this.bookingId,
+    required this.workerName,
+    required this.serviceName,
+    required this.arriving,
+    required this.onOpenCodes,
+  });
+
+  final String bookingId;
+  final String? workerName;
+  final String? serviceName;
+
+  /// True while waiting for the worker to arrive (the start code); false once
+  /// the job is under way and the completion code is the live one.
+  final bool arriving;
+
+  final VoidCallback onOpenCodes;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final stored = ref.watch(bookingOtpsProvider(bookingId));
+
+    final code = stored.maybeWhen(
+      data: (otps) => arriving ? otps?.startOtp : otps?.completionOtp,
+      orElse: () => null,
+    );
+
+    final who = workerName ?? 'the worker';
+
+    return AppCard(
+      background: t.primarySoft,
+      border: t.primary,
+      padding: Space.cardInsetsLarge,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              AppIconBadge(AppIcons.secure, size: 44),
+              const SizedBox(width: Space.x3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      arriving ? 'Read this to $who' : 'Read this when the work is done',
+                      style: context.text.titleMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (serviceName != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        arriving ? '$serviceName · on arrival' : '$serviceName · on completion',
+                        style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: Space.x4),
+
+          if (code == null || code.isEmpty)
+            // This device did not place the order, or its storage was cleared.
+            // The full screen offers the reissue, which is a decision rather
+            // than something to do by accident from here.
+            AppButton.primary(
+              label: 'Get my code',
+              size: AppButtonSize.medium,
+              onPressed: onOpenCodes,
+            )
+          else ...[
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: code));
+                HapticFeedback.selectionClick();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Code copied'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: Space.x4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(Radii.lg),
+                  border: Border.all(color: t.primary),
+                ),
+                child: Text(
+                  // Spaced, because this is read aloud rather than scanned.
+                  code.split('').join(' '),
+                  style: context.text.displaySmall?.copyWith(
+                    color: t.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: Space.x3),
+            Text(
+              'Stays here for the whole booking — you can come back to it.',
+              textAlign: TextAlign.center,
+              style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+            ),
+            const SizedBox(height: Space.x2),
+            Center(
+              child: AppButton.tertiary(
+                label: 'See both codes',
+                size: AppButtonSize.small,
+                onPressed: onOpenCodes,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

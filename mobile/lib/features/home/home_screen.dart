@@ -7,7 +7,7 @@ import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../../core/ui/service_artwork.dart';
 import 'home_hero.dart';
-import 'service_card.dart';
+import 'service_grid.dart';
 
 /// Home.
 ///
@@ -72,7 +72,10 @@ class HomeScreen extends ConsumerWidget {
           // in the catalogue.
           SliverPersistentHeader(
             pinned: true,
-            delegate: _StickySearch(onTap: onOpenSearch),
+            delegate: _StickySearch(
+              onTap: onOpenSearch,
+              topInset: MediaQuery.paddingOf(context).top,
+            ),
           ),
 
           SliverList(
@@ -85,7 +88,11 @@ class HomeScreen extends ConsumerWidget {
               final active = data.activeBooking;
               if (active == null) return const SizedBox.shrink();
               return Padding(
-                padding: const EdgeInsets.only(top: Space.section),
+                // Space.x4, not Space.section: the pinned search bar above
+                // already contributes the unpinned half of the status-bar
+                // inset as bottom padding, and a full section gap on top of
+                // that left a visible hole under the search field.
+                padding: const EdgeInsets.only(top: Space.x4),
                 child: Section(
                   title: 'Your active booking',
                   child: Padding(
@@ -101,19 +108,23 @@ class HomeScreen extends ConsumerWidget {
             orElse: () => const SizedBox.shrink(),
           ),
 
-          const SizedBox(height: Space.section),
+          const SizedBox(height: Space.x5),
 
           // ── The catalogue ────────────────────────────────
-          // Every service, as pictures, rather than eight of them in a strip
-          // with the rest behind a "see all". The catalogue is small enough to
-          // show whole, and a customer who can see everything on offer does not
-          // have to guess whether the thing they want exists.
-          Section(
-            title: 'All home services',
-            subtitle: 'Book trusted cooperative workers.',
-            child: services.when(
-              loading: () => const _ServiceGridSkeletons(),
-              error: (error, _) => Padding(
+          // Grouped by trade rather than one long grid. Twenty-four services in
+          // a single run is a wall: the customer has to read every tile to find
+          // out there is an Appliances section at all. Under headings, the eye
+          // picks the group first and the tile second, which is how someone who
+          // came for "my AC is not cooling" actually searches.
+          services.when(
+            loading: () => const Section(
+              title: 'Services',
+              subtitle: 'Book trusted cooperative workers.',
+              child: ServiceCatalogueSkeletons(),
+            ),
+            error: (error, _) => Section(
+              title: 'Services',
+              child: Padding(
                 padding: Space.pageInsets,
                 child: AppBanner(
                   message: 'Could not load services.',
@@ -122,13 +133,10 @@ class HomeScreen extends ConsumerWidget {
                   onAction: () => ref.invalidate(servicesProvider),
                 ),
               ),
-              data: (list) => Padding(
-                padding: _ServiceGrid.insets,
-                child: _ServiceGrid(
-                  services: list,
-                  onOpenService: onOpenService,
-                ),
-              ),
+            ),
+            data: (list) => _CategorySections(
+              services: list,
+              onOpenService: onOpenService,
             ),
           ),
 
@@ -430,13 +438,20 @@ class _PastBookingRow extends StatelessWidget {
 /// rather than snapping on, so the bar separates from the content it is now
 /// covering without announcing itself.
 class _StickySearch extends SliverPersistentHeaderDelegate {
-  const _StickySearch({required this.onTap});
+  const _StickySearch({required this.onTap, required this.topInset});
 
   final VoidCallback onTap;
 
-  /// Field height plus the padding around it. Fixed, because min and max are
-  /// the same: this bar does not collapse, it pins.
-  static const _height = 76.0;
+  /// The status bar's height, from the screen above. Reserved by the header
+  /// whatever its scroll position, and only SPENT once the bar has pinned:
+  /// see [build].
+  final double topInset;
+
+  /// Field plus the padding around it. Fixed, because min and max are the
+  /// same: this bar does not collapse, it pins.
+  static const _base = Space.x3 + Sizes.inputHeight + Space.x3;
+
+  double get _height => _base + topInset;
 
   @override
   double get minExtent => _height;
@@ -455,10 +470,22 @@ class _StickySearch extends SliverPersistentHeaderDelegate {
 
     return Container(
       height: _height,
-      padding: const EdgeInsets.symmetric(
-        horizontal: Space.page,
-        vertical: Space.x3,
-      ),
+      // The status bar's height is reserved ABOVE the field at all times, not
+      // moved there as the bar pins.
+      //
+      // A persistent header cannot change its extent mid-scroll, so the inset
+      // has to be paid for either way. Paying for it above means: pinned, the
+      // field clears the clock; unpinned, the slack lands between the hero and
+      // the field, where it reads as breathing room under the coloured panel.
+      // Paying for it below — which is what this did first — put a status
+      // bar's worth of empty page between the search and the first card, and
+      // that hole is the thing everybody noticed.
+      padding: const EdgeInsets.only(
+        left: Space.page,
+        right: Space.page,
+        top: Space.x3,
+        bottom: Space.x3,
+      ).copyWith(top: Space.x3 + topInset),
       decoration: BoxDecoration(
         color: t.pageBackground,
         border: Border(
@@ -473,184 +500,68 @@ class _StickySearch extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  bool shouldRebuild(covariant _StickySearch oldDelegate) => oldDelegate.onTap != onTap;
+  bool shouldRebuild(covariant _StickySearch oldDelegate) =>
+      oldDelegate.onTap != onTap || oldDelegate.topInset != topInset;
 }
 
-/// The catalogue grid.
+/// The catalogue, one grid per category.
 ///
-/// Three columns on a phone, more on anything wider. Derived from the
-/// available width rather than hardcoded, so the same grid serves a tablet
-/// without a second layout — and so a large accessibility text scale gets
-/// fewer, wider cards instead of three columns of clipped words.
-class _ServiceGrid extends StatelessWidget {
-  const _ServiceGrid({required this.services, required this.onOpenService});
+/// Order comes from the order the API returned services in, which is the
+/// category display_order the cooperative set -- not alphabetical, and not
+/// whatever the map iteration happens to produce. A category the admin moved to
+/// the top should appear at the top.
+class _CategorySections extends StatelessWidget {
+  const _CategorySections({required this.services, required this.onOpenService});
 
   final List<Service> services;
   final ValueChanged<Service> onOpenService;
 
-  // Tighter than the page's own rhythm on purpose. Three columns on a phone
-  // leave the tile width fixed by arithmetic, so every point taken out of the
-  // gutters goes straight into the artwork.
-  static const _gap = Space.x2;
-  static const _minTile = 104.0;
-
-  /// The grid runs closer to the screen edge than the prose around it.
-  static const insets = EdgeInsets.symmetric(horizontal: Space.x4);
-
-  /// Three across, and only fewer if three genuinely will not fit.
-  ///
-  /// Capped rather than derived upward: a wide screen used to give four, and
-  /// the catalogue is meant to read as a considered set of three columns, not
-  /// as many tiles as happen to fit. Two remains the floor for a narrow phone
-  /// at a large accessibility text scale, where three columns of clipped words
-  /// help nobody.
-  static int columnsFor(double width, double textScale) {
-    final target = _minTile * (textScale > 1.3 ? 1.4 : 1);
-    final fits = ((width + _gap) / (target + _gap)).floor();
-    return fits.clamp(2, 3);
-  }
-
-  /// Height of everything below the artwork square: the inset, two lines of
-  /// name, the gap, and the price row.
-  ///
-  /// Measured rather than expressed as a childAspectRatio. A ratio has to be
-  /// guessed against the worst case — the longest name at the largest text
-  /// scale — and a guess that is slightly small does not clip quietly, it
-  /// throws a layout overflow. Sizing the cell as "the square, plus this"
-  /// makes the arithmetic exact at any text scale.
-  static double footerHeight(BuildContext context) {
-    final scaler = MediaQuery.textScalerOf(context);
-    final title = context.text.titleSmall;
-    final price = context.text.titleSmall;
-
-    double lineHeight(TextStyle? style) {
-      final size = scaler.scale(style?.fontSize ?? 14);
-      return size * (style?.height ?? 1.35);
-    }
-
-    return Space.x3 + Space.x4 + (lineHeight(title) * 2) + Space.x2 + lineHeight(price);
-  }
-
   @override
   Widget build(BuildContext context) {
     if (services.isEmpty) {
-      return AppStateView.empty(
-        title: 'No services yet',
-        message: 'The catalogue for your area is still being set up.',
-        icon: AppIcons.home,
+      return const Section(
+        title: 'Services',
+        child: AppStateView.empty(
+          title: 'No services yet',
+          message: 'The catalogue for your area is still being set up.',
+          icon: AppIcons.home,
+        ),
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = columnsFor(
-          constraints.maxWidth,
-          MediaQuery.textScalerOf(context).scale(1),
-        );
+    // Insertion-ordered, so the first time a category is seen fixes its place.
+    final grouped = <String, List<Service>>{};
+    for (final service in services) {
+      grouped.putIfAbsent(service.category, () => <Service>[]).add(service);
+    }
 
-        return GridView.builder(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: services.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: _gap,
-            mainAxisSpacing: _gap,
-            // The square of artwork is as wide as the cell, so the cell is that
-            // square plus the text block underneath it.
-            mainAxisExtent:
-                (constraints.maxWidth - _gap * (columns - 1)) / columns +
-                    footerHeight(context),
-          ),
-          itemBuilder: (context, i) => ServiceCard(
-            service: services[i],
-            onOpen: () => onOpenService(services[i]),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// A grid cell's worth of skeleton.
-///
-/// SkeletonCard is row-shaped — an avatar beside two lines of text — which is
-/// right for a list and overflows a 110px grid cell. This mirrors the real
-/// card instead: a square of artwork, a title line, a price line.
-class _ServiceCardSkeleton extends StatelessWidget {
-  const _ServiceCardSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(Radii.xl),
-        border: Border.all(color: t.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AspectRatio(
-            aspectRatio: 1,
-            child: Skeleton(width: double.infinity, height: double.infinity, radius: 0),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Space.x3, Space.x3, Space.x3, Space.x4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Skeleton.text(width: 68),
-                SizedBox(height: Space.x2),
-                Skeleton.text(width: 44),
-              ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final entry in grouped.entries) ...[
+          Section(
+            title: entry.key,
+            subtitle: _subtitleFor(entry.value.length),
+            child: Padding(
+              padding: ServiceCatalogueGrid.insets,
+              child: ServiceCatalogueGrid(
+                services: entry.value,
+                onOpenService: onOpenService,
+              ),
             ),
           ),
+          // Space.x6 between one grid and the next heading. At Space.section
+          // the categories read as separate pages rather than as one
+          // catalogue, and on a phone it cost most of a screen of scrolling
+          // for six of them.
+          const SizedBox(height: Space.x6),
         ],
-      ),
+      ],
     );
   }
+
+  /// Counting the group is more useful than a slogan repeated under every
+  /// heading, and it tells the customer whether scrolling is worth it.
+  static String _subtitleFor(int count) =>
+      count == 1 ? '1 service' : '$count services';
 }
-
-class _ServiceGridSkeletons extends StatelessWidget {
-  const _ServiceGridSkeletons();
-
-  @override
-  Widget build(BuildContext context) {
-    // Same geometry as the loaded grid. A placeholder of a different shape
-    // makes the page jump at the moment the user is deciding where to tap.
-    return Padding(
-      padding: _ServiceGrid.insets,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = _ServiceGrid.columnsFor(
-            constraints.maxWidth,
-            MediaQuery.textScalerOf(context).scale(1),
-          );
-
-          return GridView.builder(
-            padding: EdgeInsets.zero,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: columns * 2,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: Space.x2,
-              mainAxisSpacing: Space.x2,
-              mainAxisExtent:
-                  (constraints.maxWidth - Space.x2 * (columns - 1)) / columns +
-                      _ServiceGrid.footerHeight(context),
-            ),
-            itemBuilder: (_, __) => const _ServiceCardSkeleton(),
-          );
-        },
-      ),
-    );
-  }
-}
-

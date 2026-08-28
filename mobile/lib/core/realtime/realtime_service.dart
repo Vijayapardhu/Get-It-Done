@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../config/app_config.dart';
+import '../config/server_config.dart';
 import '../network/json.dart';
 import '../providers.dart';
 import '../storage/token_store.dart';
@@ -20,9 +21,16 @@ import '../storage/token_store.dart';
 ///   user:{id}      -> notification:new
 ///   booking:{id}   -> booking:status_changed, worker:location:update
 class RealtimeService {
-  RealtimeService(this._tokenStore);
+  RealtimeService(this._tokenStore, {String? baseUrl})
+      : _baseUrl = baseUrl ?? AppConfig.realtimeUrl;
 
   final TokenStore _tokenStore;
+
+  /// The host this socket connects to. Passed in rather than read from
+  /// AppConfig at connect time so that changing the server in developer
+  /// settings rebuilds the service against the new one, exactly as it rebuilds
+  /// the HTTP client.
+  final String _baseUrl;
 
   io.Socket? _socket;
 
@@ -49,7 +57,7 @@ class RealtimeService {
     if (token == null) return;
 
     final socket = io.io(
-      AppConfig.realtimeUrl,
+      _baseUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])
           // Manual: the token has to be attached first, and a 15-minute access
@@ -171,7 +179,10 @@ class WorkerLocationEvent {
 }
 
 final realtimeServiceProvider = Provider<RealtimeService>((ref) {
-  final service = RealtimeService(ref.watch(tokenStoreProvider));
+  final service = RealtimeService(
+    ref.watch(tokenStoreProvider),
+    baseUrl: ref.watch(serverUrlProvider),
+  );
 
   // Connect only while signed in, and rebuild the socket when the session
   // changes so it never carries a previous user's credential.

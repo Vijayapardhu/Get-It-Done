@@ -23,10 +23,18 @@ class ServiceCard extends ConsumerWidget {
     super.key,
     required this.service,
     required this.onOpen,
+    this.showAdd = true,
   });
 
   final Service service;
   final VoidCallback onOpen;
+
+  /// Whether the tile carries its add-to-cart button.
+  ///
+  /// False on a screen that is asking for exactly one choice — the instant
+  /// flow books a single job — where an Add button offers to build a basket
+  /// the very next screen would discard.
+  final bool showAdd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -48,7 +56,7 @@ class ServiceCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            _Artwork(service: service, inCart: inCart),
+            _Artwork(service: service, inCart: inCart, showAdd: showAdd),
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.x3, Space.x3, Space.x3, Space.x4),
               child: Column(
@@ -64,10 +72,13 @@ class ServiceCard extends ConsumerWidget {
                   // Rating under the name rather than floating on the picture:
                   // at this card width a pill over the artwork covered the
                   // subject, and the number belongs with the price anyway.
-                  if (service.rating != null) ...[
-                    const SizedBox(height: Space.x1),
-                    _Rating(rating: service.rating!),
-                  ],
+                  //
+                  // Always rendered, blank when unrated, so every card in a row
+                  // is the same height and their prices line up. Reserving the
+                  // line costs one text line; not reserving it cost a ragged
+                  // grid and an overflow at large text scales.
+                  const SizedBox(height: Space.x1),
+                  _Rating(rating: service.rating),
                   const SizedBox(height: Space.x1),
                   _PriceRow(service: service),
                 ],
@@ -81,10 +92,11 @@ class ServiceCard extends ConsumerWidget {
 }
 
 class _Artwork extends ConsumerWidget {
-  const _Artwork({required this.service, required this.inCart});
+  const _Artwork({required this.service, required this.inCart, required this.showAdd});
 
   final Service service;
   final bool inCart;
+  final bool showAdd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -103,33 +115,37 @@ class _Artwork extends ConsumerWidget {
               // tinted field, so it carries the whole square.
               size: double.infinity,
               radius: BorderRadius.zero,
-              // Full bleed. Catalogue artwork is a background-removed subject,
-              // and the default proportional inset shrank it to about half the
-              // square with a ring of empty tint around it.
-              padding: EdgeInsets.zero,
-              // Never animated. These tiles are the app's densest surface, and
-              // a grid of looping Lottie files is a battery drain that reads as
-              // noise; the catalogue is a still picture per service.
-              animate: false,
+              // A small, uniform inset rather than full bleed. The artwork
+              // set mixes framed illustrations with cut-outs, so zero padding
+              // let one asset fill its square while the next floated in the
+              // middle of its own baked-in background. Contained inside a
+              // consistent margin, they all read at the same optical size and
+              // sit centred in their cell.
+              padding: const EdgeInsets.all(Space.x2),
+              // Motion is on: these are Lottie files when the backend has one
+              // and a still PNG when it does not, and the whole point of
+              // shipping animated artwork is that it moves.
+              animate: true,
             ),
           ),
 
           // Add, bottom-right and overlapping the artwork edge, so it reads as
           // a control on top of the picture rather than part of it.
-          Positioned(
-            right: Space.x2,
-            bottom: Space.x2,
-            child: _AddButton(
-              inCart: inCart,
-              onAdd: () {
-                HapticFeedback.selectionClick();
-                // Adds the service's default duration. The exact time is
-                // changed in the cart or on the service's own page, where
-                // there is room to show what it costs.
-                ref.read(cartProvider.notifier).add(service);
-              },
+          if (showAdd)
+            Positioned(
+              right: Space.x2,
+              bottom: Space.x2,
+              child: _AddButton(
+                inCart: inCart,
+                onAdd: () {
+                  HapticFeedback.selectionClick();
+                  // Adds the service's default duration. The exact time is
+                  // changed in the cart or on the service's own page, where
+                  // there is room to show what it costs.
+                  ref.read(cartProvider.notifier).add(service);
+                },
+              ),
             ),
-          ),
 
           // A hairline under the artwork rather than a hard edge against the
           // white body.
@@ -148,23 +164,30 @@ class _Artwork extends ConsumerWidget {
 class _Rating extends StatelessWidget {
   const _Rating({required this.rating});
 
-  final double rating;
+  /// Null for a service nobody has reviewed. The row still occupies its line;
+  /// inventing a 4.5 to fill it is the one number a customer cannot check.
+  final double? rating;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final style = context.text.labelSmall?.copyWith(
+      color: t.textSecondary,
+      fontWeight: FontWeight.w600,
+    );
+
+    if (rating == null) {
+      return Text(
+        'New',
+        style: style?.copyWith(color: t.textTertiary, fontWeight: FontWeight.w500),
+      );
+    }
 
     return Row(
       children: [
         AppIcon(AppIcons.rating, size: 12, color: t.warning, bold: true),
         const SizedBox(width: 3),
-        Text(
-          rating.toStringAsFixed(1),
-          style: context.text.labelSmall?.copyWith(
-            color: t.textSecondary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        Text(rating!.toStringAsFixed(1), style: style),
       ],
     );
   }

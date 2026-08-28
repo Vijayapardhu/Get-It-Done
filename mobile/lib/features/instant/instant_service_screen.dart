@@ -4,10 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cart/cart.dart';
 import '../../core/cart/checkout.dart';
-import '../../core/models/models.dart';
 import '../../core/providers.dart';
-import '../../core/ui/service_artwork.dart';
 import '../../design/design_system.dart';
+import '../home/service_grid.dart';
 
 /// "Get Instant Service" — what do you need, right now?
 ///
@@ -83,32 +82,27 @@ class InstantServiceScreen extends ConsumerWidget {
             ),
             const SizedBox(height: Space.x6),
 
-            for (final service in list) ...[
-              _ServiceRow(
-                service: service,
-                onTap: () {
-                  HapticFeedback.selectionClick();
+            // The same three-across grid as home and search, with no Add
+            // button on the tiles: instant books ONE job, so a tap here is
+            // the choice itself rather than a step towards a basket.
+            ServiceCatalogueGrid(
+              services: list,
+              showAdd: false,
+              emptyMessage: 'The catalogue for your area is still being set up.',
+              onOpenService: (service) {
+                HapticFeedback.selectionClick();
 
-                  // One service, at its default duration. Instant is a single
-                  // job by definition: someone who needs a plumber now is not
-                  // also assembling a shopping list.
-                  ref.read(cartProvider.notifier)
-                    ..clear()
-                    ..add(service);
+                // One service, at its default duration. Instant is a single
+                // job by definition: someone who needs a plumber now is not
+                // also assembling a shopping list.
+                ref.read(cartProvider.notifier)
+                  ..clear()
+                  ..add(service);
 
-                  ref.read(checkoutProvider.notifier).setMode(CheckoutMode.instant);
-                  onContinue();
-                },
-              ),
-              const SizedBox(height: Space.x2),
-            ],
-
-            if (list.isEmpty)
-              AppStateView.empty(
-                title: 'No services yet',
-                message: 'The catalogue for your area is still being set up.',
-                icon: AppIcons.home,
-              ),
+                ref.read(checkoutProvider.notifier).setMode(CheckoutMode.instant);
+                onContinue();
+              },
+            ),
 
             const SizedBox(height: Space.x6),
             Center(
@@ -127,48 +121,6 @@ class InstantServiceScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ServiceRow extends StatelessWidget {
-  const _ServiceRow({required this.service, required this.onTap});
-
-  final Service service;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-
-    return AppCard(
-      onTap: onTap,
-      elevated: false,
-      padding: const EdgeInsets.all(Space.x3),
-      child: Row(
-        children: [
-          ServiceArtwork(service: service, size: 52, padding: EdgeInsets.zero),
-          const SizedBox(width: Space.x4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(service.name, style: context.text.titleMedium),
-                const SizedBox(height: 2),
-                Text(
-                  service.isTimed
-                      ? '${formatRupees(service.priceFor(service.defaultMinutes))} '
-                          'for ${formatMinutes(service.defaultMinutes)}'
-                      : 'From ${formatRupees(service.basePrice)}',
-                  style: context.text.bodySmall?.copyWith(color: t.textSecondary),
-                ),
-              ],
-            ),
-          ),
-          AppIcon(AppIcons.chevronRight, size: Sizes.iconSm, color: t.textTertiary),
-        ],
       ),
     );
   }

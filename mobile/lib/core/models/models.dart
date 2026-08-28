@@ -1,3 +1,4 @@
+import '../location/address_format.dart';
 import '../network/json.dart';
 
 /// Domain models.
@@ -63,6 +64,22 @@ class AppUser {
         avatarUrl: asStringOrNull(pick(json, 'avatarUrl')),
         displayName: asStringOrNull(pick(json, 'displayName')),
       );
+
+  /// For the on-device cache that lets the app open signed-in with no network.
+  ///
+  /// Deliberately the camelCase spelling `/auth/me` uses, so [fromJson] reads
+  /// it back without a second code path.
+  Json toJson() => {
+        'id': id,
+        'name': name,
+        'role': role,
+        'phone': phone,
+        'email': email,
+        'preferredLanguage': language,
+        'status': status,
+        'avatarUrl': avatarUrl,
+        'displayName': displayName,
+      };
 }
 
 class AuthSession {
@@ -177,10 +194,18 @@ class Service {
   int? get discountPercent =>
       hasDiscount ? (100 - (basePrice / listPrice! * 100)).round() : null;
 
-  /// The best artwork available, most specific first. Null means the client
-  /// falls back to its built-in glyph.
-  String? get artworkImage => imageUrl ?? categoryImageUrl;
-  String? get artworkAnimation => animationUrl ?? categoryAnimationUrl;
+  /// This service's own artwork, or null.
+  ///
+  /// Deliberately NOT falling back to [categoryImageUrl]. Every service in a
+  /// category shares that one file, so a four-service group rendered the same
+  /// illustration four times over — which looks like a bug, not a catalogue.
+  /// A service with no picture of its own falls through to its per-trade glyph
+  /// instead, which differs between an air conditioner and a refrigerator and
+  /// is bundled in the binary so it cannot fail to load.
+  ///
+  /// Upload artwork for a service and it takes over here automatically.
+  String? get artworkImage => imageUrl;
+  String? get artworkAnimation => animationUrl;
 
   bool get hasWorkers => (availableWorkers ?? 1) > 0;
 
@@ -466,6 +491,13 @@ class SavedAddress {
 
   bool get hasCoordinates => latitude != null && longitude != null;
 
+  /// The address trimmed to what fits a one-line header.
+  ///
+  /// The full postal string is right for a worker looking for the door and
+  /// wrong for a strip above a greeting, where it truncates mid-word and
+  /// leaves the reader looking at "...Andhra Pra".
+  String get shortAddress => shortenAddress(address);
+
   factory SavedAddress.fromJson(Json json) => SavedAddress(
         id: asString(pick(json, 'id')),
         name: asString(pick(json, 'name'), fallback: 'Address'),
@@ -566,6 +598,9 @@ class WorkerMatch {
     this.reasons = const [],
     this.phone,
     this.avatarUrl,
+    this.latitude,
+    this.longitude,
+    this.locationUpdatedAt,
   });
 
   final String workerId;
@@ -589,6 +624,19 @@ class WorkerMatch {
   final double? score;
   final List<String> reasons;
 
+  /// Where the worker is, when the server is willing to say.
+  ///
+  /// The tracking endpoint sends `location` as a GeoJSON Point, or null when it
+  /// has measured the position and found it implausible -- a device reporting a
+  /// default, a fix taken before GPS locked. Null here carries that same
+  /// meaning, so the UI says "not shared yet" rather than drawing a pin in the
+  /// wrong hemisphere.
+  final double? latitude;
+  final double? longitude;
+  final DateTime? locationUpdatedAt;
+
+  bool get hasLocation => latitude != null && longitude != null;
+
   factory WorkerMatch.fromJson(Json json) => WorkerMatch(
         workerId: asString(pick(json, 'workerId', aliases: ['id'])),
         name: asString(pick(json, 'name'), fallback: 'Worker'),
@@ -601,7 +649,21 @@ class WorkerMatch {
         isAvailable: asBool(pick(json, 'isAvailable'), fallback: true),
         score: asDoubleOrNull(pick(json, 'score')),
         reasons: asStringList(pick(json, 'reasons')),
+        // GeoJSON orders coordinates [longitude, latitude], which is the
+        // reverse of how everything else here reads them.
+        latitude: _geoJsonLat(pick(json, 'location')),
+        longitude: _geoJsonLng(pick(json, 'location')),
+        locationUpdatedAt: asDateOrNull(pick(json, 'locationUpdatedAt')),
       );
+}
+
+double? _geoJsonLat(dynamic location) => _geoJsonAt(location, 1);
+double? _geoJsonLng(dynamic location) => _geoJsonAt(location, 0);
+
+double? _geoJsonAt(dynamic location, int index) {
+  final coordinates = asJson(location)?['coordinates'];
+  if (coordinates is! List || coordinates.length < 2) return null;
+  return asDoubleOrNull(coordinates[index]);
 }
 
 /// The handshake codes, returned exactly once by POST /bookings.
@@ -900,6 +962,35 @@ class GeoPlace {
       placeId: asStringOrNull(pick(json, 'placeId')),
     );
   }
+}
+
+/// One suggestion from Places Autocomplete, for a field being typed into.
+///
+/// Two lines, already split by Google: [primary] is the thing itself ("Benz
+/// Circle") and [secondary] is where it is ("Vijayawada, Andhra Pradesh").
+/// A suggestion carries no coordinates — resolving one to a position is a
+/// second call, made only for the row the user actually picks.
+class PlacePrediction {
+  const PlacePrediction({
+    required this.placeId,
+    required this.primary,
+    required this.secondary,
+    required this.description,
+  });
+
+  final String placeId;
+  final String primary;
+  final String secondary;
+
+  /// The whole thing on one line, for when there is no room for two.
+  final String description;
+
+  factory PlacePrediction.fromJson(Json json) => PlacePrediction(
+        placeId: asString(pick(json, 'placeId')),
+        primary: asString(pick(json, 'primary', aliases: ['description'])),
+        secondary: asString(pick(json, 'secondary')),
+        description: asString(pick(json, 'description')),
+      );
 }
 
 // ────────────────────────────────────────────────────────────────── review ──

@@ -113,9 +113,14 @@ void main() {
       expect(s.artworkImage, '/media/artwork/service.png');
     });
 
-    test('falls back to the category artwork', () {
+    test('does NOT borrow the category artwork', () {
+      // Every service in a category shares one file, so falling back to it
+      // rendered the same illustration for all four Appliances services --
+      // which reads as a rendering bug rather than a catalogue. A service with
+      // no picture of its own falls through to its per-trade glyph instead.
       final s = service({'categoryImageUrl': '/media/artwork/category.png'});
-      expect(s.artworkImage, '/media/artwork/category.png');
+      expect(s.artworkImage, isNull);
+      expect(s.artworkAnimation, isNull);
     });
 
     test('is null when neither exists, so the glyph is used', () {

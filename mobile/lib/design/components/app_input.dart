@@ -32,6 +32,7 @@ class AppTextField extends StatelessWidget {
     this.autofocus = false,
     this.inputFormatters,
     this.focusNode,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   final String? label;
@@ -58,6 +59,10 @@ class AppTextField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final FocusNode? focusNode;
 
+  /// Defaults to none, which is right for an email address or a code and
+  /// wrong for a person's name — hence the knob rather than a guess.
+  final TextCapitalization textCapitalization;
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
@@ -81,6 +86,7 @@ class AppTextField extends StatelessWidget {
           maxLength: maxLength,
           autofocus: autofocus,
           inputFormatters: inputFormatters,
+          textCapitalization: textCapitalization,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
           style: context.text.bodyLarge,
@@ -130,6 +136,7 @@ class AppSearchField extends StatelessWidget {
     this.readOnly = false,
     this.autofocus = false,
     this.trailing,
+    this.focusNode,
   });
 
   final String hint;
@@ -140,6 +147,15 @@ class AppSearchField extends StatelessWidget {
   final bool readOnly;
   final bool autofocus;
   final Widget? trailing;
+
+  /// The caller's focus node, when it needs to dismiss the keyboard itself or
+  /// know whether the field is focused.
+  ///
+  /// Its absence was a real bug rather than a missing convenience: the map
+  /// picker held a FocusNode, gated its suggestion list on `hasFocus`, and had
+  /// no way to attach the node to this field — so the list never appeared and
+  /// address search looked broken while quietly working perfectly.
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -161,6 +177,7 @@ class AppSearchField extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               readOnly: readOnly,
               autofocus: autofocus,
               onTap: onTap,

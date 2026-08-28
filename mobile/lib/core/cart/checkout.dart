@@ -32,6 +32,8 @@ class CheckoutState {
     this.addressId,
     this.days = const {},
     this.notes = '',
+    this.contactName = '',
+    this.contactPhone = '',
   });
 
   final CheckoutMode mode;
@@ -47,6 +49,25 @@ class CheckoutState {
 
   final String notes;
 
+  /// Who the worker asks for at the door.
+  ///
+  /// Prefilled from the account the first time the cart is opened, then owned
+  /// by the customer: a booking is often for somebody else's house, and the
+  /// account holder's name and number are the wrong two facts to send a worker
+  /// with. Empty means "not filled in yet", not "same as the account" — the
+  /// prefill happens once, visibly, in the cart.
+  final String contactName;
+  final String contactPhone;
+
+  /// Ten digits, and never starting below 6. Same rule the sign-up form uses,
+  /// so a number accepted there is accepted here.
+  static final _phonePattern = RegExp(r'^[6-9]\d{9}$');
+
+  String get contactDigits => contactPhone.replaceAll(RegExp(r'\D'), '');
+
+  bool get hasContact =>
+      contactName.trim().length >= 2 && _phonePattern.hasMatch(contactDigits);
+
   bool get needsSlot => mode != CheckoutMode.instant;
   bool get needsDays => mode == CheckoutMode.recurring;
 
@@ -57,6 +78,7 @@ class CheckoutState {
   /// questions and only one of them is answerable from this object.
   bool get isComplete {
     if (addressId == null) return false;
+    if (!hasContact) return false;
     if (needsSlot && scheduledAt == null) return false;
     if (needsDays && days.isEmpty) return false;
     return true;
@@ -69,6 +91,8 @@ class CheckoutState {
     String? addressId,
     Set<int>? days,
     String? notes,
+    String? contactName,
+    String? contactPhone,
   }) =>
       CheckoutState(
         mode: mode ?? this.mode,
@@ -76,6 +100,8 @@ class CheckoutState {
         addressId: addressId ?? this.addressId,
         days: days ?? this.days,
         notes: notes ?? this.notes,
+        contactName: contactName ?? this.contactName,
+        contactPhone: contactPhone ?? this.contactPhone,
       );
 }
 
@@ -95,6 +121,22 @@ class CheckoutController extends Notifier<CheckoutState> {
   void setSlot(DateTime at) => state = state.copyWith(scheduledAt: at);
   void setAddress(String id) => state = state.copyWith(addressId: id);
   void setNotes(String notes) => state = state.copyWith(notes: notes);
+
+  void setContactName(String name) => state = state.copyWith(contactName: name);
+  void setContactPhone(String phone) => state = state.copyWith(contactPhone: phone);
+
+  /// Fill the contact in from the account, without overwriting anything the
+  /// customer has already typed.
+  ///
+  /// Called once when the cart opens. Prefilling is the whole reason this is
+  /// not a burden — most orders are for the account holder, and for those the
+  /// two fields are already correct and simply need looking at.
+  void prefillContact({String? name, String? phone}) {
+    state = state.copyWith(
+      contactName: state.contactName.isEmpty ? (name ?? '') : state.contactName,
+      contactPhone: state.contactPhone.isEmpty ? (phone ?? '') : state.contactPhone,
+    );
+  }
 
   void toggleDay(int weekday) {
     final days = {...state.days};

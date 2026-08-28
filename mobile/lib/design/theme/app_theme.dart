@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'page_transitions.dart';
 import '../tokens/colors.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -355,12 +356,11 @@ abstract final class AppTheme {
         errorStyle: textTheme.bodySmall?.copyWith(color: t.danger),
       ),
 
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-        },
-      ),
+      // One route animation everywhere. Cupertino's full-width slide carried a
+      // back-swipe affordance this app does not use, and it left the desktop
+      // targets on Android's heavy zoom — so the same tap felt different
+      // depending on the platform. See SmoothPageTransitions.
+      pageTransitionsTheme: smoothPageTransitionsTheme,
     );
   }
 }

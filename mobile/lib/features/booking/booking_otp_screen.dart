@@ -15,17 +15,31 @@ import '../../design/design_system.dart';
 /// so this screen has one purpose: make the right code impossible to miss.
 ///
 /// The codes are returned by POST /bookings exactly ONCE — only SHA-256 hashes
-/// are stored server-side. [BookingOtpScreen] therefore takes them as a value
-/// rather than fetching them, and offers a reissue when they are lost.
+/// are stored server-side — so the app writes them into the encrypted
+/// [OtpStore] the moment an order comes back. That is what makes this screen
+/// re-openable rather than a one-time reveal: it reads from this device, as
+/// often as the customer likes, for as long as the booking is live.
+///
+/// Issued once, viewable always. The reissue below exists for the one case
+/// that breaks — a different device, or storage cleared — and it is a
+/// deliberate act, because reissuing mints a NEW pair and invalidates whatever
+/// the customer had already written down.
 class BookingOtpScreen extends ConsumerStatefulWidget {
   const BookingOtpScreen({
     super.key,
     required this.bookingId,
     required this.otps,
     this.status = 'assigned',
+    this.workerName,
+    this.serviceName,
   });
 
   final String bookingId;
+
+  /// Who is asking for the code, and what for. Both optional: a booking with
+  /// no worker yet has neither, and the card is simply not shown.
+  final String? workerName;
+  final String? serviceName;
 
   /// Null when the customer arrived here after losing the original codes.
   final BookingOtps? otps;
@@ -108,13 +122,58 @@ class _BookingOtpScreenState extends ConsumerState<BookingOtpScreen> {
             '${_needsStartCode ? 'start' : 'complete'} the job without it.',
             style: context.text.bodyLarge?.copyWith(color: t.textSecondary),
           ),
+
+          // Who is asking, and what for. Reading a number aloud to a stranger
+          // is exactly the moment the customer wants to see the name they were
+          // told to expect against the job it belongs to.
+          if (widget.workerName != null || widget.serviceName != null) ...[
+            const SizedBox(height: Space.x5),
+            AppCard(
+              elevated: false,
+              padding: const EdgeInsets.all(Space.x4),
+              child: Row(
+                children: [
+                  WorkerAvatar(
+                    name: widget.workerName ?? 'Worker',
+                    verified: widget.workerName != null,
+                    size: Sizes.avatarMd,
+                  ),
+                  const SizedBox(width: Space.x3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.workerName ?? 'Worker not assigned yet',
+                          style: context.text.titleSmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (widget.serviceName != null)
+                          Text(
+                            widget.serviceName!,
+                            style: context.text.bodySmall
+                                ?.copyWith(color: t.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: Space.x8),
 
           if (otps == null)
             AppStateView.empty(
               title: 'Codes not available',
-              message: 'Your verification codes are shown once when you book. '
-                  'Issue a new pair to continue.',
+              message: 'This device does not have the codes for this booking '
+                  '— they are kept where the booking was placed. Issuing a new '
+                  'pair replaces the old one, so only do that if nobody has '
+                  'the first.',
               icon: AppIcons.secure,
               actionLabel: _reissuing ? 'Issuing…' : 'Issue new codes',
               onAction: _reissuing ? null : _reissue,

@@ -15,8 +15,6 @@ class RemoteConfig {
     this.googleIosClientId,
     this.googleSignInEnabled = false,
     this.passwordSignInEnabled = true,
-    this.otpSignInEnabled = true,
-    this.demoSignInEnabled = false,
     this.razorpayKeyId,
     this.paymentsLive = false,
     this.currency = 'INR',
@@ -35,14 +33,6 @@ class RemoteConfig {
   final String? googleIosClientId;
   final bool googleSignInEnabled;
   final bool passwordSignInEnabled;
-  final bool otpSignInEnabled;
-
-  /// Whether POST /auth/demo will issue a session on THIS server.
-  ///
-  /// Defaults to false and is never inferred from the build: a demo build
-  /// pointed at a real deployment shows no demo button, because the server
-  /// says it has none.
-  final bool demoSignInEnabled;
 
   // ── Payments ──────────────────────────────────────────────────────────────
 
@@ -77,8 +67,6 @@ class RemoteConfig {
       googleIosClientId: asStringOrNull(pick(auth, 'googleIosClientId')),
       googleSignInEnabled: asBool(pick(auth, 'googleSignInEnabled')),
       passwordSignInEnabled: asBool(pick(auth, 'passwordSignInEnabled'), fallback: true),
-      otpSignInEnabled: asBool(pick(auth, 'otpSignInEnabled'), fallback: true),
-      demoSignInEnabled: asBool(pick(auth, 'demoSignInEnabled')),
       razorpayKeyId: asStringOrNull(pick(payments, 'razorpayKeyId')),
       paymentsLive: asBool(pick(payments, 'live')),
       currency: asString(pick(payments, 'currency'), fallback: 'INR'),

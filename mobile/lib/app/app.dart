@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../core/models/models.dart';
+import '../core/config/theme_config.dart';
+import '../core/notifications/local_notifications.dart';
 import '../core/providers.dart';
 import '../design/design_system.dart';
 import '../core/ui/service_artwork.dart';
 import '../features/account/profile_tab.dart';
+import '../features/auth/account_gate.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/booking/booking_otp_screen.dart';
 import '../features/booking/review_screen.dart';
@@ -32,8 +36,6 @@ class GetItDoneApp extends ConsumerStatefulWidget {
 }
 
 class _GetItDoneAppState extends ConsumerState<GetItDoneApp> {
-  ThemeMode _themeMode = ThemeMode.system;
-
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
@@ -41,13 +43,24 @@ class _GetItDoneAppState extends ConsumerState<GetItDoneApp> {
     // the user, so it follows them across devices.
     final locale = Locale(user?.language ?? 'en');
 
+    // Light unless the customer said otherwise, and never ThemeMode.system —
+    // see AppThemeChoice for why following the OS is the wrong accommodation
+    // for this app.
+    final theme = ref.watch(themeProvider);
+
     return MaterialApp(
       title: 'GET IT DONE',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(locale),
       darkTheme: AppTheme.dark(locale),
-      themeMode: _themeMode,
+      themeMode: theme.mode,
       locale: locale,
+      // Without these the app rendered every word in English regardless of the
+      // language the customer picked -- the typeface swapped and nothing else
+      // did. `supportedLocales` comes from the .arb files, so en/te/hi here
+      // stays in step with what /config/mobile advertises.
+      localizationsDelegates: AppL10n.localizationsDelegates,
+      supportedLocales: AppL10n.supportedLocales,
       builder: (context, child) {
         // Users can scale text up for readability, but past 1.3 the booking
         // cards break. The app should bend, not shatter.
@@ -59,10 +72,8 @@ class _GetItDoneAppState extends ConsumerState<GetItDoneApp> {
         );
       },
       home: _RootGate(
-        themeMode: _themeMode,
-        onToggleTheme: () => setState(() {
-          _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-        }),
+        themeMode: theme.mode,
+        onToggleTheme: ref.read(themeProvider.notifier).toggle,
       ),
     );
   }
@@ -85,12 +96,35 @@ class _RootGate extends ConsumerWidget {
     // effectiveConfigProvider falls back to the build-time values meanwhile.
     ref.watch(remoteConfigProvider);
 
+    // The three root states cross-fade into each other rather than cutting.
+    //
+    // Launch used to be a sequence of hard swaps -- splash, then sign-in or the
+    // shell, each appearing instantly where the last one was. Each swap is a
+    // moment the eye has to re-find the screen. A fade of one beat costs
+    // nothing and turns three states into one movement.
+    //
+    // Keyed by which state it is, not by widget type: without a key the
+    // switcher sees a Stack replaced by a Stack and does not animate at all.
+    return AnimatedSwitcher(
+      duration: Motion.base,
+      switchInCurve: Motion.curve,
+      switchOutCurve: Motion.curveExit,
+      child: _rootFor(context, ref, auth),
+    );
+  }
+
+  Widget _rootFor(BuildContext context, WidgetRef ref, AuthState auth) {
     // Hold on the splash while the stored session is validated, so an
     // authenticated user never sees sign-in flash past on launch.
-    if (auth.isResolving) return const _SplashScreen();
+    if (auth.isResolving) return const _SplashScreen(key: ValueKey('splash'));
 
-    if (!auth.isAuthenticated) {
+    // A guest gets the shell, same as a signed-in customer. The difference is
+    // expressed inside it — see AccountGate — rather than by a second root,
+    // because "browse without an account" that leads to a cut-down second app
+    // is worse than a sign-in wall, not better.
+    if (!auth.isBrowsing) {
       return Stack(
+        key: const ValueKey('sign-in'),
         children: [
           const SignInScreen(),
           if (auth.error != null)
@@ -109,28 +143,92 @@ class _RootGate extends ConsumerWidget {
       );
     }
 
-    return AppShell(themeMode: themeMode, onToggleTheme: onToggleTheme);
+    return AppShell(
+      key: const ValueKey('shell'),
+      themeMode: themeMode,
+      onToggleTheme: onToggleTheme,
+    );
   }
 }
 
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
+/// The first screen, and the one nobody should notice.
+///
+/// It continues the native launch window rather than replacing it: Android has
+/// already painted this white ground with this mark centred on it (see
+/// launch_background.xml), so at the handover from the native window to Flutter
+/// the picture does not change at all. What the user sees is a still mark that
+/// then breathes — not an app starting twice.
+///
+/// The animation is short and does not loop. A splash that keeps moving is
+/// telling you it is stuck; this one settles, and by the time it has, the
+/// stored session has usually resolved and the screen is gone.
+class _SplashScreen extends StatefulWidget {
+  const _SplashScreen({super.key});
+
+  @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: Motion.emphasis,
+  )..forward();
+
+  /// The mark settles from very slightly large, which reads as the icon the
+  /// user just tapped coming to rest. Starting small and growing would read as
+  /// the app loading, which is the thing we are trying not to say.
+  late final Animation<double> _scale = Tween(begin: 1.06, end: 1.0).animate(
+    CurvedAnimation(parent: _controller, curve: Motion.curveEmphasis),
+  );
+
+  /// The words arrive after the mark, not with it.
+  late final Animation<double> _wordsFade = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.45, 1, curve: Motion.curve),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+
     return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppIconBadge(AppIcons.cooperative, size: 72, iconSize: 34),
+            // The same badge that sits on their home screen and on the native
+            // launch window. Recognising it is the whole point.
+            ScaleTransition(
+              scale: _scale,
+              child: Image.asset(
+                'assets/brand/mark.png',
+                width: 88,
+                height: 88,
+                filterQuality: FilterQuality.medium,
+              ),
+            ),
             const SizedBox(height: Space.x5),
-            Text('GET IT DONE', style: context.text.headlineSmall),
-            const SizedBox(height: Space.x2),
-            Text(
-              'Cooperative services',
-              style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+            FadeTransition(
+              opacity: _wordsFade,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('GET IT DONE', style: context.text.headlineSmall),
+                  const SizedBox(height: Space.x2),
+                  Text(
+                    'Cooperative services',
+                    style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -152,6 +250,35 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Ask once the user is actually signed in, rather than on first launch.
+    //
+    // Android 13 puts the permission behind a system dialog, and a dialog that
+    // appears before anyone has seen what the app does gets denied out of
+    // reflex -- after which it cannot be asked again from inside the app. By
+    // here the user has a reason to say yes.
+    //
+    // "Signed in" now has to be checked rather than assumed: the shell also
+    // opens for a guest, who has no session, no socket and therefore nothing
+    // that could ever produce a notification. Asking them spends the one
+    // prompt Android grants on a permission that cannot be used yet.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askForNotifications());
+  }
+
+  /// True once the system prompt has been raised, so a guest who signs in
+  /// mid-session is asked exactly once and not again on every rebuild.
+  bool _askedForNotifications = false;
+
+  void _askForNotifications() {
+    if (!mounted || _askedForNotifications) return;
+    if (!ref.read(authControllerProvider).isAuthenticated) return;
+    _askedForNotifications = true;
+    ref.read(localNotificationsProvider).requestPermission();
+  }
 
   /// Each tab keeps its own navigator, so switching tabs does not discard a
   /// half-finished booking flow.
@@ -179,6 +306,18 @@ class _AppShellState extends ConsumerState<AppShell> {
   ];
 
   bool get _isBrowsing => _stackDepth[_tab] == 0;
+
+  /// Socket notifications become system notifications for as long as this shell
+  /// is mounted -- which is the whole signed-in session. Watched here rather
+  /// than on the Alerts tab, which is exactly the screen the user is NOT on
+  /// when a notification needs to reach them.
+  void _listenForNotifications() {
+    // Nothing to listen to without a session: the socket authenticates with
+    // the access token, and a guest has none.
+    if (ref.watch(authControllerProvider).isAuthenticated) {
+      ref.watch(notificationBridgeProvider);
+    }
+  }
 
   Future<bool> _onWillPop() async {
     final navigator = _navigatorKeys[_tab].currentState;
@@ -213,8 +352,13 @@ class _AppShellState extends ConsumerState<AppShell> {
       bookingId: booking.id,
       onOpenCodes: () => _push(BookingOtpScreen(
         bookingId: booking.id,
+        // Null: read back from this device's OtpStore by the screen itself.
+        // Passing them here would mean the codes only work on the path that
+        // happens to have them in hand.
         otps: null,
         status: booking.status,
+        workerName: booking.workerName,
+        serviceName: booking.serviceName,
       )),
       onOpenWorker: (workerId) => _push(TrustScreen(workerId: workerId)),
       onReview: (completed) => _push(ReviewScreen(booking: completed)),
@@ -236,6 +380,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                     bookingId: result.booking.id,
                     otps: result.otps,
                     status: result.booking.status,
+                    workerName: result.booking.workerName,
+                    serviceName: result.booking.serviceName,
                   )),
                   onTrack: () => _openBooking(result.booking),
                 ),
@@ -256,7 +402,14 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final unread = ref.watch(unreadNotificationCountProvider);
+    _listenForNotifications();
+
+    // A guest who signs in stays in THIS shell — the root's key does not
+    // change, so initState will not run again. Catch the transition here
+    // instead, or someone who browsed first would never be asked.
+    ref.listen(authControllerProvider, (_, __) => _askForNotifications());
 
     return PopScope(
       canPop: false,
@@ -290,12 +443,25 @@ class _AppShellState extends ConsumerState<AppShell> {
             _TabNavigator(
               navigatorKey: _navigatorKeys[1],
               observers: [_depthObservers[1]],
-              child: BookingsTab(onOpenBooking: _openBooking),
+              // Guarded rather than hidden. Losing a tab would rearrange the
+              // bar under a guest who signs in mid-session, and "your
+              // bookings" is exactly the promise worth showing somebody who
+              // has not made an account yet.
+              child: AccountGate(
+                action: 'see your bookings',
+                icon: AppIcons.bookings,
+                animation: 'assets/lottie/empty.json',
+                child: BookingsTab(onOpenBooking: _openBooking),
+              ),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[2],
               observers: [_depthObservers[2]],
-              child: const NotificationsTab(),
+              child: const AccountGate(
+                action: 'get updates about your bookings',
+                icon: AppIcons.notifications,
+                child: NotificationsTab(),
+              ),
             ),
             _TabNavigator(
               navigatorKey: _navigatorKeys[3],
@@ -321,11 +487,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                     currentIndex: _tab,
                     onTap: (i) => setState(() => _tab = i),
                     items: [
-                      const AppNavItem(icon: AppIcons.home, label: 'Home'),
-                      const AppNavItem(icon: AppIcons.bookings, label: 'Bookings'),
+                      AppNavItem(icon: AppIcons.home, label: l10n.navHome),
+                      AppNavItem(icon: AppIcons.bookings, label: l10n.navBookings),
                       AppNavItem(
                         icon: AppIcons.notifications,
-                        label: 'Alerts',
+                        label: l10n.navAlerts,
                         badgeCount: unread,
                       ),
                       // No Profile destination. It is somewhere you go

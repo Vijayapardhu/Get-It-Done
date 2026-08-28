@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -112,6 +114,8 @@ class GoogleAuthService {
         );
       }
 
+      _logAudience(idToken);
+
       return GoogleAuthSuccess(
         idToken: idToken,
         email: account.email,
@@ -131,7 +135,7 @@ class GoogleAuthService {
             'Google sign-in configuration is invalid.',
           GoogleSignInExceptionCode.uiUnavailable =>
             'Google sign-in could not be shown. Try again.',
-          _ => 'Google sign-in failed. Please try again or use your phone number.',
+          _ => 'Google sign-in failed. Try again, or sign in with your email and password.',
         },
         isConfiguration: e.code == GoogleSignInExceptionCode.providerConfigurationError ||
             e.code == GoogleSignInExceptionCode.clientConfigurationError,
@@ -139,8 +143,37 @@ class GoogleAuthService {
     } catch (e) {
       if (kDebugMode) debugPrint('[google] unexpected: $e');
       return const GoogleAuthFailure(
-        'Google sign-in failed. Please try again or use your phone number.',
+        'Google sign-in failed. Try again, or sign in with your email and password.',
       );
+    }
+  }
+
+  /// Report which client id Google actually audienced the token to.
+  ///
+  /// The backend rejects a token whose `aud` is not one of its configured
+  /// client ids, and the only thing it can say about it is "that Google
+  /// sign-in could not be verified" -- true, useless, and identical to the
+  /// message for an expired or forged token. The mismatch is a console
+  /// misconfiguration that nobody can diagnose without knowing which id was
+  /// used, so it is written to the log.
+  ///
+  /// Claims only, never the token: `aud` and `azp` are public client
+  /// identifiers, while the token itself is a bearer credential.
+  void _logAudience(String idToken) {
+    try {
+      final parts = idToken.split('.');
+      if (parts.length != 3) return;
+
+      final normalised = base64Url.normalize(parts[1]);
+      final claims = jsonDecode(utf8.decode(base64Url.decode(normalised)));
+      if (claims is! Map) return;
+
+      debugPrint(
+        '[google] token aud=${claims['aud']} azp=${claims['azp']} '
+        'expected=$serverClientId',
+      );
+    } catch (_) {
+      // Diagnostics must never be the reason a sign-in fails.
     }
   }
 

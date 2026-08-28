@@ -8,6 +8,7 @@ import '../../core/models/models.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
+import 'location_picker_screen.dart';
 
 /// Saved addresses.
 ///
@@ -232,6 +233,17 @@ class _AddAddressScreenState extends ConsumerState<AddAddressScreen> {
   Timer? _geocodeDebounce;
 
   @override
+  void initState() {
+    super.initState();
+    // Straight to the map. Someone who tapped "add an address" is answering
+    // "where?", and the map answers it in one tap where the form takes twelve.
+    // Backing out of the picker leaves them on the form, which still works.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pickOnMap();
+    });
+  }
+
+  @override
   void dispose() {
     _labelController.dispose();
     _addressController.dispose();
@@ -321,6 +333,36 @@ class _AddAddressScreenState extends ConsumerState<AddAddressScreen> {
     });
   }
 
+  /// Open the map, and take whatever comes back.
+  ///
+  /// The picker returns null when the user backs out, which is a decision, not
+  /// a failure -- the form keeps whatever it already had.
+  Future<void> _pickOnMap() async {
+    final picked = await Navigator.of(context).push<GeoPlace>(
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initial: _hasCoordinates
+              ? GeoPlace(
+                  formattedAddress: _addressController.text.trim(),
+                  latitude: _latitude,
+                  longitude: _longitude,
+                )
+              : null,
+        ),
+      ),
+    );
+
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _latitude = picked.latitude;
+      _longitude = picked.longitude;
+      _addressController.text = picked.formattedAddress;
+      _locationNote = 'Pinned on the map';
+      _error = null;
+    });
+  }
+
   Future<void> _save() async {
     final label = _labelController.text.trim();
     final address = _addressController.text.trim();
@@ -334,9 +376,15 @@ class _AddAddressScreenState extends ConsumerState<AddAddressScreen> {
       return;
     }
     if (!_hasCoordinates) {
+      // Not a formatting complaint. Matching is a geographic query, so an
+      // address with no point on the map cannot reach any worker at all — it
+      // would be accepted here and fail silently at checkout. The banner below
+      // offers the map directly rather than asking the customer to guess which
+      // wording we would recognise.
       setState(() => _error =
-          'We could not find this address on the map. Use your current location, '
-          'or add a nearby landmark so we can locate it.');
+          'Put a pin on the map so we know where to send someone. Typing the '
+          'address is not enough on its own — two streets share a name more '
+          'often than you would think.');
       return;
     }
 
@@ -374,6 +422,14 @@ class _AddAddressScreenState extends ConsumerState<AddAddressScreen> {
       body: ListView(
         padding: const EdgeInsets.all(Space.x5),
         children: [
+          _MapPreview(
+            address: _addressController.text.trim(),
+            latitude: _latitude,
+            longitude: _longitude,
+            onTap: _pickOnMap,
+          ),
+          const SizedBox(height: Space.x4),
+
           AppButton(
             label: 'Use my current location',
             variant: AppButtonVariant.soft,
@@ -388,7 +444,7 @@ class _AddAddressScreenState extends ConsumerState<AddAddressScreen> {
               Expanded(child: Divider(color: t.border)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Space.x3),
-                child: Text('or enter it', style: context.text.bodySmall?.copyWith(color: t.textTertiary)),
+                child: Text('and add the details', style: context.text.bodySmall?.copyWith(color: t.textTertiary)),
               ),
               Expanded(child: Divider(color: t.border)),
             ],
@@ -474,16 +530,94 @@ class _AddAddressScreenState extends ConsumerState<AddAddressScreen> {
 
           if (_error != null) ...[
             const SizedBox(height: Space.x4),
-            AppBanner(message: _error!, tone: StateTone.error),
+            AppBanner(
+              message: _error!,
+              tone: StateTone.error,
+              // The one error on this screen with an obvious next action gets
+              // the button that performs it.
+              actionLabel: _hasCoordinates ? null : 'Open the map',
+              onAction: _hasCoordinates ? null : _pickOnMap,
+            ),
           ],
 
           const SizedBox(height: Space.x6),
           AppButton.primary(
-            label: 'Save address',
+            // The label names what is missing rather than failing after the
+            // tap. A disabled button with no explanation is the worse half of
+            // this trade; this one still works, and still explains.
+            label: _hasCoordinates ? 'Save address' : 'Set the location on the map',
+            icon: _hasCoordinates ? null : AppIcons.location,
             loading: _saving,
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : (_hasCoordinates ? _save : _pickOnMap),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A still map of the chosen spot, and the way back to change it.
+///
+/// A picture rather than a live map: this is a confirmation that the pin landed
+/// somewhere sensible, and an interactive map here would compete with the form
+/// for the same scroll gesture.
+class _MapPreview extends ConsumerWidget {
+  const _MapPreview({
+    required this.address,
+    required this.latitude,
+    required this.longitude,
+    required this.onTap,
+  });
+
+  final String address;
+  final double? latitude;
+  final double? longitude;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final located = latitude != null && longitude != null;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: Space.cardInsetsLarge,
+        decoration: BoxDecoration(
+          color: located ? t.primarySoft : t.surfaceAlt,
+          borderRadius: BorderRadius.circular(Radii.xl),
+          border: Border.all(color: located ? t.primary.withValues(alpha: 0.3) : t.border),
+        ),
+        child: Row(
+          children: [
+            AppIconBadge(AppIcons.location, size: 44),
+            const SizedBox(width: Space.x3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    located ? 'Pinned on the map' : 'Set the location on a map',
+                    style: context.text.titleSmall,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    located && address.isNotEmpty
+                        ? address
+                        : 'A worker needs the building, not just the street.',
+                    style: context.text.bodySmall?.copyWith(color: t.textSecondary),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: Space.x2),
+            AppIcon(AppIcons.chevronRight, size: 18, color: t.textTertiary),
+          ],
+        ),
       ),
     );
   }

@@ -1,0 +1,76 @@
+{
+  "@@locale": "hi",
+
+  "navHome": "होम",
+  "navBookings": "बुकिंग",
+  "navAlerts": "सूचनाएं",
+
+  "actionRetry": "फिर कोशिश करें",
+  "actionTryAgain": "फिर कोशिश करें",
+  "actionSignIn": "साइन इन",
+  "actionCreateAccount": "खाता बनाएं",
+  "actionContinueWithGoogle": "Google से जारी रखें",
+  "actionBrowseWithoutSigningIn": "बिना साइन इन देखें",
+  "actionPayNow": "अभी भुगतान करें",
+  "actionCancel": "रद्द करें",
+  "actionClose": "बंद करें",
+  "actionSave": "सहेजें",
+  "actionDone": "हो गया",
+
+  "signInWelcomeBack": "फिर से स्वागत है",
+  "signInSubtitle": "एक खाते से अपने क्षेत्र की कोई भी सेवा बुक करें।",
+  "signInCreateTitle": "अपना खाता बनाएं",
+  "signInNewHere": "नए हैं?",
+  "signInForgotPassword": "पासवर्ड भूल गए?",
+  "signInCooperativeServices": "सहकारी सेवाएं",
+
+  "fieldEmail": "ईमेल",
+  "fieldEmailAddress": "ईमेल पता",
+  "fieldPassword": "पासवर्ड",
+  "fieldYourName": "आपका नाम",
+  "fieldYourPassword": "आपका पासवर्ड",
+  "fieldMobileNumber": "मोबाइल नंबर",
+
+  "validationEnterName": "अपना नाम दर्ज करें।",
+  "validationEnterPassword": "अपना पासवर्ड दर्ज करें।",
+  "validationEmailInvalid": "सही ईमेल पता दर्ज करें।",
+  "validationPhoneInvalid": "सही 10 अंकों का मोबाइल नंबर दर्ज करें।",
+  "validationPasswordLength": "पासवर्ड में कम से कम 8 अक्षर रखें।",
+  "hintPasswordLength": "कम से कम 8 अक्षर",
+  "hintEnterSignupEmail": "वह ईमेल पता दर्ज करें जिससे आपने साइन अप किया था।",
+
+  "bookingsTitle": "आपकी बुकिंग",
+  "bookingsUpcoming": "आगामी",
+  "bookingsPast": "पिछली",
+  "bookingsNothingScheduled": "कुछ भी निर्धारित नहीं",
+  "bookingsNoPast": "कोई पिछली बुकिंग नहीं",
+  "bookingsPastHint": "पूरी और रद्द हुई बुकिंग यहां रहती हैं।",
+  "bookingsLoadFailed": "हम आपकी बुकिंग लोड नहीं कर सके।",
+
+  "notificationsTitle": "सूचनाएं",
+  "notificationsSettings": "सूचना सेटिंग्स",
+  "notificationsAllCaughtUp": "सब देख लिया",
+  "notificationsEmptyHint": "आपकी बुकिंग के अपडेट यहां दिखेंगे।",
+  "notificationsLoadFailed": "हम आपकी सूचनाएं लोड नहीं कर सके।",
+
+  "emergencyTitle": "आपातकाल",
+  "emergencyDispatchNote": "हम प्राथमिकता देकर तुरंत भेजते हैं।",
+  "emergencyLoadFailed": "आपातकालीन सेवाएं लोड नहीं हो सकीं।",
+
+  "errorSomethingWentWrong": "कुछ गलत हो गया",
+  "errorWhatHappened": "क्या हुआ?",
+  "errorOffline": "आप ऑफ़लाइन हैं। कनेक्शन आने पर हम फिर कोशिश करेंगे।",
+
+  "timeTodayAt": "आज {time} बजे",
+  "timeTomorrowAt": "कल {time} बजे",
+
+  "contactDoorNote": "कर्मचारी दरवाजे पर आपसे कैसे संपर्क करे।",
+  "labelService": "सेवा",
+  "labelMessages": "संदेश",
+
+  "languageEnglish": "अंग्रेज़ी",
+  "languageTelugu": "तेलुगु",
+  "languageHindi": "हिंदी",
+  "languageChoose": "अपनी भाषा चुनें",
+  "languageChooseHint": "इसे बाद में अपनी प्रोफ़ाइल में बदल सकते हैं।"
+}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The adaptive icon, used from Android 8 onwards.
+
+  Android masks these two layers to whatever shape the launcher wants — circle,
+  squircle, teardrop — and crops to the middle 72 of the 108dp canvas. The
+  foreground PNG therefore carries its own generous padding (see
+  tool/generate_brand_assets.py) so the badge survives the most aggressive mask.
+
+  The background is a flat token colour rather than a second image: the badge
+  already carries the gradient, and a gradient behind a gradient reads as mud
+  once a launcher shrinks it to 48dp.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
