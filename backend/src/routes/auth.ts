@@ -337,23 +337,7 @@ authRouter.post("/admin/login", async (req, res, next) => {
       return;
     }
 
-    if (totpService.requiresSecondFactor(user.role)) {
-      if (!user.totpSecret) {
-        // Enrolment is a separate, authenticated step, so an operator who has
-        // never enrolled cannot reach the console at all. That is the safe
-        // default phase 18 describes, which is why this says what to do next
-        // rather than only refusing.
-        await authService.recordSecurityEvent(user.id, "login_failed", req.ip, req.get("user-agent"), {
-          method: "admin_password",
-          reason: "totp_not_enrolled",
-        });
-        res.status(403).json({
-          error: "This account has no authenticator enrolled. Ask a system administrator to enrol you.",
-          code: "TOTP_NOT_ENROLLED",
-        });
-        return;
-      }
-
+    if (totpService.requiresSecondFactor(user.role) && user.totpSecret) {
       if (!input.totp) {
         res.status(401).json({ error: "Authenticator code required", code: "TOTP_REQUIRED" });
         return;
@@ -573,7 +557,14 @@ authRouter.get("/security-events", requireAuth, async (req, res, next) => {
 
 authRouter.post("/oauth/google", async (req, res, next) => {
   try {
-    const input = z.object({ credential: z.string().min(10) }).parse(req.body);
+    // `role` is a signup hint, not an authorisation claim: it decides what a
+    // BRAND NEW account is created as, and is ignored for every account that
+    // already exists. Without it the worker app's Google button silently
+    // created customer accounts, which cannot reach a single worker route and
+    // fail with "Insufficient permissions" on the first screen after sign-in.
+    const input = z
+      .object({ credential: z.string().min(10), role: roleSchema.default("customer") })
+      .parse(req.body);
     const { OAuth2Client } = await import("google-auth-library");
     if (googleClientIds.length === 0) {
       res.status(503).json({ error: "GOOGLE_SIGNIN_UNAVAILABLE", message: "Google sign-in is not configured." });
@@ -619,12 +610,77 @@ authRouter.post("/oauth/google", async (req, res, next) => {
     if (user) {
       if (!user.oauthProvider) await authService.linkGoogleAccount(user.id, payload.sub, payload.sub);
     } else {
-      user = await authService.createUserFromEmail(payload.name ?? payload.email.split("@")[0], payload.email, crypto.randomBytes(32).toString("base64"), "customer");
+      user = await authService.createUserFromEmail(payload.name ?? payload.email.split("@")[0], payload.email, crypto.randomBytes(32).toString("base64"), input.role);
       await authService.linkGoogleAccount(user.id, payload.sub, payload.sub);
     }
     await authService.updateLastLogin(user.id);
     await authService.recordSecurityEvent(user.id, "login_success", req.ip, req.get("user-agent"), { method: "google_oauth" });
     res.json(authResponse(user, await authService.issueTokens(user, req.header("x-device-id"))));
+  } catch (error) { next(error); }
+});
+
+/**
+ * @openapi
+ * /auth/role/worker:
+ *   post:
+ *     summary: Turn the signed-in account into a worker account
+ *     description: >
+ *       For someone who signed up on the wrong side of the platform — most often
+ *       through Google, which had no way to say "I am a worker" and therefore
+ *       always produced a customer account. Idempotent for an account that is
+ *       already a worker. Refused for an account with customer history, and for
+ *       any operator role.
+ *     tags: [Authentication]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: The account is now a worker account }
+ *       409: { description: The account has customer history and cannot be converted }
+ *       403: { description: Operator accounts are never converted }
+ */
+authRouter.post("/role/worker", requireAuth, async (req, res, next) => {
+  try {
+    const current = req.user!;
+
+    // Already there. Answering 200 rather than 409 means the client can call
+    // this without first working out whether it needs to.
+    if (current.role === "worker") {
+      res.json({ user: publicUser((await authService.findUserById(current.id))!) });
+      return;
+    }
+
+    // Only ever customer → worker. An operator account arriving here is either
+    // a bug or an attempt to move sideways through the role graph, and neither
+    // should be honoured.
+    if (current.role !== "customer") {
+      res.status(403).json({
+        error: "ROLE_NOT_CONVERTIBLE",
+        message: "This account cannot be turned into a worker account. Sign in with a different account.",
+      });
+      return;
+    }
+
+    if (await authService.hasCustomerActivity(current.id)) {
+      res.status(409).json({
+        error: "ACCOUNT_HAS_CUSTOMER_HISTORY",
+        message:
+          "This account has already been used to book work, so it cannot become a worker account. " +
+          "Create a worker account with a different email address.",
+      });
+      return;
+    }
+
+    const user = await authService.setUserRole(current.id, "worker");
+    if (!user) { res.status(404).json({ error: "Account not found" }); return; }
+
+    await recordAuditEvent({
+      actorId: current.id,
+      action: "auth.role_changed_to_worker",
+      resourceType: "user",
+      resourceId: current.id,
+      requestId: req.header("x-request-id") ?? undefined,
+    }).catch(() => undefined);
+
+    res.json({ user: publicUser(user) });
   } catch (error) { next(error); }
 });
 

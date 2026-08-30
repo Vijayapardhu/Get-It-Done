@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:getitdone_customer/core/api/gid_api.dart';
-import 'package:getitdone_customer/core/models/models.dart';
-import 'package:getitdone_customer/core/models/payment_models.dart';
-import 'package:getitdone_customer/core/network/api_exception.dart';
+import 'package:gid_core/gid_core.dart';
 import 'package:getitdone_customer/core/providers.dart';
 import 'package:getitdone_customer/design/design_system.dart';
 import 'package:getitdone_customer/features/payment/payment_screen.dart';

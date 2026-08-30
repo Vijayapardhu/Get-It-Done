@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The plate the adaptive launcher icon sits on.
+
+      AppColors.blue900 from lib/design/tokens/colors.dart — the darkest step of
+      the brand blue, so the badge's own lighter gradient lifts off it instead
+      of dissolving into it.
+    -->
+    <color name="ic_launcher_background">#14285C</color>
+
+    <!--
+      The window Android paints before Flutter starts. AppColors.n0 — the same
+      white the light theme uses for its surfaces — because the app is a light
+      app and the very first pixel should already say so.
+    -->
+    <color name="launch_background">#FFFFFF</color>
+
+    <!--
+      Tints the notification's small icon and the app name in the shade.
+
+      AppColors.blue600 from lib/design/tokens/colors.dart, not the darker
+      blue900 used for the launcher plate: this colour is drawn on the shade's
+      own background — white in light mode, near-black in dark — and navy
+      disappears against the dark one.
+    -->
+    <color name="gid_notification_accent">#2E5FD9</color>
+</resources>

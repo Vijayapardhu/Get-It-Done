@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:getitdone_customer/core/config/app_config.dart';
+import 'package:gid_core/gid_core.dart';
 import 'package:getitdone_customer/core/config/server_config.dart';
 
 /// The URL a developer types by hand, made safe to concatenate paths onto.

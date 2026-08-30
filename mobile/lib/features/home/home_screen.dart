@@ -2,7 +2,7 @@ import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../../core/ui/service_artwork.dart';
@@ -24,6 +24,7 @@ class HomeScreen extends ConsumerWidget {
     required this.onOpenWorker,
     required this.onStartEmergency,
     required this.onOpenProfile,
+    required this.onOpenAlerts,
   });
 
   final ValueChanged<Service> onOpenService;
@@ -36,6 +37,10 @@ class HomeScreen extends ConsumerWidget {
 
   /// The avatar in the hero.
   final VoidCallback onOpenProfile;
+
+  /// Switches the shell to the Alerts tab. The bell in the hero needs the
+  /// shell's tab state, which this screen does not own.
+  final VoidCallback onOpenAlerts;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -64,6 +69,7 @@ class HomeScreen extends ConsumerWidget {
             onInstant: onStartEmergency,
             onSchedule: onOpenSearch,
               onOpenProfile: onOpenProfile,
+              onOpenAlerts: onOpenAlerts,
             ),
           ),
 

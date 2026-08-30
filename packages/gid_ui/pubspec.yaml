@@ -1,0 +1,27 @@
+name: gid_ui
+description: >-
+  The GET IT DONE design system: tokens, theme, icons and components, shared by
+  the customer and worker apps.
+
+  Depends on nothing of the platform's own. A widget in here may not know what a
+  booking is -- that is what kept it reusable when the second app arrived.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cached_network_image: ^3.4.1
+  lottie: ^3.3.1
+  phosphor_flutter: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

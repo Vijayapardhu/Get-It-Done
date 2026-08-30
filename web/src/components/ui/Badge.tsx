@@ -14,7 +14,7 @@ const variantClasses = {
   warning: "bg-warn/10 text-warn",
   danger: "bg-crit/10 text-crit",
   info: "bg-accent/10 text-accent",
-  neutral: "bg-ink/50 text-ink",
+  neutral: "bg-surface/50 text-ink",
 }
 
 export function Badge({ children, variant = "default", size = "md", dot = false, className }: BadgeProps) {

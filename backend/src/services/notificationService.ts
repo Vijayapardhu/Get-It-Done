@@ -1,6 +1,7 @@
 import { pool } from "../db/pool.js";
 import { emitNotification } from "../core/realtime.js";
 import logger from "../core/logger.js";
+import { isPushAvailable, sendPushToTokens } from "../core/push.js";
 
 export interface Notification {
   id: string;
@@ -201,19 +202,52 @@ export async function processOutboxEvents(): Promise<number> {
           // and the tab shows it on next load.
           emitNotification(payload.userId, payload);
 
-          // The other half -- reaching a device whose app is not running --
-          // needs FCM, which needs a Firebase project and a service account
-          // this deployment does not have. Left explicit rather than silent:
-          // registered tokens are counted so the log says what would be sent.
-          const tokens = await pool.query(
-            `select token, platform from device_tokens where user_id = $1`,
+          // The other half -- reaching a device whose app is not running.
+          // The socket above cannot do this: there is no socket to deliver to,
+          // which is exactly when the update matters most.
+          //
+          // Push is gated on the user's own preference. Someone who turned push
+          // off still gets the socket event and the row in `notifications`;
+          // what they stop getting is the buzz.
+          // Preferences live in a jsonb blob, not a column -- reading `push`
+          // as a column silently yields undefined and would push to everyone
+          // who had turned it off. Absent row and absent key both mean "on",
+          // matching getNotificationPreferences.
+          const prefs = await pool.query<{ notifications: { push?: boolean } | null }>(
+            `select notifications from user_preferences where user_id = $1`,
             [payload.userId]
           );
-          if (tokens.rows.length > 0) {
-            logger.debug(
-              { userId: payload.userId, devices: tokens.rows.length },
-              "FCM not configured: notification delivered over socket only"
+          const pushAllowed = prefs.rows[0]?.notifications?.push ?? true;
+
+          if (pushAllowed && isPushAvailable()) {
+            const tokens = await pool.query<{ token: string }>(
+              `select token from device_tokens where user_id = $1`,
+              [payload.userId]
             );
+            const tokenList = tokens.rows.map((r) => r.token);
+
+            if (tokenList.length > 0) {
+              const outcome = await sendPushToTokens(tokenList, {
+                title: payload.title,
+                body: payload.body,
+                type: payload.type,
+                notificationId: payload.id,
+              });
+
+              // Uninstalled apps and rotated tokens accumulate forever
+              // otherwise, and every future send pays for them.
+              if (outcome.staleTokens.length > 0) {
+                await pool.query(
+                  `delete from device_tokens where user_id = $1 and token = any($2::text[])`,
+                  [payload.userId, outcome.staleTokens]
+                );
+              }
+
+              logger.debug(
+                { userId: payload.userId, ...outcome, pruned: outcome.staleTokens.length },
+                "FCM push dispatched"
+              );
+            }
           }
         }
         

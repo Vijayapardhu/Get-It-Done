@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../icons/app_icons.dart';
-import '../icons/service_icons.dart';
-import '../theme/app_theme.dart';
-import '../tokens/motion.dart';
-import '../tokens/spacing.dart';
+import 'package:gid_ui/gid_ui.dart';
 
 /// The home-screen service tile.
 ///

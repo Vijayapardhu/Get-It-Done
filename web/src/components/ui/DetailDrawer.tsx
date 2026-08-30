@@ -1,6 +1,6 @@
 import { cn } from "../../lib/utils"
-import { X, ChevronLeft, ChevronRight } from "@phosphor-icons/react"
-import { useEffect, useRef, KeyboardEvent } from "react"
+import { X } from "@phosphor-icons/react"
+import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 
 interface DetailDrawerProps {
@@ -97,13 +97,13 @@ export function DetailDrawer({
         ref={drawerRef}
         tabIndex={-1}
         className={cn(
-          "relative flex flex-col bg-ink border-l border-muted/20 shadow-xl",
+          "relative flex flex-col bg-white border-l border-border shadow-xl",
           "animate-slide-in",
           widthClasses[width],
-          position === "left" && "border-l-0 border-r border-muted/20"
+          position === "left" && "border-l-0 border-r border-border"
         )}
       >
-        <div className="flex items-start justify-between px-4 py-3 border-b border-muted/20 sticky top-0 bg-ink z-10">
+        <div className="flex items-start justify-between px-4 py-3 border-b border-border sticky top-0 bg-white z-10">
           <div className="flex-1 mr-4">
             <h2 id="drawer-title" className="text-lg font-semibold text-ink">{title}</h2>
             {subtitle && <p className="text-sm text-muted mt-0.5">{subtitle}</p>}
@@ -111,7 +111,7 @@ export function DetailDrawer({
           {showCloseButton && (
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-muted/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               aria-label="Close drawer"
             >
               <X size={20} weight="regular" />
@@ -136,7 +136,7 @@ interface DetailDrawerHeaderProps {
 
 export function DetailDrawerHeader({ title, subtitle, actions }: DetailDrawerHeaderProps) {
   return (
-    <div className="flex items-start justify-between mb-4 pb-4 border-b border-muted/20">
+    <div className="flex items-start justify-between mb-4 pb-4 border-b border-border">
       <div>
         <h3 className="text-lg font-semibold text-ink">{title}</h3>
         {subtitle && <p className="text-sm text-muted mt-0.5">{subtitle}</p>}
@@ -155,7 +155,7 @@ interface DetailDrawerSectionProps {
 export function DetailDrawerSection({ title, children, className }: DetailDrawerSectionProps) {
   return (
     <div className={cn("mb-6", className)}>
-      <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">{title}</h4>
+      <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-3">{title}</h4>
       {children}
     </div>
   )

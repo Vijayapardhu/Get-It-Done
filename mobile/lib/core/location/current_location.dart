@@ -1,11 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/gid_api.dart';
+import 'package:gid_core/gid_core.dart';
 import '../cart/checkout.dart';
-import '../models/models.dart';
-import '../network/api_exception.dart';
 import '../providers.dart';
-import 'address_format.dart';
 import 'location_service.dart';
 
 /// Where the phone says it is, turned into something a worker could find.

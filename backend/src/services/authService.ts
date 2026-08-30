@@ -173,6 +173,42 @@ export class AuthService {
     return this.toUser(result.rows[0]);
   }
 
+  /**
+   * Whether this account has ever been used as a customer.
+   *
+   * The one question that decides whether it is safe to turn a customer account
+   * into a worker account: a person who has never booked anything simply signed
+   * up on the wrong side of the platform, and a person who has booked has a
+   * history that would be orphaned by the switch.
+   */
+  async hasCustomerActivity(userId: string): Promise<boolean> {
+    const result = await pool.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM bookings WHERE customer_id = $1) AS has_bookings,
+         EXISTS (SELECT 1 FROM service_orders WHERE customer_id = $1) AS has_orders`,
+      [userId]
+    );
+    const row = result.rows[0] ?? {};
+    return Boolean(row.has_bookings) || Boolean(row.has_orders);
+  }
+
+  /**
+   * Change an account's role.
+   *
+   * Deliberately narrow: the only caller is the worker app's "this is a worker
+   * account" step, and the route guards which transitions it will ask for. The
+   * access token carries a `role` claim but nothing reads it — `requireAuth`
+   * re-reads the row on every request — so the change takes effect immediately
+   * and the client does not need new tokens.
+   */
+  async setUserRole(userId: string, role: string): Promise<User | null> {
+    const result = await pool.query(
+      `UPDATE users SET role = $2, updated_at = now() WHERE id = $1 RETURNING ${publicUserColumns}`,
+      [userId, role]
+    );
+    return result.rows[0] ? this.toUser(result.rows[0]) : null;
+  }
+
   async issueTokens(user: User, deviceId?: string): Promise<AuthTokens> {
     const refreshToken = crypto.randomBytes(48).toString("base64url");
     const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 86400000);

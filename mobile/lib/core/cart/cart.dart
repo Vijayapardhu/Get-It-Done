@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/models.dart';
+import 'package:gid_core/gid_core.dart';
 
 /// One line in the cart: a service, and how long it is booked for.
 ///

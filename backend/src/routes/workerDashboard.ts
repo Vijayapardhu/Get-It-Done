@@ -170,24 +170,45 @@ workerDashboardRouter.get("/upcoming-jobs", requireAuth, requireRoles("worker"),
     const workerId = workerResult.rows[0].id;
 
     const [activeJobs, scheduledJobs] = await Promise.all([
-      // Currently active jobs (assigned, accepted, en_route, started)
+      // Currently active jobs.
+      //
+      // Phase 26 changed two things here, both of which the worker app depends
+      // on absolutely:
+      //
+      //  1. `arrived` is in the status list. Without it, a worker who pressed
+      //     "I'm here" watched the job vanish from their own screen, because
+      //     this is the query the active-job state machine reads.
+      //  2. The contact comes from the ORDER, not the account. Somebody books a
+      //     clean for their parents' flat; the person answering the door is not
+      //     the account holder, and asking for the wrong name at a stranger's
+      //     door is a bad start. See migration_phase20_order_contact.sql.
+      //
+      // The extra columns (duration, arrival, work clock, price) are what the
+      // in-progress timer, the waiting window and the payout line render from.
       pool.query(
-        `SELECT b.id, b.status, b.scheduled_at as "scheduledAt", b.address, b.description, b.is_emergency as "isEmergency",
+        `SELECT b.id, b.status, b.scheduled_at as "scheduledAt", b.address, b.description,
+                b.is_emergency as "isEmergency", b.order_id as "orderId",
+                b.duration_minutes as "durationMinutes",
+                b.arrived_at as "arrivedAt", b.work_started_at as "workStartedAt",
+                b.price,
                 s.name as service_name, s.category,
-                ST_Y(b.location::geometry) as customer_lat, ST_X(b.location::geometry) as customer_lng,
-                u.name as customer_name, u.phone as customer_phone
+                ST_Y(b.location::geometry) as latitude, ST_X(b.location::geometry) as longitude,
+                coalesce(o.contact_name,  u.name)  as "contactName",
+                coalesce(o.contact_phone, u.phone) as "contactPhone"
          FROM bookings b
          JOIN services s ON s.id = b.service_id
          JOIN users u ON u.id = b.customer_id
+         LEFT JOIN service_orders o ON o.id = b.order_id
          WHERE b.worker_id = $1
-           AND b.status IN ('assigned', 'accepted', 'en_route', 'started')
-         ORDER BY 
-           CASE b.status 
-             WHEN 'started' THEN 1 
-             WHEN 'en_route' THEN 2 
-             WHEN 'accepted' THEN 3 
-             WHEN 'assigned' THEN 4 
-             ELSE 5 
+           AND b.status IN ('assigned', 'accepted', 'en_route', 'arrived', 'started')
+         ORDER BY
+           CASE b.status
+             WHEN 'started'  THEN 1
+             WHEN 'arrived'  THEN 2
+             WHEN 'en_route' THEN 3
+             WHEN 'accepted' THEN 4
+             WHEN 'assigned' THEN 5
+             ELSE 6
            END,
            b.scheduled_at ASC NULLS FIRST, b.created_at ASC`,
         [workerId]
@@ -207,7 +228,12 @@ workerDashboardRouter.get("/upcoming-jobs", requireAuth, requireRoles("worker"),
       ),
     ]);
 
+    // `jobs` is the flat list the worker app reads: on that screen the
+    // distinction between "active" and "scheduled" is a sort order, not two
+    // sections. The original two keys stay for the operator views that already
+    // read them.
     res.json({
+      jobs: [...activeJobs.rows, ...scheduledJobs.rows],
       activeJobs: activeJobs.rows,
       scheduledJobs: scheduledJobs.rows,
     });

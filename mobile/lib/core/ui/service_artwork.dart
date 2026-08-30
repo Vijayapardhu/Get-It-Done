@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../design/design_system.dart';
-import '../models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../providers.dart';
 
 /// The artwork for a service, wherever one is shown.

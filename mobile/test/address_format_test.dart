@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:getitdone_customer/core/location/address_format.dart';
+import 'package:gid_core/gid_core.dart';
 
 /// The header has room for about thirty characters. Google gives us seventy.
 ///

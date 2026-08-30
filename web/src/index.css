@@ -2,12 +2,23 @@
 
 @theme {
   --color-accent: #2E5FD9;
+  --color-accent-hover: #254DB0;
+  --color-accent-light: #EBF2FF;
   --color-ink: #0F172A;
   --color-muted: #64748B;
+  --color-border: #E5E7EB;
+  --color-surface: #FFFFFF;
+  --color-bg: #F8FAFC;
   --color-ok: #16A34A;
+  --color-ok-light: #DCFCE7;
   --color-warn: #D97706;
+  --color-warn-light: #FEF3C7;
   --color-crit: #DC2626;
-  --color-dark-bg: #0B1220;
+  --color-crit-light: #FEE2E2;
+  --color-info: #2E5FD9;
+  --color-info-light: #EBF2FF;
+  --color-purple: #7C3AED;
+  --color-purple-light: #EDE9FE;
 
   --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -28,7 +39,7 @@
 
   body {
     margin: 0;
-    background: var(--color-dark-bg);
+    background: var(--color-bg);
     color: var(--color-ink);
     min-height: 100vh;
   }
@@ -57,7 +68,7 @@
 
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-muted) transparent;
+    scrollbar-color: #CBD5E1 transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -70,26 +81,20 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: var(--color-muted);
+    background: #CBD5E1;
     border-radius: 3px;
   }
+}
 
-  .pulse-dot {
-    position: relative;
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
   }
+  to {
+    transform: translateX(0);
+  }
+}
 
-  .pulse-dot::before {
-    content: "";
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(1.1); }
-  }
+.animate-slide-in-left {
+  animation: slide-in-left 0.2s ease-out;
 }

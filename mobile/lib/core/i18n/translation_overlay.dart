@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../network/api_client.dart';
+import 'package:gid_core/gid_core.dart';
 import '../providers.dart';
 
 /// Operator-editable strings, layered over the bundled ARB translations.

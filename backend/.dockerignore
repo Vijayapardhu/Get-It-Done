@@ -16,3 +16,7 @@ README.md
 .DS_Store
 coverage
 .nyc_output
+# Never bake the Firebase key into an image layer -- it would survive in the
+# image history and ship anywhere the image is pushed. It is bind-mounted at
+# runtime instead (see docker-compose.yml).
+secrets/

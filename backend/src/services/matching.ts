@@ -2,6 +2,8 @@ import { pool } from "../db/pool.js";
 import type { BookingUrgency, MatchingCandidate, WorkerMatch } from "../types.js";
 import { recordAuditEvent } from "./auditService.js";
 import { writeNotification } from "./notificationService.js";
+import { dispatchOffer, revokeLiveOffers } from "./offerService.js";
+import { scheduleAssignmentTimeout } from "./emergencyService.js";
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
@@ -17,6 +19,16 @@ export interface MatchingCriteria {
   maxDistanceKm?: number;
   minRating?: number;
   excludeWorkerIds?: string[];
+
+  /// Whose booking this is. Lets a worker who filed a safety incident about a
+  /// customer never be offered them again (WORKER_APP_PLAN 4.11). Optional, so
+  /// the admin "who is nearby" screens keep working unchanged.
+  customerId?: string;
+
+  /// Honour worker working hours and time off (4.4). On by default: a worker
+  /// asleep at 2am is not a candidate. Turned off by the operator-facing
+  /// coverage views, which want to see everyone regardless of shift.
+  respectWorkingHours?: boolean;
 }
 
 export interface MatchingResult {
@@ -133,9 +145,63 @@ let query = `
             and ws.verified = true
         )
       )
+      -- Phase 26 / 4.11: the worker's own ceiling on how far they will travel,
+      -- which is stricter than their service-area radius and is theirs to set.
+      -- Absent row means no ceiling, so nobody's behaviour changes until they
+      -- choose one.
+      and (
+        not exists (select 1 from worker_offer_preferences p where p.worker_id = w.id and p.max_travel_km is not null)
+        or st_distance(wl.location, st_setsrid(st_makepoint($1, $2), 4326)::geography)
+             <= ((select max_travel_km from worker_offer_preferences p where p.worker_id = w.id) * 1000)::double precision
+      )
   `;
 
   const params_list: any[] = [params.longitude, params.latitude, params.serviceId, radiusKm];
+
+  // An emergency is a different job -- it interrupts whatever the worker was
+  // doing and it may be a burst pipe at midnight. A worker who has opted out of
+  // them stays bookable for ordinary work.
+  if (params.urgency === "emergency") {
+    query += `
+      and coalesce((select accept_emergency from worker_offer_preferences p where p.worker_id = w.id), true)
+    `;
+  }
+
+  // 4.11: never offer me this customer again. Written by the safety flow, not
+  // by a preferences screen -- which is why it is a hard exclusion rather than
+  // a score penalty.
+  if (params.customerId) {
+    query += ` and not exists (
+      select 1 from worker_blocked_customers bc
+       where bc.worker_id = w.id and bc.customer_id = $${params_list.length + 1}
+    )`;
+    params_list.push(params.customerId);
+  }
+
+  // 4.4: working hours and time off.
+  //
+  // Evaluated in Asia/Kolkata, because the schedule is wall-clock time the
+  // worker typed ("eight to six"), not an instant. A worker who has entered NO
+  // schedule is treated as always available -- the duty toggle remains the
+  // primary control, and this must not silently un-match every existing worker
+  // the day it ships.
+  if (params.respectWorkingHours !== false) {
+    query += `
+      and (
+        not exists (select 1 from worker_availability_schedule ws2 where ws2.worker_id = w.id)
+        or exists (
+          select 1 from worker_availability_schedule ws2
+           where ws2.worker_id = w.id
+             and ws2.weekday = extract(dow from (now() at time zone 'Asia/Kolkata'))::smallint
+             and (now() at time zone 'Asia/Kolkata')::time between ws2.starts_at and ws2.ends_at
+        )
+      )
+      and not exists (
+        select 1 from worker_time_off wto
+         where wto.worker_id = w.id and now() between wto.starts_at and wto.ends_at
+      )
+    `;
+  }
 
   if (params.minRating) {
     query += ` and w.rating >= $${params_list.length + 1}`;
@@ -268,6 +334,13 @@ export async function assignWorker(
       // Notification failure must not fail the assignment
     }
     
+    // The worker now holds a job they have not been told about. Arm the window
+    // and put the offer on their screen -- the notification row written above
+    // is the durable record, not the delivery.
+    await revokeLiveOffers(bookingId, "reassigned").catch(() => 0);
+    await scheduleAssignmentTimeout(bookingId, workerId).catch(() => undefined);
+    await dispatchOffer(bookingId, workerId);
+
     // Record matching audit
     await recordMatchingAudit({
       bookingId,

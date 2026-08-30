@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../network/json.dart';
+import 'package:gid_core/gid_core.dart';
 import '../providers.dart';
-import '../realtime/realtime_service.dart';
+import '../realtime/realtime_providers.dart';
 
 /// System notifications for events that arrive over the socket.
 ///
@@ -46,11 +47,11 @@ class LocalNotifications {
 
     await _plugin.initialize(
       settings: const InitializationSettings(
-        // The launcher icon rather than a dedicated silhouette. Android tints
-        // and masks the small icon, so a full-colour launcher renders as a
-        // white blob — acceptable for now, and honest about it: a proper
-        // monochrome `ic_stat_gid` drawable is the correct fix.
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        // The dedicated monochrome silhouette, not the launcher icon. Android
+        // masks the small icon by its alpha and repaints it, so a full-colour
+        // launcher arrives as a featureless white blob.
+        // See android/app/src/main/res/drawable/ic_stat_gid.xml.
+        android: AndroidInitializationSettings('@drawable/ic_stat_gid'),
         iOS: DarwinInitializationSettings(
           // Asked for at the moment the first notification matters, not on
           // first launch before the user knows what the app is for.
@@ -111,6 +112,10 @@ class LocalNotifications {
           // Max would take over the screen for "job complete".
           importance: Importance.high,
           priority: Priority.high,
+          icon: '@drawable/ic_stat_gid',
+          // Tints the small icon and the app name in the shade. Without it
+          // Android picks its own grey and the notification reads as generic.
+          color: Color(0xFF2E5FD9), // AppColors.blue600
         ),
         iOS: DarwinNotificationDetails(),
       ),

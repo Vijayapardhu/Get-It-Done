@@ -5,6 +5,7 @@ import { emitEmergencyEscalated } from "../core/realtime.js";
 import { enqueue, cancelByDedupeKey } from "../core/jobQueue.js";
 import { env } from "../config/env.js";
 import logger from "../core/logger.js";
+import { dispatchOffer, revokeLiveOffers } from "./offerService.js";
 
 /**
  * Emergency dispatch escalation.
@@ -137,6 +138,7 @@ export async function escalateEmergency(
         longitude: Number(booking.rows[0].longitude),
         urgency: "emergency",
         radiusKm: radius,
+        customerId: booking.rows[0].customer_id,
         excludeWorkerIds: previousWorkerId ? [previousWorkerId] : [],
       });
 
@@ -207,6 +209,10 @@ export async function escalateEmergency(
       );
     } else if (assignedWorkerId) {
       await scheduleAssignmentTimeout(bookingId, assignedWorkerId);
+      // The previous worker's screen is still counting down on a job that has
+      // moved on; take it off theirs before putting it on the new one's.
+      await revokeLiveOffers(bookingId, "reassigned").catch(() => 0);
+      await dispatchOffer(bookingId, assignedWorkerId);
     }
 
     return { escalated: true, escalationLevel: newLevel, radiusKm: radius, assignedWorkerId };
@@ -244,6 +250,7 @@ export async function handleAssignmentTimeout(bookingId: string, workerId: strin
       "update workers set current_status = 'available', updated_at = now() where id = $1 and current_status = 'busy'",
       [workerId]
     );
+    await revokeLiveOffers(bookingId, "timeout").catch(() => 0);
     logger.warn({ bookingId, attempts: row.assignment_attempts }, "Assignment attempts exhausted; returning booking to the open queue");
     return { escalated: false, reason: "MAX_ASSIGNMENT_ATTEMPTS" };
   }
@@ -275,7 +282,7 @@ export async function reassignToNextCandidate(
     await client.query("begin");
 
     const booking = await client.query(
-      `select service_id, status,
+      `select service_id, status, customer_id,
               st_y(location::geometry) as latitude,
               st_x(location::geometry) as longitude
          from bookings where id = $1 for update`,
@@ -298,6 +305,7 @@ export async function reassignToNextCandidate(
       latitude: Number(booking.rows[0].latitude),
       longitude: Number(booking.rows[0].longitude),
       urgency: "regular",
+      customerId: booking.rows[0].customer_id,
       excludeWorkerIds: fromWorkerId ? [fromWorkerId] : [],
     });
 
@@ -346,7 +354,11 @@ export async function reassignToNextCandidate(
 
     await client.query("commit");
 
-    if (assignedWorkerId) await scheduleAssignmentTimeout(bookingId, assignedWorkerId);
+    await revokeLiveOffers(bookingId, assignedWorkerId ? "reassigned" : "timeout").catch(() => 0);
+    if (assignedWorkerId) {
+      await scheduleAssignmentTimeout(bookingId, assignedWorkerId);
+      await dispatchOffer(bookingId, assignedWorkerId);
+    }
 
     return { escalated: Boolean(assignedWorkerId), assignedWorkerId, reason: assignedWorkerId ? undefined : "NO_CANDIDATE_AVAILABLE" };
   } catch (error) {

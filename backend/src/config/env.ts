@@ -69,6 +69,20 @@ const envSchema = z.object({
   GOOGLE_MAPS_API_KEY: z.string().default(""),
   GOOGLE_CALLBACK_URL: z.string().default("http://localhost:4000/auth/google/callback"),
 
+  /// How many reverse proxies sit in front of this process.
+  ///
+  /// 0 means the process is reached directly and X-Forwarded-For must not be
+  /// believed -- a client can send that header itself. 1 is the usual
+  /// deployment: one nginx terminating TLS on the same host.
+  ///
+  /// Getting this wrong is not cosmetic. Left at 0 behind a proxy, every
+  /// request arrives from the proxy's address, so req.ip is the same value for
+  /// everyone: one IP-keyed rate limit bucket shared by the entire internet,
+  /// and an audit trail that records 127.0.0.1 as the source of every security
+  /// event. Set too high, a caller can prepend addresses to the header and
+  /// choose which one is trusted.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+
   LOG_LEVEL: z.string().optional(),
   METRICS_ENABLED: booleanFromEnv.default(true),
   WS_ENABLED: booleanFromEnv.default(true),
@@ -136,6 +150,24 @@ const envSchema = z.object({
   TOTP_ISSUER: z.string().default("GetItDone Admin"),
   /// Base32 TOTP secret for admin accounts. Generate with: node -e "console.log(require('otplib').generateSecret())"
   ADMIN_TOTP_SECRET: z.string().default(""),
+
+  // ── Push notifications (Firebase Cloud Messaging) ─────────────────────────
+  /// Path to the Firebase service account JSON, or the JSON itself.
+  ///
+  /// Two forms because deployments differ: a mounted file is the better secret
+  /// hygiene (it never appears in `docker inspect` or a process listing), while
+  /// the inline form suits platforms that only offer environment variables.
+  /// FIREBASE_SERVICE_ACCOUNT_PATH wins when both are set.
+  ///
+  /// With neither set, push is disabled and says so once at boot rather than
+  /// failing per-notification: socket delivery still works, and a device whose
+  /// app is closed simply sees the update on next open.
+  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default(""),
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.string().default(""),
+  /// Android notification channel the app registers. Must match
+  /// LocalNotifications._channelId in the Flutter client, or Android drops the
+  /// message's channel settings and the notification arrives silent.
+  FCM_ANDROID_CHANNEL_ID: z.string().default("gid_bookings"),
 
   // ── Background jobs ───────────────────────────────────────────────────────
   JOBS_ENABLED: booleanFromEnv.default(true),

@@ -4,11 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../core/location/address_format.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/location/current_location.dart';
-import '../../core/models/models.dart';
-import '../../core/network/api_client.dart';
-import '../../core/network/api_exception.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
 

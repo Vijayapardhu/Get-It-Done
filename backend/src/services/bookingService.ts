@@ -7,19 +7,25 @@ import { writeNotification } from "./notificationService.js";
 import { settleBooking } from "./revenueSplit.js";
 import { generateBookingOtps } from "../core/otp.js";
 import { scheduleAssignmentTimeout, clearAssignmentTimeout, reassignToNextCandidate } from "./emergencyService.js";
+import { dispatchOffer, revokeLiveOffers, resolveOffer, type OfferDeclineReason } from "./offerService.js";
 
-export const bookingStatuses = ["requested", "matching", "assigned", "accepted", "en_route", "started", "completed", "cancelled", "expired", "disputed", "refunded"] as const;
+export const bookingStatuses = ["requested", "matching", "assigned", "accepted", "en_route", "arrived", "started", "completed", "cancelled", "expired", "disputed", "refunded", "no_show"] as const;
 export type BookingStatus = typeof bookingStatuses[number];
 
 const transitions: Record<BookingStatus, BookingStatus[]> = {
   requested: ["matching", "assigned", "cancelled", "expired"],
   matching: ["assigned", "requested", "cancelled", "expired"],
   assigned: ["accepted", "cancelled", "expired"],
-  accepted: ["en_route", "cancelled", "disputed"],
-  en_route: ["started", "cancelled", "disputed"],
+  accepted: ["en_route", "arrived", "cancelled", "disputed"],
+  en_route: ["arrived", "started", "cancelled", "disputed"],
+  // WORKER_APP_PLAN 4.6: `arrived` is the state that records the worker was at
+  // the door at 10:02 and the customer opened it at 10:19. `no_show` is the
+  // button that did not exist -- the previous failure mode was a worker outside
+  // a locked gate with nothing to press.
+  arrived: ["started", "no_show", "cancelled", "disputed"],
   started: ["completed", "disputed"],
   completed: ["disputed", "refunded"],
-  cancelled: [], expired: [], disputed: ["refunded"], refunded: []
+  cancelled: [], expired: [], disputed: ["refunded"], refunded: [], no_show: ["disputed"]
 };
 
 function requestHash(input: unknown) {
@@ -72,7 +78,7 @@ async function placeBooking(client: PoolClient, input: BookingSeed): Promise<Pla
   if (!service.rows[0]) throw new Error("SERVICE_NOT_FOUND");
   if (input.isEmergency && !service.rows[0].emergency_supported) throw new Error("EMERGENCY_NOT_SUPPORTED");
 
-  const matches = await findMatchingWorkers({ serviceId: input.serviceId, latitude: input.latitude, longitude: input.longitude, urgency: input.isEmergency ? "emergency" : "regular" });
+  const matches = await findMatchingWorkers({ serviceId: input.serviceId, latitude: input.latitude, longitude: input.longitude, urgency: input.isEmergency ? "emergency" : "regular", customerId: input.customerId });
   const workerId: string | null = matches.workers[0]?.workerId ?? null;
   let confirmedWorkerId: string | null = workerId;
   if (workerId) {
@@ -146,6 +152,11 @@ export async function createBooking(input: { customerId: string; serviceId: stri
     // commit so the job can never reference a rolled-back row.
     if (placed.workerId) {
       await scheduleAssignmentTimeout(placed.bookingId, placed.workerId).catch(() => undefined);
+      // WORKER_APP_PLAN 4.1. The timer above is the server's half of the
+      // 45-second window; this is the half the worker can see. Both are armed
+      // after commit, in that order, so the deadline exists on the row before
+      // any phone is told about it.
+      await dispatchOffer(placed.bookingId, placed.workerId);
     }
 
     return { replay: false, status: 201, body: response };
@@ -278,7 +289,9 @@ export async function createOrder(input: CreateOrderInput) {
     await client.query("commit");
 
     for (const item of placed) {
-      if (item.workerId) await scheduleAssignmentTimeout(item.bookingId, item.workerId).catch(() => undefined);
+      if (!item.workerId) continue;
+      await scheduleAssignmentTimeout(item.bookingId, item.workerId).catch(() => undefined);
+      await dispatchOffer(item.bookingId, item.workerId);
     }
 
     return { replay: false, status: 201, body: response };
@@ -313,15 +326,15 @@ export async function transitionBooking(id: string, actorId: string, role: strin
     if (!owns) { await client.query("rollback"); return { kind: "forbidden" as const }; }
     if (!transitions[current.status as BookingStatus]?.includes(nextStatus)) { await client.query("rollback"); return { kind: "invalid_transition" as const, from: current.status }; }
     const customerAllowed = ["cancelled", "disputed"].includes(nextStatus);
-    const workerAllowed = ["accepted", "en_route", "started", "completed", "disputed"].includes(nextStatus);
+    const workerAllowed = ["accepted", "en_route", "arrived", "started", "completed", "disputed", "no_show"].includes(nextStatus);
     const adminAllowed = ["assigned", "matching", "requested", "expired", "cancelled", "disputed", "refunded"].includes(nextStatus);
     const admin = ["society_admin", "federation_admin", "system_admin", "support_staff"].includes(role);
     if (admin && !adminAllowed) { await client.query("rollback"); return { kind: "forbidden" as const }; }
     if ((current.customer_id === actorId && !customerAllowed) || (current.worker_user_id === actorId && !workerAllowed) || (!current.customer_id && !adminAllowed)) { await client.query("rollback"); return { kind: "forbidden" as const }; }
-    if (["accepted", "en_route", "started", "completed"].includes(nextStatus) && current.worker_user_id !== actorId && !["society_admin", "federation_admin", "system_admin"].includes(role)) { await client.query("rollback"); return { kind: "forbidden" as const }; }
+    if (["accepted", "en_route", "arrived", "started", "completed", "no_show"].includes(nextStatus) && current.worker_user_id !== actorId && !["society_admin", "federation_admin", "system_admin"].includes(role)) { await client.query("rollback"); return { kind: "forbidden" as const }; }
     const updated = await client.query(`update bookings set status = $1, updated_at = now() where id = $2 returning id, status, updated_at as "updatedAt"`, [nextStatus, id]);
     await client.query("insert into booking_status_events (booking_id, status, actor_id, reason, request_id) values ($1, $2, $3, $4, $5)", [id, nextStatus, actorId, reason ?? null, requestId ?? null]);
-    if (["completed", "cancelled", "expired", "refunded"].includes(nextStatus) && current.worker_id) {
+    if (["completed", "cancelled", "expired", "refunded", "no_show"].includes(nextStatus) && current.worker_id) {
       await client.query("update workers set current_status = 'available', updated_at = now() where id = $1 and verification_status = 'verified'", [current.worker_id]);
     }
     if (nextStatus === "completed" && current.worker_id) {
@@ -332,6 +345,17 @@ export async function transitionBooking(id: string, actorId: string, role: strin
       await settleBooking(client, id);
     }
     await client.query("commit");
+
+    // An offer for a job that is now cancelled, expired or finished must come
+    // off every screen still counting down on it. Emitted after commit so a
+    // rolled-back transition cannot revoke a live offer.
+    if (["cancelled", "expired", "refunded", "completed"].includes(nextStatus)) {
+      await revokeLiveOffers(id, "cancelled").catch(() => 0);
+    }
+    if (nextStatus === "accepted") {
+      await revokeLiveOffers(id, "taken", { exceptUserId: actorId }).catch(() => 0);
+    }
+
     return { kind: "ok" as const, booking: updated.rows[0] };
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
 }
@@ -377,7 +401,7 @@ export async function acceptBooking(id: string, workerUserId: string, requestId?
  * worker two jobs. `reassignToNextCandidate` does all four correctly and arms
  * the next acceptance timer.
  */
-export async function rejectBooking(id: string, workerUserId: string, reason?: string, requestId?: string) {
+export async function rejectBooking(id: string, workerUserId: string, reason?: string, requestId?: string, declineReason?: OfferDeclineReason) {
   const client = await pool.connect();
   let rejectedWorkerId: string | null = null;
 
@@ -426,8 +450,11 @@ export async function rejectBooking(id: string, workerUserId: string, reason?: s
     client.release();
   }
 
-  // Cancel the timer armed for the worker who just declined.
+  // Cancel the timer armed for the worker who just declined, and close their
+  // offer with the reason they gave. Four buttons, not free text: matching has
+  // to be able to count "too far" separately from "not my trade".
   await clearAssignmentTimeout(id).catch(() => undefined);
+  await resolveOffer(id, workerUserId, "declined", declineReason).catch(() => null);
 
   const outcome = await reassignToNextCandidate(id, rejectedWorkerId, "rejected");
 
@@ -470,6 +497,11 @@ export async function reassignBooking(id: string, newWorkerId: string, actorId: 
     const workerUser = await client.query("select user_id from workers where id = $1", [newWorkerId]);
     if (workerUser.rows[0]) await import("./notificationService.js").then(m => m.writeNotification(client, { userId: workerUser.rows[0].user_id, type: "booking.assigned", title: "New service booking", body: "You have been assigned a new service request.", aggregateType: "booking", aggregateId: id }));
     await client.query("commit");
+
+    await revokeLiveOffers(id, "reassigned").catch(() => 0);
+    await scheduleAssignmentTimeout(id, newWorkerId).catch(() => undefined);
+    await dispatchOffer(id, newWorkerId);
+
     return { kind: "ok" as const, booking: updated.rows[0] };
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
 }

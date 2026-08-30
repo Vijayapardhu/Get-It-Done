@@ -1,8 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:getitdone_customer/core/cart/cart.dart';
-import 'package:getitdone_customer/core/models/models.dart';
-import 'package:getitdone_customer/core/network/json.dart';
+import 'package:gid_core/gid_core.dart';
 
 Service service(
   String id, {

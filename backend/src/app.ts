@@ -42,8 +42,10 @@ import { welfareRouter } from "./routes/welfare.js";
 import { reviewsRouter } from "./routes/reviews.js";
 import { serviceAreasRouter } from "./routes/serviceAreas.js";
 import { bookingAttachmentsRouter } from "./routes/ba.js";
+import { workerAppRouter, workerJobsRouter } from "./routes/workerApp.js";
 import { addressesRouter } from "./routes/addresses.js";
 import { chatRouter } from "./routes/chat.js";
+import { trainingRouter } from "./routes/training.js";
 import { customerDashboardRouter } from "./routes/customerDashboard.js";
 import { workerDashboardRouter } from "./routes/workerDashboard.js";
 import { cooperativeDashboardRouter } from "./routes/cooperativeDashboard.js";
@@ -65,12 +67,133 @@ const __dirname = dirname(__filename);
 
 const swaggerSpec = JSON.parse(readFileSync(resolve(__dirname, "../swagger.json"), "utf-8"));
 
+/**
+ * Docs styling.
+ *
+ * Swagger UI's default is a grey wall of identical rows, which for 270
+ * operations is close to unusable. This is not decoration: the colour-coded
+ * method pills, the sticky filter and the readable monospace are what make it
+ * possible to find one endpoint by eye.
+ *
+ * Brand tokens are the app's own (mobile/lib/design/tokens/colors.dart), so the
+ * reference looks like the product it documents. Both colour schemes are
+ * defined because the topbar is hidden and there is no theme switch to offer.
+ */
+const DOCS_CSS = `
+  :root {
+    --gid-blue-900: #14285C;
+    --gid-blue-600: #2E5FD9;
+    --gid-surface:  #FFFFFF;
+    --gid-canvas:   #F4F6FB;
+    --gid-border:   #DCE3F2;
+    --gid-text:     #14285C;
+    --gid-muted:    #5B6B8F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --gid-surface: #131A2B;
+      --gid-canvas:  #0C111C;
+      --gid-border:  #26314A;
+      --gid-text:    #E8EDF9;
+      --gid-muted:   #9AA9C7;
+    }
+  }
+
+  /* The default topbar is a spec-URL input we do not want the reader editing. */
+  .swagger-ui .topbar { display: none; }
+
+  body { background: var(--gid-canvas); }
+  .swagger-ui, .swagger-ui .info .title, .swagger-ui .scheme-container { color: var(--gid-text); }
+
+  /* Masthead */
+  .swagger-ui .info {
+    background: linear-gradient(135deg, var(--gid-blue-900) 0%, var(--gid-blue-600) 100%);
+    color: #fff;
+    padding: 32px 28px;
+    border-radius: 16px;
+    margin: 24px 0;
+  }
+  .swagger-ui .info .title,
+  .swagger-ui .info p,
+  .swagger-ui .info li,
+  .swagger-ui .info a { color: #fff !important; }
+  .swagger-ui .info .title small { background: rgba(255,255,255,.18); border-radius: 999px; }
+
+  /* Server picker and auth sit together above the operations. */
+  .swagger-ui .scheme-container {
+    background: var(--gid-surface);
+    border: 1px solid var(--gid-border);
+    border-radius: 12px;
+    box-shadow: none;
+    margin-bottom: 20px;
+  }
+
+  /* Keep the filter reachable while scrolling 270 operations. */
+  .swagger-ui .filter .operation-filter-input {
+    border-radius: 10px;
+    border: 1px solid var(--gid-border);
+    padding: 10px 14px;
+  }
+  .swagger-ui .filter { position: sticky; top: 0; z-index: 5; padding: 12px 0; background: var(--gid-canvas); }
+
+  /* Tag sections as cards, so the eye can find a boundary. */
+  .swagger-ui .opblock-tag {
+    border-bottom: 1px solid var(--gid-border);
+    color: var(--gid-text);
+    font-size: 20px;
+    padding: 16px 8px;
+  }
+  .swagger-ui .opblock {
+    border-radius: 12px;
+    border: 1px solid var(--gid-border);
+    box-shadow: none;
+    margin: 0 0 10px;
+    background: var(--gid-surface);
+  }
+  .swagger-ui .opblock .opblock-summary { border-bottom: none; }
+
+  /* Method pills: the fastest way to read a long list is by colour. */
+  .swagger-ui .opblock .opblock-summary-method {
+    border-radius: 8px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    min-width: 84px;
+  }
+  .swagger-ui .opblock.opblock-get    { border-left: 4px solid #2E5FD9; }
+  .swagger-ui .opblock.opblock-post   { border-left: 4px solid #1E9E6A; }
+  .swagger-ui .opblock.opblock-patch  { border-left: 4px solid #C2871B; }
+  .swagger-ui .opblock.opblock-put    { border-left: 4px solid #7A5AF8; }
+  .swagger-ui .opblock.opblock-delete { border-left: 4px solid #D6455D; }
+
+  .swagger-ui .btn.authorize {
+    background: var(--gid-blue-600);
+    border-color: var(--gid-blue-600);
+    color: #fff;
+    border-radius: 10px;
+  }
+  .swagger-ui .btn.authorize svg { fill: #fff; }
+
+  .swagger-ui .opblock-summary-path,
+  .swagger-ui .response-col_status,
+  .swagger-ui code {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+`;
+
 export function createApp(): Express {
   const app = express();
 
+  // Must be set before anything reads req.ip -- the rate limiters key on it
+  // and the audit trail records it. See TRUST_PROXY_HOPS in config/env.ts for
+  // why the count is explicit rather than `true`.
+  app.set("trust proxy", env.TRUST_PROXY_HOPS);
+
   const allowedOrigins = new Set(env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean));
   app.use(helmet());
-  app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)) }));
+  app.use(cors({
+    origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)),
+    credentials: true,
+  }));
   // Payment gateways sign the RAW body. Re-serialising the parsed object never
   // reproduces it byte-for-byte, so stash the untouched Buffer on the request
   // for the webhook routes before the JSON parser discards it.
@@ -146,11 +269,27 @@ export function createApp(): Express {
     }),
     swaggerUi.serve,
     swaggerUi.setup(swaggerSpec, {
-      customCss: ".swagger-ui .topbar { display: none }",
-      customSiteTitle: "GET IT DONE API Docs",
+      customSiteTitle: "GET IT DONE — API reference",
+      customCss: DOCS_CSS,
+      swaggerOptions: {
+        // 270 operations across 40 tags. Landing on all of them expanded is
+        // unreadable; "list" shows tags collapsed to their operations.
+        docExpansion: "list",
+        // The filter box is the only realistic way to find one route in 270.
+        filter: true,
+        // Survives a page reload, so exercising a few authenticated endpoints
+        // in a row does not mean pasting the bearer token each time.
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        tryItOutEnabled: true,
+        defaultModelsExpandDepth: 0,
+      },
     })
   );
+  // Both spellings: /docs.json is what swagger-ui links to, /openapi.json is
+  // what most generators and clients look for by convention.
   app.get("/docs.json", (_req, res) => res.json(swaggerSpec));
+  app.get("/openapi.json", (_req, res) => res.json(swaggerSpec));
 
   app.get("/health/live", async (_req, res) => { res.json(await getLiveness()); });
   app.get("/health/ready", async (_req, res) => {
@@ -218,6 +357,12 @@ export function createApp(): Express {
   app.use("/orders", requireAuth, ordersRouter);
   app.use("/services", serviceArtworkRouter);
   app.use("/services", servicesRouter);
+  // Mounted BEFORE workersRouter and bookingsRouter. Both of those end in a
+  // catch-all `/:id`, and while a two-segment path like /me/offers could not
+  // match it today, ordering the specific router first means a later `/:a/:b`
+  // route cannot quietly shadow these.
+  app.use("/workers", requireAuth, workerAppRouter);
+  app.use("/bookings", requireAuth, workerJobsRouter);
   app.use("/workers", requireAuth, workersRouter);
   app.use("/bookings", requireAuth, bookingsRouter);
   app.use("/bookings", requireAuth, bookingAttachmentsRouter);
@@ -228,6 +373,7 @@ export function createApp(): Express {
   app.use("/notifications", requireAuth, notificationsRouter);
   app.use("/files", requireAuth, filesRouter);
   app.use("/chats", requireAuth, chatRouter);
+app.use("/training", requireAuth, trainingRouter);
 
   // New Dashboard Routes
   app.use("/customer", requireAuth, customerDashboardRouter);

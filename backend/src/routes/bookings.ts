@@ -12,6 +12,7 @@ import { pool } from "../db/pool.js";
 import { generateOtp, sha256Hex } from "../core/otp.js";
 import { settleBooking } from "../services/revenueSplit.js";
 import { clearAssignmentTimeout, scheduleAssignmentTimeout } from "../services/emergencyService.js";
+import { resolveOffer } from "../services/offerService.js";
 
 /**
  * @openapi
@@ -246,13 +247,25 @@ bookingsRouter.patch("/:id/status", async (req, res, next) => {
 bookingsRouter.post("/:id/cancel", async (req, res, next) => {
   try {
     if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
-    const input = z.object({ reason: z.string().trim().max(500).optional() }).parse(req.body);
+    const input = z.object({
+      reason: z.string().trim().max(500).optional(),
+      // 4.6: prose cannot be counted. The enum mirrors the check constraint on
+      // bookings.cancellation_reason_code, so the fairness analytics can group
+      // on something other than free text.
+      reasonCode: z.enum([
+        "customer_unreachable", "customer_cancelled", "address_wrong", "unsafe_site",
+        "job_not_as_described", "worker_emergency", "vehicle_breakdown", "other",
+      ]).optional(),
+    }).parse(req.body);
     const result = await cancelBooking(req.params.id, req.user.id, req.user.role, input.reason, req.header("x-request-id"));
+    if (result.kind === "ok" && input.reasonCode) {
+      await pool.query("update bookings set cancellation_reason_code = $2 where id = $1", [req.params.id, input.reasonCode]);
+    }
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot cancel booking from ${result.from}` }); return; }
     emitBookingStatusChange(String(req.params.id), result.booking);
-    void recordAuditEvent({ actorId: req.user.id, action: "booking.cancelled", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: input.reason } }).catch(() => undefined);
+    void recordAuditEvent({ actorId: req.user.id, action: "booking.cancelled", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: input.reason, reasonCode: input.reasonCode } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
 });
@@ -275,10 +288,59 @@ bookingsRouter.post("/:id/accept", async (req, res, next) => {
   try {
     if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
     if (req.user.role !== "worker") { res.status(403).json({ error: "Only workers can accept bookings" }); return; }
+
+    // WORKER_APP_PLAN 4.1: close the offer FIRST, and treat "there was nothing
+    // live to close" as the answer rather than as bookkeeping.
+    //
+    // This is the highest-stakes 409 on the platform. A worker who tapped
+    // Accept at 45.2 seconds, or whose accept lost a race to the failover job,
+    // was previously told "Cannot accept booking from requested" -- which reads
+    // as the app having broken. A typed code lets the app say the true thing:
+    // this job went to someone else.
+    const offer = await resolveOffer(String(req.params.id), req.user.id, "accepted");
+    if (!offer) {
+      const live = await pool.query<{ status: string; worker_id: string | null }>(
+        "select status, worker_id from bookings where id = $1",
+        [req.params.id]
+      );
+      if (!live.rows[0]) { res.status(404).json({ error: "Booking not found" }); return; }
+      // No offer row at all is the pre-phase-26 path (an admin assignment made
+      // before this shipped, or a booking assigned by a route that predates
+      // offers). Fall through and let the state machine decide, rather than
+      // refusing a job the worker legitimately holds.
+      const hadOffer = await pool.query<{ id: string }>(
+        "select id from job_offers where booking_id = $1 and user_id = $2 limit 1",
+        [req.params.id, req.user.id]
+      );
+      if (hadOffer.rows[0]) {
+        res.status(409).json({
+          type: "https://getitdone.vijayapardhu.tech/errors/offer_expired",
+          title: "OFFER EXPIRED",
+          status: 409,
+          code: "OFFER_EXPIRED",
+          detail: "This job is no longer available. It went to another worker.",
+          instance: req.header("x-request-id"),
+        });
+        return;
+      }
+    }
+
     const result = await acceptBooking(req.params.id, req.user.id, req.header("x-request-id"));
+
+    // The offer was closed as `accepted` above, before the state machine ran.
+    // If the transition then failed, that row has to be put back: acceptance
+    // rate feeds matching, and an accept that did not happen must not count as
+    // one in the worker's favour or against them.
+    if (result.kind !== "ok" && offer) {
+      await pool.query(
+        "update job_offers set status = 'expired', revoked_reason = 'timeout' where id = $1 and status = 'accepted'",
+        [offer.id]
+      ).catch(() => undefined);
+    }
+
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
-    if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot accept booking from ${result.from}` }); return; }
+    if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot accept booking from ${result.from}`, code: "OFFER_EXPIRED" }); return; }
     // The worker responded in time; cancel the pending failover job.
     await clearAssignmentTimeout(String(req.params.id));
 
@@ -292,13 +354,19 @@ bookingsRouter.post("/:id/reject", async (req, res, next) => {
   try {
     if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
     if (req.user.role !== "worker") { res.status(403).json({ error: "Only workers can reject bookings" }); return; }
-    const input = z.object({ reason: z.string().trim().max(500).optional() }).parse(req.body);
-    const result = await rejectBooking(req.params.id, req.user.id, input.reason, req.header("x-request-id"));
+    // Four buttons, not free text. The reason feeds matching -- "too far" is a
+    // radius problem and "not my trade" is a skills problem, and prose cannot
+    // tell them apart. `reason` stays for anything the worker types on top.
+    const input = z.object({
+      reason: z.string().trim().max(500).optional(),
+      declineReason: z.enum(["too_far", "busy", "not_my_trade", "unsafe", "rate_too_low", "other"]).optional(),
+    }).parse(req.body);
+    const result = await rejectBooking(req.params.id, req.user.id, input.reason, req.header("x-request-id"), input.declineReason);
     if (result.kind === "not_found") { res.status(404).json({ error: "Booking not found" }); return; }
     if (result.kind === "forbidden") { res.status(403).json({ error: "Forbidden" }); return; }
     if (result.kind === "invalid_transition") { res.status(409).json({ error: `Cannot reject booking from ${result.from}` }); return; }
     emitBookingStatusChange(String(req.params.id), result.booking);
-    void recordAuditEvent({ actorId: req.user.id, action: "booking.rejected", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: input.reason } }).catch(() => undefined);
+    void recordAuditEvent({ actorId: req.user.id, action: "booking.rejected", resourceType: "booking", resourceId: req.params.id, requestId: req.header("x-request-id") ?? undefined, metadata: { reason: input.reason, declineReason: input.declineReason } }).catch(() => undefined);
     res.json({ booking: result.booking });
   } catch (error) { next(error); }
 });
@@ -532,7 +600,7 @@ bookingsRouter.post("/:id/verify-start", async (req, res, next) => {
     if (failure) { res.status(failure.status).json(failure.body); return; }
 
     await pool.query(
-      `UPDATE bookings SET start_verified_at = now(), status = 'started', updated_at = now() WHERE id = $1`,
+      `UPDATE bookings SET start_verified_at = now(), started_at = now(), status = 'started', updated_at = now() WHERE id = $1`,
       [req.params.id]
     );
     await pool.query(
@@ -580,7 +648,7 @@ bookingsRouter.post("/:id/verify-complete", async (req, res, next) => {
       await client.query("begin");
 
       await client.query(
-        `UPDATE bookings SET completion_verified_at = now(), status = 'completed', updated_at = now() WHERE id = $1`,
+        `UPDATE bookings SET completion_verified_at = now(), completed_at = now(), status = 'completed', updated_at = now() WHERE id = $1`,
         [req.params.id]
       );
       await client.query(

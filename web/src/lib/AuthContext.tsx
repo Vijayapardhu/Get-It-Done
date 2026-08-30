@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
-import { adminApi, setTokens, getAccessToken } from "./api"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
+import type { ReactNode } from "react"
+import { adminApi, setTokens, getAccessToken, clearTokens } from "./api"
 import type { AdminUser, AdminScope, ScopeOption } from "./types"
 
 interface AuthContextValue {
@@ -39,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setScopeState(scopeRes.data.scope)
       setScopeOptions(scopesRes.data.scopes)
     } catch {
-      setTokens(null, null)
+      clearTokens()
       setUser(null)
     } finally {
       setIsLoading(false)
@@ -51,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadSession])
 
   const login = async (identifier: string, password: string, totpCode?: string) => {
-    const res = await adminApi.login(identifier, password, totpCode)
-    const { user: loggedInUser, accessToken, refreshToken, expiresIn } = res.data
+    const res = await adminApi.adminLogin(identifier, password, totpCode)
+    const { user: loggedInUser, accessToken, refreshToken } = res.data
     setTokens(accessToken, refreshToken)
     setUser(loggedInUser)
 
@@ -65,8 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
-    await adminApi.logout()
-    setTokens(null, null)
+    try {
+      await adminApi.logout()
+    } catch {
+      // Ignore logout API errors
+    }
+    clearTokens()
     setUser(null)
     setScopeState(null)
     setScopeOptions([])

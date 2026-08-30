@@ -4,10 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
-import '../../core/models/models.dart';
-import '../../core/models/payment_models.dart';
-import '../../core/network/api_client.dart';
-import '../../core/network/api_exception.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../../core/ui/service_artwork.dart';

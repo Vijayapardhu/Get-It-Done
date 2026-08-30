@@ -9,6 +9,7 @@ import { closeRedis } from "./core/redis.js";
 import { startJobRunner, stopJobRunner } from "./core/jobQueue.js";
 import { registerJobHandlers, seedRecurringJobs } from "./jobs/index.js";
 import logger from "./core/logger.js";
+import { initPush } from "./core/push.js";
 
 const app = createApp();
 const server = http.createServer(app);
@@ -45,5 +46,8 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
 server.listen(env.PORT, () => {
+  // Eager, so the "push is on / push is off" line appears once at boot next to
+  // the other subsystems rather than on the first notification an hour later.
+  initPush();
   logger.info({ port: env.PORT, env: env.NODE_ENV }, "GET IT DONE API running");
 });

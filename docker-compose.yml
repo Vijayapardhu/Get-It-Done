@@ -70,6 +70,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ random characters)}
 
       STORAGE_DIR: /var/lib/getitdone/storage
+
+      # Push notifications. Bind-mounted rather than baked into the image or
+      # passed inline, so the key never enters an image layer or `docker inspect`.
+      FIREBASE_SERVICE_ACCOUNT_PATH: /run/secrets/firebase-service-account.json
       STORAGE_PROVIDER: minio
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: getitdone
@@ -77,12 +81,6 @@ services:
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_FORCE_PATH_STYLE: "true"
-
-      # Opens POST /auth/demo, which issues a session to anyone who asks, so a
-      # demo build can be handed to someone with no Google account on the
-      # device and no phone that will receive our SMS. Off unless asked for,
-      # and config/env.ts refuses it outright when NODE_ENV is production.
-      DEMO_LOGIN_ENABLED: ${DEMO_LOGIN_ENABLED:-false}
 
     ports:
       - "4000:4000"
@@ -96,6 +94,7 @@ services:
     restart: unless-stopped
     volumes:
       - getitdone-worker-storage:/var/lib/getitdone/storage
+      - ./backend/secrets/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
 
   ai:
     build:

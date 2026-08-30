@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cart/checkout.dart';
 import '../../core/location/current_location.dart';
-import '../../core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
 import '../address/address_picker.dart';
@@ -23,6 +23,7 @@ class HomeHero extends ConsumerWidget {
     required this.onInstant,
     required this.onSchedule,
     required this.onOpenProfile,
+    required this.onOpenAlerts,
   });
 
   /// "Good afternoon, Anitha". Sits above the headline rather than below the
@@ -33,6 +34,7 @@ class HomeHero extends ConsumerWidget {
   final VoidCallback onInstant;
   final VoidCallback onSchedule;
   final VoidCallback onOpenProfile;
+  final VoidCallback onOpenAlerts;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -93,6 +95,8 @@ class HomeHero extends ConsumerWidget {
                 initials: user?.initials,
                 onOpenProfile: onOpenProfile,
                 onChangeAddress: () => showAddressPicker(context, ref),
+                onOpenAlerts: onOpenAlerts,
+                unread: ref.watch(unreadNotificationCountProvider),
               ),
               const SizedBox(height: Space.x6),
 
@@ -155,6 +159,8 @@ class _AddressRow extends StatelessWidget {
     required this.initials,
     required this.onOpenProfile,
     required this.onChangeAddress,
+    required this.onOpenAlerts,
+    required this.unread,
   });
 
   final String label;
@@ -162,6 +168,8 @@ class _AddressRow extends StatelessWidget {
   final String? initials;
   final VoidCallback onOpenProfile;
   final VoidCallback onChangeAddress;
+  final VoidCallback onOpenAlerts;
+  final int unread;
 
   @override
   Widget build(BuildContext context) {
@@ -207,6 +215,8 @@ class _AddressRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: Space.x3),
+        _AlertsBell(unread: unread, onTap: onOpenAlerts),
+        const SizedBox(width: Space.x2),
         _Avatar(initials: initials, onTap: onOpenProfile),
       ],
     );
@@ -299,6 +309,81 @@ class _StartCard extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Alerts, reachable from Home.
+///
+/// The Alerts tab already carries this count in the bottom bar, but the bar is
+/// the thing a user scans last. A worker on the way generates the notification
+/// that matters most, and Home is where they are already looking — so the
+/// count is repeated here rather than waiting to be discovered.
+///
+/// Translucent rather than the avatar's solid white: two white discs side by
+/// side would read as a pair of equal targets, and the avatar is the anchor.
+class _AlertsBell extends StatelessWidget {
+  const _AlertsBell({required this.unread, required this.onTap});
+
+  final int unread;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        // Clip.none: the badge deliberately overhangs the disc, which is what
+        // stops it reading as part of the glyph.
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.n0.withValues(alpha: 0.16),
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: const AppIcon(AppIcons.notifications, size: 20, color: AppColors.n0),
+            ),
+            if (unread > 0)
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  constraints: const BoxConstraints(minWidth: 18),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger,
+                    borderRadius: BorderRadius.circular(9),
+                    // Separates the badge from the bell behind it, which
+                    // otherwise blur together at a glance on the blue panel.
+                    border: Border.all(color: AppColors.blue900, width: 2),
+                  ),
+                  child: Text(
+                    // Past 9 the exact number stops being useful and starts
+                    // being a wide pill that shoves the avatar sideways.
+                    unread > 9 ? '9+' : '$unread',
+                    textAlign: TextAlign.center,
+                    style: context.text.labelSmall?.copyWith(
+                      color: AppColors.n0,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:getitdone_customer/core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import 'package:getitdone_customer/design/design_system.dart';
 
 /// Artwork is served by the backend and can be absent, stale, or unreachable.

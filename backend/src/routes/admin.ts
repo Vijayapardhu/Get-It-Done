@@ -1422,6 +1422,86 @@ adminRouter.post("/ai/recommendations/:id/reject", requireAuth, requireRoles("sy
   } catch (error) { next(error); }
 });
 
+// ── Scope ────────────────────────────────────────────────────────────────────
+//
+// The console's header has a scope switcher: a society admin can only see
+// their own cooperative, a federation admin can switch between the societies
+// under their federation, and a system_admin can see everything. These two
+// routes feed that switcher.
+
+adminRouter.get("/scope", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user!.id;
+
+    // Which cooperative/federation does this admin currently scope to?
+    const scopeResult = await pool.query(
+      `SELECT c.id, c.name, 'cooperative'::text as type
+       FROM admin_scopes s
+       JOIN cooperatives c ON c.id = s.cooperative_id
+       WHERE s.user_id = $1
+       UNION ALL
+       SELECT f.id, f.name, 'federation'::text as type
+       FROM admin_scopes s
+       JOIN federations f ON f.id = s.federation_id
+       WHERE s.user_id = $1
+       LIMIT 1`,
+      [userId]
+    );
+
+    res.json({ scope: scopeResult.rows[0] ?? null });
+  } catch (error) { next(error); }
+});
+
+adminRouter.get("/scopes", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user!.id;
+    const role = req.user!.role;
+
+    // system_admin can scope to any federation or cooperative
+    if (role === "system_admin") {
+      const [federations, cooperatives] = await Promise.all([
+        pool.query("SELECT id, name, 'federation'::text as type FROM federations ORDER BY name"),
+        pool.query("SELECT id, name, 'cooperative'::text as type FROM cooperatives ORDER BY name"),
+      ]);
+      res.json({ scopes: [...federations.rows, ...cooperatives.rows] });
+      return;
+    }
+
+    // federation_admin can scope to their federation and its societies
+    if (role === "federation_admin") {
+      const [federations, cooperatives] = await Promise.all([
+        pool.query(
+          `SELECT f.id, f.name, 'federation'::text as type
+           FROM admin_scopes s
+           JOIN federations f ON f.id = s.federation_id
+           WHERE s.user_id = $1`,
+          [userId]
+        ),
+        pool.query(
+          `SELECT c.id, c.name, 'cooperative'::text as type
+           FROM admin_scopes s
+           JOIN cooperatives c ON c.federation_id = s.federation_id
+           WHERE s.user_id = $1
+           ORDER BY c.name`,
+          [userId]
+        ),
+      ]);
+      res.json({ scopes: [...federations.rows, ...cooperatives.rows] });
+      return;
+    }
+
+    // society_admin can only scope to their own cooperative
+    const cooperatives = await pool.query(
+      `SELECT c.id, c.name, 'cooperative'::text as type
+       FROM admin_scopes s
+       JOIN cooperatives c ON c.id = s.cooperative_id
+       WHERE s.user_id = $1`,
+      [userId]
+    );
+    res.json({ scopes: cooperatives.rows });
+  } catch (error) { next(error); }
+});
+
 /* ──────────────────────────────────────────────────────────────────────────────
    HELPER FUNCTIONS
    ────────────────────────────────────────────────────────────────────────────── */

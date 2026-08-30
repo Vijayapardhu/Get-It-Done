@@ -4,8 +4,7 @@ import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/models/account_models.dart';
-import '../../core/network/api_exception.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';
 

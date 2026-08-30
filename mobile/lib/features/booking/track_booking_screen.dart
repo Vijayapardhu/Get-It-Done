@@ -3,11 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/providers.dart';
-import '../../core/realtime/realtime_service.dart';
+import '../../core/realtime/realtime_providers.dart';
 import '../../design/design_system.dart';
-import '../../core/network/api_exception.dart';
 import '../chat/chat_screens.dart';
 import '../payment/payment_screen.dart';
 

@@ -121,7 +121,7 @@ export class AppError extends Error {
 
   toJSON() {
     const base = {
-      type: `https://api.getitdone.in/errors/${this.code.toLowerCase()}`,
+      type: `https://getitdone.vijayapardhu.tech/errors/${this.code.toLowerCase()}`,
       title: this.code.replace(/_/g, " "),
       status: this.statusCode,
       detail: this.message,

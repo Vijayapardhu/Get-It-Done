@@ -3,20 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'api/gid_api.dart';
+import 'package:gid_core/gid_core.dart';
 import 'auth/google_auth_service.dart';
-import 'config/app_config.dart';
 import 'config/server_config.dart';
-import 'config/remote_config.dart';
-import 'models/account_models.dart';
-import 'models/payment_models.dart';
-import 'models/models.dart';
-import 'network/api_client.dart';
-import 'network/api_exception.dart';
-import 'storage/guest_store.dart';
-import 'storage/otp_store.dart';
-import 'storage/token_store.dart';
-import 'storage/user_store.dart';
 
 /// Composition root.
 ///

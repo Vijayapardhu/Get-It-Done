@@ -104,6 +104,44 @@ export function emitWorkerLocationToBookings(bookingIds: string[], data: unknown
   }
 }
 
+/**
+ * A job is being offered to one worker, right now.
+ *
+ * Deliberately NOT routed through the outbox. The outbox polls every
+ * JOB_POLL_INTERVAL_MS (5s) and exists to make the durable `notifications` row
+ * reliable -- which is the right trade for "your payout was settled" and the
+ * wrong one for a 45-second window. Five seconds of a 45-second offer is 11% of
+ * the worker's time to decide, spent on a poll interval.
+ *
+ * The payload carries everything the offer screen renders, so the screen never
+ * has to fetch before it can paint: a worker whose phone woke up on 2G must see
+ * the money and the distance immediately, not a spinner. `expiresAt` is the
+ * server's deadline; the client renders its countdown against that and its
+ * measured clock skew, never against a locally started 45-second timer.
+ *
+ * Note what is absent: the exact address. A worker who has not accepted gets an
+ * area name only.
+ */
+export function emitJobOffered(workerUserId: string, offer: unknown) {
+  io?.to(`worker:${workerUserId}`).emit("job:offered", offer);
+}
+
+/**
+ * The offer is off the table -- it lapsed, it was reassigned, or the customer
+ * cancelled. The app dismisses the full-screen interrupt on this.
+ *
+ * Without it, a worker stares at a countdown for a job somebody else already
+ * accepted, and finds out by tapping Accept.
+ */
+export function emitJobRevoked(workerUserId: string, data: unknown) {
+  io?.to(`worker:${workerUserId}`).emit("job:revoked", data);
+}
+
+/** A worker-visible change to a booking they hold: arrival, extension, cancel. */
+export function emitJobUpdated(workerUserId: string, data: unknown) {
+  io?.to(`worker:${workerUserId}`).emit("job:updated", data);
+}
+
 export function emitNotification(userId: string, data: unknown) {
   io?.to(`user:${userId}`).emit("notification:new", data);
 }

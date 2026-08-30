@@ -65,6 +65,12 @@ export function truncate(str: string, length: number): string {
   return str.slice(0, length - 1) + "…"
 }
 
+export function toNumber(value: number | string | null | undefined): number {
+  if (value === null || value === undefined || value === "") return 0
+  const n = typeof value === "string" ? parseFloat(value) : value
+  return Number.isFinite(n) ? n : 0
+}
+
 export function getInitials(name: string): string {
   return name
     .split(" ")

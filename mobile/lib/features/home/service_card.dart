@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cart/cart.dart';
-import '../../core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/ui/service_artwork.dart';
 import '../../design/design_system.dart';
 

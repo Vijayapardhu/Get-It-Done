@@ -63,6 +63,26 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />
+
+        <!-- Firebase Cloud Messaging.
+
+             These apply to a notification Android draws ITSELF, with the app
+             killed and no Dart running. Without them the system falls back to
+             the launcher icon, which it masks by alpha and renders as a plain
+             white square in the status bar.
+
+             The channel must match LocalNotifications._channelId and the
+             backend's FCM_ANDROID_CHANNEL_ID; a channel id Android does not
+             know about loses the importance settings and arrives silent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_gid" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/gid_notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="gid_bookings" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

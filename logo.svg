@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background circle - Navy -->
+  <circle cx="256" cy="256" r="256" fill="#14285C"/>
+  
+  <!-- Accent ring - Teal -->
+  <circle cx="256" cy="256" r="224" fill="none" stroke="#14B8A6" stroke-width="4"/>
+  
+  <!-- Checkmark - White -->
+  <path d="M140 256 L220 336 L372 184" 
+        stroke="#FFFFFF" stroke-width="24" 
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
+  <!-- Text "GET IT DONE" -->
+  <text x="256" y="420" text-anchor="middle" 
+        font-family="Inter, system-ui" font-size="36" font-weight="700" fill="#FFFFFF">
+    GET IT DONE
+  </text>
+  
+  <!-- Subtitle "Worker" -->
+  <text x="256" y="460" text-anchor="middle" 
+        font-family="Inter, system-ui" font-size="20" font-weight="500" fill="#14B8A6">
+    Worker
+  </text>
+</svg>

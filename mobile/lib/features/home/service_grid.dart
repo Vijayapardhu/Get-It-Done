@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../design/design_system.dart';
 import 'service_card.dart';
 

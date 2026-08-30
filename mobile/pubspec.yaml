@@ -30,6 +30,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # The design system and the platform plumbing, extracted when the worker app
+  # arrived so there is exactly one token scale and one auth refresh queue for
+  # both apps. See packages/gid_ui and packages/gid_core.
+  gid_ui:
+    path: ../packages/gid_ui
+  gid_core:
+    path: ../packages/gid_core
   # Locale-aware Material/Cupertino strings (date pickers, dialogs) and the
   # delegates AppLocalizations is generated against.
   flutter_localizations:
@@ -63,6 +71,11 @@ dependencies:
   phosphor_flutter: ^2.1.0
   flutter_local_notifications: ^20.1.0
   google_maps_flutter: ^2.14.2
+  # Remote push. flutter_local_notifications above only draws a notification
+  # this app asked for while it is running; these two are what let the server
+  # reach a device whose app is closed.
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
 
 dev_dependencies:
   flutter_test:

@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/config/app_config.dart';
+import 'package:gid_core/gid_core.dart';
 import '../../core/config/server_config.dart';
 import '../../core/providers.dart';
 import '../../design/design_system.dart';

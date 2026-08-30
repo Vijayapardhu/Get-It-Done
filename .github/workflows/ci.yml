@@ -1,6 +1,7 @@
 # Continuous integration.
 #
-# Four independent jobs, one per deployable. They do NOT depend on each other:
+# Six independent jobs, one per deployable plus the two shared Flutter
+# packages. They do NOT depend on each other:
 # a Flutter analyzer failure should not hide a backend type error, and waiting
 # for Postgres to boot should not delay the web build.
 #
@@ -138,6 +139,55 @@ jobs:
           path: mobile/test/golden/failures/
           if-no-files-found: ignore
           retention-days: 7
+
+  packages:
+    name: Shared Flutter packages
+    runs-on: ubuntu-latest
+    # gid_ui and gid_core are depended on by BOTH apps, so a break here breaks
+    # two deployables at once. Analysed on their own rather than only through an
+    # app, because a package that only compiles in the context of one consumer
+    # is not actually shared.
+    strategy:
+      matrix:
+        package: [gid_core, gid_ui]
+    defaults:
+      run:
+        working-directory: packages/${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.4"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+
+  mobile_worker:
+    name: Worker app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile_worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.4"
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # The offer countdown and the offline queue are the two things in this app
+      # whose failure costs a worker money, and both are covered here against an
+      # injected clock rather than by waiting 45 real seconds.
+      - name: Test
+        run: flutter test
 
   ai:
     name: AI sidecar

@@ -18,6 +18,13 @@ RUN npm ci --omit=dev
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# V8 sizes its default heap from the container's memory, and on a small host
+# that ceiling is below what tsc needs to check this project plus the
+# firebase-admin type surface -- the build died with "Reached heap limit
+# Allocation failed" (exit 134) on a 1GB instance. Raising it explicitly makes
+# the build independent of how much RAM the builder happens to have; swap
+# absorbs the peak on the small ones.
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build
 
 # ── runtime ──────────────────────────────────────────────────────────────────

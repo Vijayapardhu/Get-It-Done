@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:getitdone_customer/core/models/models.dart';
-import 'package:getitdone_customer/core/network/json.dart';
+import 'package:gid_core/gid_core.dart';
 
 /// Parsing tests built from responses captured off the running backend.
 ///

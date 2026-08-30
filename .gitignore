@@ -23,3 +23,9 @@ api-test-results.json
 **/.dart_tool/
 mobile/lib/l10n/app_localizations*.dart
 mobile/lib/l10n/untranslated.json
+
+# Firebase service account keys. A private key that signs push for the whole
+# project -- never in git, in any directory, under any name.
+**/firebase-adminsdk*.json
+**/firebase-service-account*.json
+backend/secrets/

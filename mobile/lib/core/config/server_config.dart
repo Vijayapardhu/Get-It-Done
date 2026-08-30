@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'app_config.dart';
+import 'package:gid_core/gid_core.dart';
 
 /// Which server this build talks to, and the developer's ability to change it.
 ///

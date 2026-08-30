@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "113112451688",
+    "project_id": "getitdone-sih",
+    "storage_bucket": "getitdone-sih.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:113112451688:android:6b2b94fb6b870ed18b49dd",
+        "android_client_info": {
+          "package_name": "com.getitdone.getitdone_customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAba69sBsSXBbc_m3is1zlXN5joc7noKMU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

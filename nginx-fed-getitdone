@@ -1,0 +1,36 @@
+server {
+    server_name fed.getitdone.vijayapardhu.tech;
+
+    root /var/www/fed-getitdone;
+    index index.html;
+
+    # Serve static assets with cache headers (filenames are content-hashed by Vite)
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA fallback: every other route serves index.html so client-side
+    # routing (react-router) handles /workforce, /operations, etc.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/getitdone.vijayapardhu.tech/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/getitdone.vijayapardhu.tech/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+
+server {
+    if ($host = fed.getitdone.vijayapardhu.tech) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+    listen 80;
+    listen [::]:80;
+    server_name fed.getitdone.vijayapardhu.tech;
+    return 404; # managed by Certbot
+}

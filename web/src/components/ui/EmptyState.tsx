@@ -1,5 +1,5 @@
 import { cn } from "../../lib/utils"
-import { Inbox, Users, Shield, Search, Plus, Box, AlertCircle } from "@phosphor-icons/react"
+import { Archive, Users, Shield, MagnifyingGlass, Plus, Package, WarningCircle } from "@phosphor-icons/react"
 
 interface EmptyStateProps {
   icon?: "inbox" | "users" | "shield" | "search" | "plus" | "box" | "alert"
@@ -14,13 +14,13 @@ interface EmptyStateProps {
 }
 
 const iconMap = {
-  inbox: Inbox,
+  inbox: Archive,
   users: Users,
   shield: Shield,
-  search: Search,
+  search: MagnifyingGlass,
   plus: Plus,
-  box: Box,
-  alert: AlertCircle,
+  box: Package,
+  alert: WarningCircle,
 }
 
 const sizeClasses = {
@@ -41,20 +41,20 @@ export function EmptyState({ icon = "inbox", title, description, action, classNa
   return (
     <div
       className={cn(
-        "text-center bg-ink rounded-lg border border-muted/20",
+        "text-center bg-white rounded-xl border border-border",
         sizeClasses[size],
         className
       )}
       role="status"
       aria-live="polite"
     >
-      <Icon size={iconSizes[size]} weight="regular" className="mx-auto text-muted/50 mb-4" aria-hidden="true" />
+      <Icon size={iconSizes[size]} weight="regular" className="mx-auto text-border mb-4" aria-hidden="true" />
       <h3 className="text-lg font-semibold text-ink mb-1">{title}</h3>
       {description && <p className="text-sm text-muted max-w-sm mx-auto">{description}</p>}
       {action && (
         <button
           onClick={action.onClick}
-          className="mt-4 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
+          className="mt-4 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-white"
         >
           {action.label}
         </button>
@@ -89,14 +89,14 @@ interface ErrorStateProps {
 
 export function ErrorState({ message, description, onRetry, retryLabel = "Try again", className, size = "md" }: ErrorStateProps) {
   return (
-    <div className={cn("text-center bg-ink rounded-lg border border-crit/30 bg-crit/5", sizeClasses[size], className)} role="alert">
-      <AlertCircle size={iconSizes[size]} weight="fill" className="mx-auto text-crit mb-4" aria-hidden="true" />
-      <h3 className="text-lg font-semibold text-crit mb-1">{message}</h3>
+    <div className={cn("text-center bg-white rounded-xl border border-crit/20 bg-crit-light/30", sizeClasses[size], className)} role="alert">
+      <WarningCircle size={iconSizes[size]} weight="regular" className="mx-auto text-crit mb-4" aria-hidden="true" />
+      <h3 className="text-lg font-semibold text-ink mb-1">{message}</h3>
       {description && <p className="text-sm text-muted max-w-sm mx-auto mb-4">{description}</p>}
       {onRetry && (
         <button
           onClick={onRetry}
-          className="px-4 py-2 bg-crit text-white text-sm font-medium rounded-lg hover:bg-crit/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crit focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
+          className="px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-white"
         >
           {retryLabel}
         </button>

@@ -1,0 +1,2 @@
+INSERT INTO users (id, name, email, role, language, password_hash) VALUES ('f1a2b3c4-0000-0000-0000-000000000001', 'Federation Admin', 'admin@apfederation.coop', 'federation_admin', 'en', '$2b$10$rQ3x8Zz0Q8Y7X9vBnKl5UO3mH7cY8Zz0Q8Y7X9vBnKl5UO3mH7cY8Zz0Q8') ON CONFLICT DO NOTHING;
+INSERT INTO admin_scopes (user_id, federation_id) VALUES ('f1a2b3c4-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000111') ON CONFLICT DO NOTHING;

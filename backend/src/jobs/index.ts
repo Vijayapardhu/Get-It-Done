@@ -4,6 +4,8 @@ import { generateDueRecurringBookings } from "../services/recurringService.js";
 import { generateSettlements, previousMonthPeriod } from "../services/settlementService.js";
 import { processOutboxEvents } from "../services/notificationService.js";
 import { generateExport, generatePendingExports } from "../services/reportExportService.js";
+import { expireDueOffers } from "../services/offerService.js";
+import { autoOfflineAfterShift, warnExpiringDocuments } from "../services/workerShiftService.js";
 import logger from "../core/logger.js";
 
 /**
@@ -26,6 +28,8 @@ import logger from "../core/logger.js";
 const FIFTEEN_MINUTES = 15 * 60;
 const THIRTY_SECONDS = 30;
 const SIX_HOURS = 6 * 60 * 60;
+const ONE_MINUTE = 60;
+const ONE_DAY = 24 * 60 * 60;
 
 export function registerJobHandlers(): void {
   // ── One-shot: blueprint 5.4 acceptance failover ──────────────────────────
@@ -81,6 +85,29 @@ export function registerJobHandlers(): void {
   registerPeriodicHandler("outbox.drain", THIRTY_SECONDS, async () => {
     const processed = await processOutboxEvents();
     if (processed > 0) logger.debug({ processed }, "Outbox drained");
+  });
+
+  // ── Periodic: the worker app's housekeeping ──────────────────────────────
+  //
+  // The 45-second failover job already reassigns a lapsed booking. This is the
+  // bookkeeping half: an offer whose booking was cancelled outright has no
+  // failover job to close it, and would otherwise sit `offered` forever and
+  // keep appearing in GET /workers/me/offers.
+  registerPeriodicHandler("offers.expire", ONE_MINUTE, async () => {
+    const expired = await expireDueOffers();
+    if (expired > 0) logger.debug({ expired }, "Lapsed job offers swept");
+  });
+
+  // WORKER_APP_PLAN 4.4: going offline should not be something to remember at
+  // the end of a twelve-hour day.
+  registerPeriodicHandler("worker.shift_end", ONE_MINUTE * 5, async () => {
+    await autoOfflineAfterShift();
+  });
+
+  // TASKLIST 2.6: a worker whose insurance lapsed silently stops getting
+  // matched and never finds out why.
+  registerPeriodicHandler("worker.document_expiry", ONE_DAY, async () => {
+    await warnExpiringDocuments();
   });
 
   registerPeriodicHandler("settlement.generate", SIX_HOURS, async (payload) => {

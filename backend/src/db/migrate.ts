@@ -46,6 +46,10 @@ export const MIGRATIONS = [
   "migration_phase21_skill_consolidation.sql", // one worker-skill table, keyed on services
   "migration_phase22_totp_replay.sql",     // users.totp_last_step: each operator code single-use
   "migration_phase23_booking_locality.sql", // grid_cell + locality: a real area key for forecasting
+  "migration_phase24_booking_address.sql", // bookings.address_id: written by the code, never created
+  "migration_phase25_support_tickets.sql", // complaints: priority, category, assigned_to, resolution
+  "migration_phase26_worker_app.sql",      // job offers, working hours, arrival, location trail, SOS
+  "migration_phase27_training.sql",        // training modules, questions, worker records
 ] as const;
 
 const CREATE_TRACKING_TABLE = `

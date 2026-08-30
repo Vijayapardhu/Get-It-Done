@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../icons/app_icons.dart';
-import '../theme/app_theme.dart';
-import '../tokens/spacing.dart';
-import 'app_badges.dart';
-import 'app_surface.dart';
+import 'package:gid_ui/gid_ui.dart';
 
 /// Worker avatar with an optional verification mark.
 ///

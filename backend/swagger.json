@@ -15,12 +15,12 @@
   },
   "servers": [
     {
-      "url": "http://localhost:4000",
-      "description": "Development server"
+      "url": "https://getitdone.vijayapardhu.tech",
+      "description": "Production"
     },
     {
-      "url": "https://api.getitdone.example",
-      "description": "Production server"
+      "url": "http://localhost:4000",
+      "description": "Local development"
     }
   ],
   "components": {
@@ -1221,6 +1221,27 @@
         }
       }
     },
+    "/workers/me/dispatch-readiness": {
+      "get": {
+        "summary": "Why this worker is or is not reachable by matching",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-condition checklist and an overall verdict"
+          },
+          "404": {
+            "description": "No worker profile for this account"
+          }
+        }
+      }
+    },
     "/workers/me/skills": {
       "get": {
         "summary": "List the caller's certified skills",
@@ -1432,6 +1453,291 @@
             "description": "Paginated job history"
           }
         }
+      }
+    },
+    "/workers/me/offers": {
+      "get": {
+        "summary": "Job offers live for the caller right now",
+        "description": "What the app calls on cold start, on socket reconnect, and whenever an FCM data message arrives while the socket is down. Lapsed offers are swept before the read, so every row returned still has time on it. `serverNow` is the server's own clock: the client measures its skew against it and renders the countdown from `expiresAt`, never from a locally started timer.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live offers with their server deadlines"
+          }
+        }
+      }
+    },
+    "/workers/me/schedule": {
+      "get": {
+        "summary": "The caller's weekly working hours",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "Replace the caller's weekly working hours",
+        "description": "A whole-week replace, because the grid is edited as a unit. An empty list means \"no declared hours\", which matching reads as always available — the duty toggle stays the primary control.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/workers/me/location/batch": {
+      "post": {
+        "summary": "Drain a queue of position fixes",
+        "description": "A worker in a lift, a basement or a 2G dead zone accumulates fixes with nowhere to send them. This takes the whole ordered queue, writes the trail, promotes the newest usable fix to the live cursor, and fans that one out to the customers currently waiting on this worker.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many fixes were accepted",
+            "and the live cursor": null
+          }
+        }
+      }
+    },
+    "/workers/me/sos": {
+      "post": {
+        "summary": "Raise an SOS from the field",
+        "description": "Records the incident with the last known fix and the active booking, puts it in front of the operations room immediately over `admin:operations`, and returns a number the app can dial. Distinct from POST /workers/me/safety-incidents, which is a form filed after the fact.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The incident",
+            "and who to call": null
+          }
+        }
+      }
+    },
+    "/workers/me/reviews": {
+      "get": {
+        "summary": "Reviews the caller has received",
+        "description": "Reviews were readable by worker *id* only, so the app had to fetch its own profile first purely to learn an id it should never need. Same data, one round trip.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/workers/me/statistics": {
+      "get": {
+        "summary": "The caller's own performance figures, with the window they cover",
+        "description": "Acceptance rate feeds matching, so it must be visible to the worker it is measured on — together with the window it is measured over, or it is a number nobody can act on.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/workers/me/earnings/overview": {
+      "get": {
+        "summary": "Today, this week, this month, and a seven-day strip",
+        "description": "`/earnings/workers/me/earnings/summary` returns four rolling windows (7/30/365/all) with no `today`, no job counts and no per-day series — which is three of the four things the worker app's Earnings screen is made of. Rather than bend the screen to a shape it cannot use, this serves what it renders. The existing endpoint is untouched: the operator console reads it.\nWindows are CALENDAR-aligned in Asia/Kolkata, not rolling: a worker asking \"what did I make today\" means since midnight, and \"this week\" means since Monday. A rolling seven days is a different question and answering it here would quietly disagree with their own arithmetic.\n",
+        "tags": [
+          "Workers"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Figures and the seven-day series"
+          }
+        }
+      }
+    },
+    "/bookings/{id}/payout-preview": {
+      "get": {
+        "summary": "The worker's share of this booking, itemised",
+        "description": "`computeSplit` was only ever called at settlement. This exposes the same arithmetic before and during the job: gross, tax out, platform 5%, cooperative 10%, welfare 2%, and what is left. Worker-scoped — the customer's own total is on their invoice.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The split",
+            "line by line": null
+          },
+          "404": {
+            "description": "Not your booking"
+          }
+        }
+      }
+    },
+    "/bookings/{id}/order-context": {
+      "get": {
+        "summary": "The sibling services arriving at the same address",
+        "description": "Since orders, a checkout produces one order and several bookings — a plumber and an electrician at the same address in the same hour, each matched separately. A worker who cannot see that has no way to plan parking, access or sequencing. Trades and their statuses only; never the other workers' phone numbers.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/bookings/{id}/arrived": {
+      "post": {
+        "summary": "Stamp arrival at the customer's door, with a GPS fix",
+        "description": "The state that did not exist between en_route and started. Records the time and the position, and starts the waiting window after which a no-show may be declared. A mocked fix is refused and flagged — arrival is what gates the OTP and therefore the money.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arrival recorded",
+            "with the no-show window": null
+          },
+          "409": {
+            "description": "Wrong status",
+            "or a mocked position": null
+          }
+        }
+      }
+    },
+    "/bookings/{id}/no-show": {
+      "post": {
+        "summary": "Release a job whose customer never appeared",
+        "description": "Only after arrival has been stamped and the waiting window has run. Releases the worker, records a structured reason, and posts a compensation entry to the worker's ledger — a wasted journey is work.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Released",
+            "with any compensation posted": null
+          },
+          "409": {
+            "description": "Not arrived yet",
+            "or still inside the waiting window": null
+          }
+        }
+      }
+    },
+    "/bookings/{id}/extensions": {
+      "get": {
+        "summary": "Extension requests on this booking",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Ask the customer for more time",
+        "description": "Priced at the rate frozen onto the booking, never at today's rate. One pending request at a time — a second would leave the customer choosing between two prices for the same half hour.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Requested",
+            "awaiting the customer": null
+          },
+          "409": {
+            "description": "Job not in progress",
+            "or a request is already pending": null
+          }
+        }
+      }
+    },
+    "/bookings/{id}/extensions/{extensionId}/respond": {
+      "post": {
+        "summary": "Customer approves or declines extra time",
+        "description": "Approving re-freezes the booking: the minutes and the price both move, in one transaction, so the invoice and the settlement split cannot disagree about what was bought.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved",
+            "with the booking's new duration and price": null
+          }
+        }
+      }
+    },
+    "/bookings/{id}/work-clock": {
+      "post": {
+        "summary": "Stamp the real start and finish of the work",
+        "description": "Distinct from the booking's status. `started` is a handshake with a customer holding an OTP; this is the clock the in-progress timer runs against and the record of how long the job really took, which is what \"need more time?\" and every duration forecast are read from.\n",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/welfare/training": {
@@ -4219,6 +4525,97 @@
         }
       }
     },
+    "/services/{id}/artwork": {
+      "put": {
+        "summary": "Set service artwork (admin)",
+        "tags": [
+          "Services"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "imageUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "https URL, or null to clear"
+                  },
+                  "imageBase64": {
+                    "type": "string",
+                    "description": "PNG/JPEG/WebP bytes; stored and served by us"
+                  },
+                  "animationUrl": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "animationBase64": {
+                    "type": "string",
+                    "description": "Lottie JSON"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service"
+          },
+          "400": {
+            "description": "Unsupported or malformed artwork"
+          },
+          "404": {
+            "description": "Service not found"
+          }
+        }
+      }
+    },
+    "/services/categories/{name}/artwork": {
+      "put": {
+        "summary": "Set category artwork (admin)",
+        "tags": [
+          "Services"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated category"
+          }
+        }
+      }
+    },
     "/service-areas": {
       "post": {
         "summary": "Create service coverage area",
@@ -6315,6 +6712,129 @@
             "description": "Missing or invalid signature"
           }
         }
+      }
+    },
+    "/orders": {
+      "post": {
+        "summary": "Check out a cart as one order of several bookings",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lines",
+                  "mode",
+                  "latitude",
+                  "longitude",
+                  "address"
+                ],
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "serviceId",
+                        "minutes"
+                      ],
+                      "properties": {
+                        "serviceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "minutes": {
+                          "type": "integer",
+                          "minimum": 5,
+                          "maximum": 720
+                        }
+                      }
+                    }
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "instant",
+                      "scheduled",
+                      "recurring"
+                    ]
+                  },
+                  "scheduledAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "latitude": {
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "type": "number"
+                  },
+                  "address": {
+                    "type": "string"
+                  },
+                  "addressId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order placed",
+            "with one booking per service": null
+          },
+          "400": {
+            "description": "Empty cart",
+            "or scheduled with no time": null
+          },
+          "403": {
+            "description": "Only customers can place orders"
+          },
+          "409": {
+            "description": "Idempotency key reused with a different payload"
+          }
+        }
+      }
+    },
+    "/orders/{id}": {
+      "get": {
+        "summary": "One of the caller's orders, with its bookings",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/notifications": {
@@ -8870,6 +9390,27 @@
         }
       }
     },
+    "/maps/places/autocomplete": {
+      "post": {
+        "summary": "Address suggestions for a partially typed query",
+        "tags": [
+          "Maps"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked predictions"
+          },
+          "503": {
+            "description": "Maps is not configured on this deployment"
+          }
+        }
+      }
+    },
     "/admin/federation/overview": {
       "get": {
         "summary": "Get federation dashboard overview",
@@ -10142,6 +10683,31 @@
         }
       }
     },
+    "/customer/bookings/{id}/map": {
+      "get": {
+        "summary": "A map of the worker's position and the job address",
+        "tags": [
+          "Bookings"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PNG image"
+          },
+          "404": {
+            "description": "Booking not found",
+            "or no plausible worker position": null
+          },
+          "503": {
+            "description": "Maps is not configured on this deployment"
+          }
+        }
+      }
+    },
     "/cooperatives/federations": {
       "post": {
         "summary": "Create federation (system_admin)",
@@ -11276,6 +11842,7 @@
                 "required": [
                   "name",
                   "email",
+                  "phone",
                   "password"
                 ],
                 "properties": {
@@ -11286,6 +11853,10 @@
                   "email": {
                     "type": "string",
                     "format": "email"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "Both identifiers are required"
                   },
                   "password": {
                     "type": "string",
@@ -11313,12 +11884,21 @@
         }
       }
     },
-    "/auth/request-otp": {
+    "/auth/login": {
       "post": {
-        "summary": "Request a phone OTP",
+        "summary": "Sign in with a password",
         "tags": [
           "Authentication"
         ],
+        "responses": {
+          "200": {
+            "description": "Session issued"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        },
+        "description": "Accepts an email address or a phone number. Send either `identifier` (whichever the user typed) or the explicit `email` / `phone` field — `email` is kept for existing clients.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -11326,52 +11906,26 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "phone"
+                  "password"
                 ],
                 "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "description": "Email or phone"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
                   "phone": {
+                    "type": "string"
+                  },
+                  "password": {
                     "type": "string"
                   }
                 }
               }
             }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OTP requested"
-          }
-        }
-      }
-    },
-    "/auth/verify-otp": {
-      "post": {
-        "summary": "Verify a phone OTP",
-        "tags": [
-          "Authentication"
-        ],
-        "responses": {
-          "200": {
-            "description": "Authenticated session"
-          },
-          "401": {
-            "description": "Invalid or expired OTP"
-          }
-        }
-      }
-    },
-    "/auth/login": {
-      "post": {
-        "summary": "Sign in with email and password",
-        "tags": [
-          "Authentication"
-        ],
-        "responses": {
-          "200": {
-            "description": "Authenticated session"
-          },
-          "401": {
-            "description": "Invalid credentials"
           }
         }
       }
@@ -11575,6 +12129,112 @@
         "responses": {
           "200": {
             "description": "Authenticated session"
+          }
+        }
+      }
+    },
+    "/auth/admin/login": {
+      "post": {
+        "summary": "Operator sign-in with a second factor",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed in"
+          },
+          "401": {
+            "description": "Invalid credentials or code"
+          },
+          "403": {
+            "description": "Not an operator account",
+            "or no authenticator enrolled": null
+          }
+        }
+      }
+    },
+    "/auth/admin/totp/enrol": {
+      "post": {
+        "summary": "Begin authenticator enrolment; returns a secret and QR code",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Secret",
+            "otpauth URI and a QR data URL": null
+          },
+          "409": {
+            "description": "Already enrolled"
+          }
+        }
+      }
+    },
+    "/auth/admin/totp/confirm": {
+      "post": {
+        "summary": "Confirm enrolment by proving the authenticator works",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Enrolled"
+          },
+          "400": {
+            "description": "Code did not match the secret"
+          }
+        }
+      }
+    },
+    "/auth/admin/totp/{userId}": {
+      "delete": {
+        "summary": "Reset an operator's authenticator (lost device)",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reset; the operator must enrol again before signing in"
+          }
+        }
+      }
+    },
+    "/auth/role/worker": {
+      "post": {
+        "summary": "Turn the signed-in account into a worker account",
+        "description": "For someone who signed up on the wrong side of the platform — most often through Google, which had no way to say \"I am a worker\" and therefore always produced a customer account. Idempotent for an account that is already a worker. Refused for an account with customer history, and for any operator role.\n",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account is now a worker account"
+          },
+          "403": {
+            "description": "Operator accounts are never converted"
+          },
+          "409": {
+            "description": "The account has customer history and cannot be converted"
           }
         }
       }

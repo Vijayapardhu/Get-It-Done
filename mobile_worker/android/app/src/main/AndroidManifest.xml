@@ -1,0 +1,132 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Android 13+ put notifications behind a runtime grant. Without this
+         declared, requestNotificationsPermission() returns false without ever
+         showing a dialog - and in this app that means every job offer that
+         arrives while the phone is in a pocket is silently lost. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- The 45-second offer, on a locked screen.
+         Android 14 gates this behind a per-app grant AND a Play Console
+         declaration: file that declaration early, it is reviewed by hand.
+         Without the grant the offer still arrives, as an ordinary heads-up
+         notification - degraded, not broken. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+
+    <!-- Jobs are offered by distance, and the customer watches a map while the
+         worker is on the way. COARSE is declared alongside FINE because Android
+         12+ lets the user grant only approximate location; an app that asks for
+         FINE alone gets nothing when they choose "Approximate", and a worker who
+         picked it would silently stop being matched.
+
+         ACCESS_BACKGROUND_LOCATION is deliberately ABSENT. Tracking a worker
+         between jobs buys very little, makes the Play review materially harder,
+         and is not a thing this app should be able to do. Position is collected
+         while the app is in the foreground or while the foreground service is
+         running, and going offline stops it completely. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- The position pump during a job. A background service is killed the
+         moment memory is tight, and losing a worker's position mid-job is the
+         failure the CUSTOMER sees. Android 14 requires the typed permission as
+         well as the generic one. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+
+    <!-- The offer has to be felt as well as heard: a phone in a trouser pocket,
+         in a stairwell, next to a running drill. -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <!-- So the offer notification survives a reboot mid-shift. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <application
+        android:label="GET IT DONE Worker"
+        android:name="${applicationName}"
+        android:icon="@mipmap/launcher_icon"
+        android:networkSecurityConfig="@xml/${NETWORK_SECURITY_CONFIG}">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- showWhenLocked and turnScreenOn: the offer interrupt has to be
+                 able to wake the device and draw over the lock screen. That is
+                 the whole point of a full-screen intent, and without these two
+                 the notification fires into a black screen. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <!-- Maps SDK. Its OWN key, restricted in the Cloud console to this
+             package name and signing certificate - never the customer app's.
+             A key inside an APK is readable by anyone who has the APK, so the
+             restriction is the protection, not the secrecy. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
+        <!-- FCM defaults, for the notification Android draws itself when the
+             app is killed. The channel id must match OfferNotifications
+             .generalChannelId; a channel id Android does not know about loses
+             its importance settings and arrives silent.
+
+             Job offers do NOT come through here: they arrive as data messages
+             and the app draws them on the gid_job_offers_v1 channel, because
+             only the app can render a countdown ring and two 64dp buttons. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_gid" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/gid_notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="gid_worker_general" />
+    </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Android 11+ package visibility. Without these, url_launcher's
+             canLaunchUrl returns false and both "Call" and "Navigate" - the two
+             buttons a worker presses at every job - silently do nothing. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="google.navigation"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+    </queries>
+</manifest>

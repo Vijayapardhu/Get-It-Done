@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
-import '../core/models/models.dart';
+import 'package:gid_core/gid_core.dart';
 import '../core/config/theme_config.dart';
 import '../core/notifications/local_notifications.dart';
+import '../core/notifications/push_messaging.dart';
 import '../core/providers.dart';
 import '../design/design_system.dart';
 import '../core/ui/service_artwork.dart';
@@ -307,6 +308,9 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   bool get _isBrowsing => _stackDepth[_tab] == 0;
 
+  /// FCM is wired up once per session, not once per rebuild.
+  bool _pushStarted = false;
+
   /// Socket notifications become system notifications for as long as this shell
   /// is mounted -- which is the whole signed-in session. Watched here rather
   /// than on the Alerts tab, which is exactly the screen the user is NOT on
@@ -316,6 +320,19 @@ class _AppShellState extends ConsumerState<AppShell> {
     // the access token, and a guest has none.
     if (ref.watch(authControllerProvider).isAuthenticated) {
       ref.watch(notificationBridgeProvider);
+
+      // Remote push, for when this shell is NOT mounted -- the app closed, the
+      // socket gone. Started after sign-in rather than at launch because
+      // registering a device token requires a user to attach it to, and asking
+      // a stranger for notification permission on first launch is how that
+      // permission gets denied for good.
+      //
+      // Guarded and fired off the build: start() is async and hits the network,
+      // and PushMessaging.start is itself idempotent.
+      if (!_pushStarted) {
+        _pushStarted = true;
+        Future.microtask(() => ref.read(pushMessagingProvider).start());
+      }
     }
   }
 
@@ -438,6 +455,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 // charge emergency rates for a dripping tap.
                 onStartEmergency: _startInstant,
                 onOpenProfile: _openProfile,
+                onOpenAlerts: () => setState(() => _tab = 2),
               ),
             ),
             _TabNavigator(

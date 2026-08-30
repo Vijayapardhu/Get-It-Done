@@ -1,6 +1,6 @@
 import { cn } from "../../lib/utils"
-import { X, CheckCircle, AlertTriangle } from "@phosphor-icons/react"
-import { useEffect, useRef, KeyboardEvent } from "react"
+import { X, CheckCircle, Warning } from "@phosphor-icons/react"
+import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 
 export type ConfirmVariant = "destructive" | "warning" | "info" | "success"
@@ -129,14 +129,14 @@ export function ConfirmDialog({
         ref={dialogRef}
         tabIndex={-1}
         className={cn(
-          "relative w-full max-w-md bg-ink rounded-xl shadow-xl animate-scale-in",
+          "relative w-full max-w-md bg-surface rounded-xl shadow-xl animate-scale-in",
           variantStyles[variant]
         )}
       >
         <div className="flex items-start gap-3 p-5 border-b border-muted/20">
           <div className={cn("flex-shrink-0 mt-0.5", variantIconStyles[variant])}>
-            {variant === "destructive" && <AlertTriangle size={24} weight="fill" />}
-            {variant === "warning" && <AlertTriangle size={24} weight="regular" />}
+             {variant === "destructive" && <Warning size={24} weight="fill" />}
+             {variant === "warning" && <Warning size={24} weight="regular" />}
             {variant === "info" && <CheckCircle size={24} weight="regular" />}
             {variant === "success" && <CheckCircle size={24} weight="fill" />}
           </div>

@@ -1,6 +1,7 @@
 import { cn } from "../../lib/utils"
-import { ChevronUp, ChevronDown, Check, Minus } from "@phosphor-icons/react"
-import { useState, useMemo, KeyboardEvent } from "react"
+import { CaretUp, CaretDown, Check, Minus } from "@phosphor-icons/react"
+import { useState } from "react"
+import type { KeyboardEvent } from "react"
 
 export interface Column<T> {
   key: string
@@ -10,6 +11,7 @@ export interface Column<T> {
   render?: (value: unknown, row: T, index: number) => React.ReactNode
   sortable?: boolean
   className?: string
+  hideOnMobile?: boolean
 }
 
 export interface DataTableProps<T> {
@@ -29,10 +31,11 @@ export interface DataTableProps<T> {
   rowClassName?: (row: T) => string
   striped?: boolean
   compact?: boolean
+  mobileCardView?: boolean
 }
 
 function SortIcon({ order }: { order: "asc" | "desc" }) {
-  return order === "asc" ? <ChevronUp size={14} weight="bold" /> : <ChevronDown size={14} weight="bold" />
+  return order === "asc" ? <CaretUp size={14} weight="bold" /> : <CaretDown size={14} weight="bold" />
 }
 
 function SelectionCheckbox({ checked, indeterminate, onChange, ariaLabel }: { checked: boolean; indeterminate: boolean; onChange: () => void; ariaLabel: string }) {
@@ -42,7 +45,7 @@ function SelectionCheckbox({ checked, indeterminate, onChange, ariaLabel }: { ch
       className={cn(
         "w-4 h-4 rounded border-2 flex items-center justify-center transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-        checked ? "bg-accent border-accent text-ink" : "border-muted/30 hover:border-accent/50",
+        checked ? "bg-accent border-accent text-white" : "border-muted hover:border-accent/50",
         indeterminate && "bg-accent border-accent"
       )}
       aria-label={ariaLabel}
@@ -73,6 +76,7 @@ export function DataTable<T>({
   rowClassName,
   striped = true,
   compact = false,
+  mobileCardView = true,
 }: DataTableProps<T>) {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
 
@@ -95,57 +99,69 @@ export function DataTable<T>({
     }
   }
 
-  const handleKeyDown = (e: KeyboardEvent, row: T, index: number) => {
+  const handleKeyDown = (e: KeyboardEvent, row: T, _index: number) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault()
       onRowClick?.(row)
     }
   }
 
+  const mobileColumns = columns.filter((col) => !col.hideOnMobile)
+
   if (loading) {
     return (
-      <div className="overflow-x-auto rounded-lg border border-muted/20 bg-ink/50">
-        <table className="w-full" role="grid" aria-busy="true">
-          <thead className="bg-muted/10 border-b border-muted/20">
-            <tr>
-              {showSelection && <th className="px-3 py-2.5 w-10" scope="col" />}
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  scope="col"
-                  className={cn(
-                    "px-3 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wider",
-                    col.align === "center" && "text-center",
-                    col.align === "right" && "text-right",
-                    col.className
-                  )}
-                  style={{ width: col.width }}
-                >
-                  {col.header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <tr key={i} className={cn("border-b border-muted/10 animate-pulse", striped && i % 2 === 0 && "bg-muted/5")}>
-                {showSelection && <td className="px-3 py-3 w-10" />}
+      <>
+        <div className="hidden md:block overflow-x-auto rounded-xl border border-border bg-white">
+          <table className="w-full" role="grid" aria-busy="true">
+            <thead className="bg-bg border-b border-border">
+              <tr>
+                {showSelection && <th className="px-3 py-2.5 w-10" scope="col" />}
                 {columns.map((col) => (
-                  <td key={col.key} className={cn("px-3 py-3 text-sm", col.align === "center" && "text-center", col.align === "right" && "text-right", col.className)}>
-                    <div className="h-4 w-3/4 bg-muted/20 rounded" />
-                  </td>
+                  <th
+                    key={col.key}
+                    scope="col"
+                    className={cn(
+                      "px-3 py-2.5 text-left text-xs font-medium text-muted uppercase tracking-wider",
+                      col.align === "center" && "text-center",
+                      col.align === "right" && "text-right",
+                      col.className
+                    )}
+                    style={{ width: col.width }}
+                  >
+                    {col.header}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-border animate-pulse">
+                  {showSelection && <td className="px-3 py-3 w-10" />}
+                  {columns.map((col) => (
+                    <td key={col.key} className={cn("px-3 py-3 text-sm", col.align === "center" && "text-center", col.align === "right" && "text-right", col.className)}>
+                      <div className="h-4 w-3/4 bg-border rounded" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="md:hidden space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-xl border border-border p-4 animate-pulse">
+              <div className="h-4 w-1/2 bg-border rounded mb-3" />
+              <div className="h-3 w-3/4 bg-border rounded" />
+            </div>
+          ))}
+        </div>
+      </>
     )
   }
 
   if (data.length === 0) {
     return (
-      <div className="rounded-lg border border-muted/20 bg-ink/50 p-8 text-center">
+      <div className="rounded-xl border border-border bg-white p-8 text-center">
         <div className="text-muted mb-2 text-sm">{emptyMessage}</div>
         {emptyDescription && <div className="text-xs text-muted/70">{emptyDescription}</div>}
       </div>
@@ -153,97 +169,137 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-muted/20 bg-ink">
-      <table className="w-full" role="grid">
-        <thead className="bg-muted/10 border-b border-muted/20">
-          <tr>
-            {showSelection && (
-              <th scope="col" className="px-3 py-2.5 w-10">
-                <SelectionCheckbox
-                  checked={allSelected}
-                  indeterminate={someSelected && !allSelected}
-                  onChange={handleSelectAll}
-                  ariaLabel="Select all rows"
-                />
-              </th>
-            )}
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                scope="col"
-                className={cn(
-                  "px-3 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wider",
-                  col.align === "center" && "text-center",
-                  col.align === "right" && "text-right",
-                  col.sortable && "cursor-pointer select-none hover:text-ink",
-                  col.className
-                )}
-                style={{ width: col.width }}
-                onClick={col.sortable ? () => onSort?.(col.key, sortBy === col.key && sortOrder === "asc" ? "desc" : "asc") : undefined}
-                aria-sort={sortBy === col.key ? (sortOrder === "asc" ? "ascending" : "descending") : "none"}
-              >
-                <div className="flex items-center gap-1">
-                  {col.header}
-                  {col.sortable && sortBy === col.key && <SortIcon order={sortOrder} />}
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+    <>
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-x-auto rounded-xl border border-border bg-white">
+        <table className="w-full" role="grid">
+          <thead className="bg-bg border-b border-border">
+            <tr>
+              {showSelection && (
+                <th scope="col" className="px-3 py-2.5 w-10">
+                  <SelectionCheckbox
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onChange={handleSelectAll}
+                    ariaLabel="Select all rows"
+                  />
+                </th>
+              )}
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  scope="col"
+                  className={cn(
+                    "px-3 py-2.5 text-left text-xs font-medium text-muted uppercase tracking-wider",
+                    col.align === "center" && "text-center",
+                    col.align === "right" && "text-right",
+                    col.sortable && "cursor-pointer select-none hover:text-ink",
+                    col.className
+                  )}
+                  style={{ width: col.width }}
+                  onClick={col.sortable ? () => onSort?.(col.key, sortBy === col.key && sortOrder === "asc" ? "desc" : "asc") : undefined}
+                  aria-sort={sortBy === col.key ? (sortOrder === "asc" ? "ascending" : "descending") : "none"}
+                >
+                  <div className="flex items-center gap-1">
+                    {col.header}
+                    {col.sortable && sortBy === col.key && <SortIcon order={sortOrder!} />}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((row, index) => {
+              const rowKey = keyExtractor(row)
+              const selected = selection.includes(rowKey)
+              const isHovered = hoveredKey === rowKey
+
+              return (
+                <tr
+                  key={rowKey}
+                  className={cn(
+                    "border-b border-border transition-colors",
+                    striped && index % 2 === 0 && "bg-bg/50",
+                    selected && "bg-accent-light/50",
+                    isHovered && "bg-bg",
+                    onRowClick && "cursor-pointer",
+                    rowClassName?.(row)
+                  )}
+                  onMouseEnter={() => setHoveredKey(rowKey)}
+                  onMouseLeave={() => setHoveredKey(null)}
+                  onClick={() => onRowClick?.(row)}
+                  onKeyDown={(e) => handleKeyDown(e, row, index)}
+                  tabIndex={onRowClick ? 0 : -1}
+                  role="row"
+                  aria-selected={selected}
+                >
+                  {showSelection && (
+                    <td className="px-3 py-2.5 w-10">
+                      <SelectionCheckbox
+                        checked={selected}
+                        indeterminate={false}
+                        onChange={() => handleRowSelect(rowKey)}
+                        ariaLabel={`Select row ${index + 1}`}
+                      />
+                    </td>
+                  )}
+                  {columns.map((col) => (
+                    <td
+                      key={col.key}
+                      className={cn(
+                        "px-3 py-2.5 text-sm",
+                        col.align === "center" && "text-center",
+                        col.align === "right" && "text-right",
+                        compact && "py-1.5",
+                        col.className
+                      )}
+                    >
+                      {col.render ? col.render((row as Record<string, unknown>)[col.key], row, index) : String((row as Record<string, unknown>)[col.key] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile card view */}
+      {mobileCardView && (
+        <div className="md:hidden space-y-3">
           {data.map((row, index) => {
             const rowKey = keyExtractor(row)
             const selected = selection.includes(rowKey)
-            const isHovered = hoveredKey === rowKey
 
             return (
-              <tr
+              <div
                 key={rowKey}
                 className={cn(
-                  "border-b border-muted/10 transition-colors",
-                  striped && index % 2 === 0 && "bg-muted/5",
-                  selected && "bg-accent/5",
-                  isHovered && "bg-muted/10",
-                  onRowClick && "cursor-pointer",
-                  rowClassName?.(row)
+                  "bg-white rounded-xl border border-border p-4 transition-colors",
+                  selected && "border-accent bg-accent-light/30",
+                  onRowClick && "cursor-pointer active:bg-bg"
                 )}
-                onMouseEnter={() => setHoveredKey(rowKey)}
-                onMouseLeave={() => setHoveredKey(null)}
                 onClick={() => onRowClick?.(row)}
                 onKeyDown={(e) => handleKeyDown(e, row, index)}
                 tabIndex={onRowClick ? 0 : -1}
                 role="row"
                 aria-selected={selected}
               >
-                {showSelection && (
-                  <td className="px-3 py-2.5 w-10">
-                    <SelectionCheckbox
-                      checked={selected}
-                      indeterminate={false}
-                      onChange={() => handleRowSelect(rowKey)}
-                      ariaLabel={`Select row ${index + 1}`}
-                    />
-                  </td>
-                )}
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    className={cn(
-                      "px-3 py-2.5 text-sm",
-                      col.align === "center" && "text-center",
-                      col.align === "right" && "text-right",
-                      compact && "py-1.5",
-                      col.className
-                    )}
-                  >
-                    {col.render ? col.render((row as Record<string, unknown>)[col.key], row, index) : String((row as Record<string, unknown>)[col.key] ?? "")}
-                  </td>
-                ))}
-              </tr>
+                <div className="space-y-2">
+                  {mobileColumns.map((col) => (
+                    <div key={col.key} className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium text-muted shrink-0">{col.header}</span>
+                      <span className="text-sm text-ink text-right">
+                        {col.render ? col.render((row as Record<string, unknown>)[col.key], row, index) : String((row as Record<string, unknown>)[col.key] ?? "")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )
           })}
-        </tbody>
-      </table>
-    </div>
+        </div>
+      )}
+    </>
   )
 }

@@ -2,7 +2,7 @@ import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/models.dart';
+import 'package:gid_core/gid_core.dart';
 
 /// How the customer wants the cart carried out.
 enum CheckoutMode {

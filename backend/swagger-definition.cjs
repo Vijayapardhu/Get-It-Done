@@ -13,14 +13,18 @@ module.exports = {
       url: "https://opensource.org/licenses/MIT"
     }
   },
+  // Order matters: Swagger UI selects the first entry by default, so the
+  // deployed host has to lead. It used to be a placeholder domain
+  // (api.getitdone.example) that resolves nowhere, which meant every "Try it
+  // out" on the hosted docs page failed with an opaque network error.
   servers: [
     {
-      url: "http://localhost:4000",
-      description: "Development server"
+      url: "https://getitdone.vijayapardhu.tech",
+      description: "Production"
     },
     {
-      url: "https://api.getitdone.example",
-      description: "Production server"
+      url: "http://localhost:4000",
+      description: "Local development"
     }
   ],
   components: {

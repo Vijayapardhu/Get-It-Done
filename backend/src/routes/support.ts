@@ -86,9 +86,9 @@ supportRouter.post("/tickets", requireAuth, async (req, res, next) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO complaints (id, booking_id, raised_by, status, description, priority, category)
-       VALUES ($1, $2, $3, 'open', $4, $5, $6) RETURNING *`,
-      [crypto.randomUUID(), input.bookingId ?? null, req.user!.id, input.description, input.priority, input.category]
+      `INSERT INTO complaints (id, booking_id, raised_by, status, subject, description, priority, category)
+       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7) RETURNING *`,
+      [crypto.randomUUID(), input.bookingId ?? null, req.user!.id, input.subject, input.description, input.priority, input.category]
     );
 
     // Notify relevant parties
