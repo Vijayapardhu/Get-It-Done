@@ -28,6 +28,7 @@ export function formatMoneyDecimal(amount: number | string, currency = "INR"): s
 export function formatRelativeTime(date: string | Date): string {
   const now = new Date()
   const then = new Date(date)
+  if (isNaN(then.getTime())) return "—"
   const diffMs = now.getTime() - then.getTime()
   const diffSecs = Math.floor(diffMs / 1000)
   const diffMins = Math.floor(diffSecs / 60)
@@ -42,7 +43,9 @@ export function formatRelativeTime(date: string | Date): string {
 }
 
 export function formatDateTime(date: string | Date): string {
-  return new Date(date).toLocaleString("en-IN", {
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return "—"
+  return d.toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -53,7 +56,9 @@ export function formatDateTime(date: string | Date): string {
 }
 
 export function formatDate(date: string | Date): string {
-  return new Date(date).toLocaleDateString("en-IN", {
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return "—"
+  return d.toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",

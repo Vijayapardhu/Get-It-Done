@@ -367,6 +367,39 @@ export interface TaxRule {
   [key: string]: unknown;
 }
 
+export interface Zone {
+  id: string;
+  name: string;
+  polygon: { type: "Polygon"; coordinates: number[][][] };
+  base_price: number;
+  basePrice: number;
+  demand_multiplier: number;
+  demandMultiplier: number;
+  status: string;
+  geometry?: { type: "Polygon"; coordinates: number[][][] };
+  cooperative_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ZonePricing {
+  id: string;
+  cooperative_id: string;
+  cooperativeId: string;
+  zone_id: string;
+  zoneId: string;
+  price_override: number | null;
+  priceOverride: number | null;
+  demand_multiplier: number;
+  demandMultiplier: number;
+  enabled: boolean;
+  zone_name?: string;
+  zoneName?: string;
+  federation_base_price?: number;
+  federationBasePrice?: number;
+  geometry?: { type: "Polygon"; coordinates: number[][][] };
+}
+
 // ─────────────────────────────────────────────── System / Admin ──
 
 export interface AdminUserRow {

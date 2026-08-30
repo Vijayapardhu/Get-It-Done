@@ -22,6 +22,8 @@ import type {
   SurgeRule,
   TravelFee,
   TaxRule,
+  Zone,
+  ZonePricing,
   AdminUserRow,
   RoleRow,
   AuditEvent,
@@ -627,6 +629,40 @@ export const adminApi = {
 
   async createTaxRule(data: { name: string; rate: number; appliesTo: string; jurisdiction: string }): Promise<ApiResponse<{ taxRule: TaxRule }>> {
     const response = await api.post("/admin/pricing/tax-rules", data)
+    return { data: response.data, status: response.status }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ZONE MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════
+
+  async getZones(): Promise<ApiResponse<{ zones: Zone[] }>> {
+    const response = await api.get("/admin/zones")
+    return { data: response.data, status: response.status }
+  },
+
+  async createZone(data: { name: string; polygon: { type: "Polygon"; coordinates: number[][][] }; basePrice: number; demandMultiplier?: number; status?: string }): Promise<ApiResponse<{ zone: Zone }>> {
+    const response = await api.post("/admin/zones", data)
+    return { data: response.data, status: response.status }
+  },
+
+  async updateZone(id: string, data: Partial<{ name: string; polygon: { type: "Polygon"; coordinates: number[][][] }; basePrice: number; demandMultiplier: number; status: string }>): Promise<ApiResponse<{ zone: Zone }>> {
+    const response = await api.patch(`/admin/zones/${id}`, data)
+    return { data: response.data, status: response.status }
+  },
+
+  async deleteZone(id: string): Promise<ApiResponse<void>> {
+    const response = await api.delete(`/admin/zones/${id}`)
+    return { data: response.data, status: response.status }
+  },
+
+  async getCooperativeZonePricing(cooperativeId: string): Promise<ApiResponse<{ zonePricing: ZonePricing[] }>> {
+    const response = await api.get(`/admin/cooperatives/${cooperativeId}/zones`)
+    return { data: response.data, status: response.status }
+  },
+
+  async updateCooperativeZonePricing(cooperativeId: string, zoneId: string, data: { priceOverride?: number; demandMultiplier?: number; enabled?: boolean }): Promise<ApiResponse<{ zonePricing: ZonePricing }>> {
+    const response = await api.put(`/admin/cooperatives/${cooperativeId}/zones/${zoneId}`, data)
     return { data: response.data, status: response.status }
   },
 

@@ -13,6 +13,7 @@ import { CategoryCreate } from "./pages/CategoryCreate"
 import { CategoryView } from "./pages/CategoryView"
 import { ServiceView } from "./pages/ServiceView"
 import { ServiceForm } from "./pages/ServiceForm"
+import { ZoneManagement } from "./pages/ZoneManagement"
 import { Pricing } from "./pages/Pricing"
 import { FederationFinance } from "./pages/FederationFinance"
 import { Customers } from "./pages/Customers"
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="services/:serviceId" element={<ServiceView />} />
             <Route path="services/:serviceId/edit" element={<ServiceForm />} />
             <Route path="pricing" element={<Pricing />} />
+            <Route path="zones" element={<ZoneManagement />} />
             <Route path="finance" element={<FederationFinance />} />
             <Route path="customers" element={<Customers />} />
             <Route path="support" element={<Support />} />

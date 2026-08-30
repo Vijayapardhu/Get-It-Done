@@ -19,6 +19,7 @@ import {
   WarningCircle,
   MapPin,
   ChartLineUp,
+  MapTrifold,
 } from "@phosphor-icons/react"
 import { useAuth } from "../../lib/AuthContext"
 import { Logo } from "../ui/Logo"
@@ -29,6 +30,7 @@ const cooperativeNav = [
   { key: "workforce", label: "Workforce", icon: Users, href: "/workforce", roles: ["system_admin", "federation_admin", "society_admin"] },
   { key: "catalogue", label: "Categories", icon: Package, href: "/catalogue", roles: ["system_admin", "federation_admin", "society_admin"] },
   { key: "pricing", label: "Pricing", icon: Tag, href: "/pricing", roles: ["system_admin", "federation_admin"] },
+  { key: "zones", label: "Zones", icon: MapTrifold, href: "/zones", roles: ["system_admin", "federation_admin"] },
   { key: "finance", label: "Finance", icon: CurrencyInr, href: "/finance", roles: ["system_admin", "federation_admin", "support_staff"] },
   { key: "customers", label: "Customers", icon: User, href: "/customers", roles: ["system_admin", "support_staff"] },
   { key: "support", label: "Support", icon: Headphones, href: "/support", roles: ["system_admin", "federation_admin", "society_admin", "support_staff"] },

@@ -103,7 +103,7 @@ export function Workforce() {
     }] : []),
     { key: "verificationStatus", header: "Status", render: (_v, w) => <StatusPill status={w.verificationStatus} size="sm" />, hideOnMobile: true },
     { key: "currentStatus", header: "Availability", render: (_v, w) => <StatusPill status={w.currentStatus} size="sm" /> },
-    { key: "rating", header: "Rating", align: "right", render: (_v, w) => w.rating ? <span className="font-tabular">{w.rating.toFixed(1)}</span> : "—", hideOnMobile: true },
+    { key: "rating", header: "Rating", align: "right", render: (_v, w) => w.rating ? <span className="font-tabular">{Number(w.rating).toFixed(1)}</span> : "—", hideOnMobile: true },
     { key: "experienceYears", header: "Exp (yrs)", align: "right", render: (_v, w) => <span className="font-tabular">{w.experienceYears ?? "—"}</span>, hideOnMobile: true },
   ]
 
@@ -196,7 +196,7 @@ function WorkerDrawer({ worker, approve, reject, suspend, busy }: { worker: Work
         <DetailDrawerField label="Email" value={worker.email} />
         <DetailDrawerField label="Experience" value={worker.experienceYears != null ? `${worker.experienceYears} years` : "—"} />
         <DetailDrawerField label="Service Radius" value={worker.serviceRadiusKm != null ? `${worker.serviceRadiusKm} km` : "—"} />
-        <DetailDrawerField label="Rating" value={worker.rating ? worker.rating.toFixed(1) : "—"} />
+        <DetailDrawerField label="Rating" value={worker.rating ? Number(worker.rating).toFixed(1) : "—"} />
         <DetailDrawerField label="Jobs (last 30 days)" value={String(worker.jobsLast30Days ?? 0)} />
       </DetailDrawerSection>
 

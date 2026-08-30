@@ -1088,6 +1088,119 @@ adminRouter.delete("/pricing/surge-rules/:id", requireAuth, requireRoles("system
   } catch (error) { next(error); }
 });
 
+// ─── ZONE MANAGEMENT ────────────────────────────────────────────────────────
+const zoneCreateSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  polygon: z.object({ type: z.literal("Polygon"), coordinates: z.array(z.array(z.array(z.number()))) }),
+  basePrice: z.number().nonnegative(),
+  demandMultiplier: z.number().min(0.5).max(5).default(1.0),
+  status: z.enum(["active", "inactive"]).default("active"),
+});
+
+const zoneUpdateSchema = zoneCreateSchema.partial();
+
+adminRouter.get("/zones", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
+  try {
+    const result = await pool.query(`
+      SELECT z.*, c.name as cooperative_name,
+             ST_AsGeoJSON(z.polygon::geometry)::jsonb as geometry
+      FROM zones z
+      LEFT JOIN cooperatives c ON c.id = z.cooperative_id
+      ORDER BY z.created_at DESC
+    `);
+    res.json({ zones: result.rows });
+  } catch (error) { next(error); }
+});
+
+adminRouter.post("/zones", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const input = zoneCreateSchema.parse(req.body);
+    const result = await pool.query(
+      `INSERT INTO zones (id, name, polygon, base_price, demand_multiplier, status)
+       VALUES ($1, $2, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326)::geography, $4, $5, $6)
+       RETURNING *, ST_AsGeoJSON(polygon::geometry)::jsonb as geometry`,
+      [crypto.randomUUID(), input.name, JSON.stringify(input.polygon), input.basePrice, input.demandMultiplier, input.status]
+    );
+    await recordAuditEvent({ actorId: req.user!.id, action: "zone.created", resourceType: "zone", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
+    res.status(201).json({ zone: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
+adminRouter.patch("/zones/:id", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = zoneUpdateSchema.parse(req.body);
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let index = 1;
+
+    if (input.name !== undefined) { fields.push(`name = $${index++}`); values.push(input.name); }
+    if (input.polygon !== undefined) { fields.push(`polygon = ST_SetSRID(ST_GeomFromGeoJSON($${index++}), 4326)::geography`); values.push(JSON.stringify(input.polygon)); }
+    if (input.basePrice !== undefined) { fields.push(`base_price = $${index++}`); values.push(input.basePrice); }
+    if (input.demandMultiplier !== undefined) { fields.push(`demand_multiplier = $${index++}`); values.push(input.demandMultiplier); }
+    if (input.status !== undefined) { fields.push(`status = $${index++}`); values.push(input.status); }
+
+    if (fields.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
+    values.push(id);
+    const result = await pool.query(
+      `UPDATE zones SET ${fields.join(", ")}, updated_at = now() WHERE id = $${index} RETURNING *, ST_AsGeoJSON(polygon::geometry)::jsonb as geometry`,
+      values
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: "Zone not found" }); return; }
+    await recordAuditEvent({ actorId: req.user!.id, action: "zone.updated", resourceType: "zone", resourceId: id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
+    res.json({ zone: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
+adminRouter.delete("/zones/:id", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const result = await pool.query(`DELETE FROM zones WHERE id = $1 RETURNING id`, [id]);
+    if (!result.rows[0]) { res.status(404).json({ error: "Zone not found" }); return; }
+    await recordAuditEvent({ actorId: req.user!.id, action: "zone.deleted", resourceType: "zone", resourceId: id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
+    res.status(204).send();
+  } catch (error) { next(error); }
+});
+
+// ─── COOPERATIVE ZONE PRICING ───────────────────────────────────────────────
+adminRouter.get("/cooperatives/:id/zones", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
+  try {
+    const cooperativeId = z.string().uuid().parse(req.params.id);
+    const result = await pool.query(`
+      SELECT zp.*, z.name as zone_name, z.base_price as federation_base_price,
+             ST_AsGeoJSON(z.polygon::geometry)::jsonb as geometry
+      FROM zone_pricing zp
+      JOIN zones z ON z.id = zp.zone_id
+      WHERE zp.cooperative_id = $1
+      ORDER BY z.name
+    `, [cooperativeId]);
+    res.json({ zonePricing: result.rows });
+  } catch (error) { next(error); }
+});
+
+adminRouter.put("/cooperatives/:id/zones/:zoneId", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
+  try {
+    const cooperativeId = z.string().uuid().parse(req.params.id);
+    const zoneId = z.string().uuid().parse(req.params.zoneId);
+    const input = z.object({
+      priceOverride: z.number().nonnegative().optional(),
+      demandMultiplier: z.number().min(0.5).max(5).optional(),
+      enabled: z.boolean().default(true),
+    }).parse(req.body);
+
+    const result = await pool.query(`
+      INSERT INTO zone_pricing (id, cooperative_id, zone_id, price_override, demand_multiplier, enabled)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (cooperative_id, zone_id)
+      DO UPDATE SET price_override = EXCLUDED.price_override, demand_multiplier = EXCLUDED.demand_multiplier, enabled = EXCLUDED.enabled, updated_at = now()
+      RETURNING *
+    `, [crypto.randomUUID(), cooperativeId, zoneId, input.priceOverride ?? null, input.demandMultiplier ?? 1.0, input.enabled]);
+
+    await recordAuditEvent({ actorId: req.user!.id, action: "zone_pricing.updated", resourceType: "zone_pricing", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
+    res.json({ zonePricing: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
 adminRouter.get("/pricing/travel-fees", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const result = await pool.query(`SELECT tf.*, c.name as cooperative_name FROM travel_fees tf JOIN cooperatives c ON c.id = tf.cooperative_id ORDER BY tf.created_at DESC`);

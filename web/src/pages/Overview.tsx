@@ -276,7 +276,7 @@ function CooperativeOverview() {
           <KpiCard label="Total Bookings" value={data.totalBookings} icon={ClipboardText} accent="info" href="/operations" />
           <KpiCard label="Completed" value={data.completedJobs} icon={CheckCircle} accent="success" href="/operations" />
           <KpiCard label="Earnings" value={formatMoney(data.totalEarnings)} icon={CurrencyInr} accent="success" href="/finance" />
-          <KpiCard label="Avg Rating" value={data.averageRating ? data.averageRating.toFixed(1) : "—"} icon={Star} accent="warning" href="/workforce" />
+          <KpiCard label="Avg Rating" value={data.averageRating ? Number(data.averageRating).toFixed(1) : "—"} icon={Star} accent="warning" href="/workforce" />
         </div>
       </section>
 
