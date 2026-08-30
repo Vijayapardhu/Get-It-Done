@@ -6,6 +6,8 @@ import type {
   WorkersListParams,
   WorkersListResponse,
   Worker,
+  WorkerSkill,
+  WorkerServiceArea,
   BulkStatusAction,
   DashboardOverview,
   ScopeOption,
@@ -40,7 +42,6 @@ import type {
   WorkerAnalytics,
   Settlement,
   Refund,
-  SecurityEvent,
   NotificationTemplate,
 } from "./types"
 
@@ -240,12 +241,73 @@ export const adminApi = {
 
   async getWorkers(params: WorkersListParams): Promise<ApiResponse<WorkersListResponse>> {
     const response = await api.get("/workers", { params })
-    return { data: response.data, status: response.status }
+    return {
+      data: {
+        workers: response.data.workers?.map((w: any) => ({
+          id: w.id,
+          workerCode: w.worker_code,
+          verificationStatus: w.verification_status,
+          rating: w.rating != null ? Number(w.rating) : null,
+          currentStatus: w.current_status,
+          experienceYears: w.experience_years,
+          serviceRadiusKm: w.service_radius_km != null ? Number(w.service_radius_km) : null,
+          name: w.name,
+          phone: w.phone,
+          email: w.email,
+          avatarUrl: w.avatar_url,
+          cooperativeName: w.cooperative_name,
+          district: w.district,
+          state: w.state,
+        })) ?? [],
+        total: response.data.total,
+        page: response.data.page,
+        limit: response.data.limit,
+      },
+      status: response.status,
+    }
   },
 
-  async getWorker(id: string): Promise<ApiResponse<{ worker: Worker }>> {
+  async getWorker(id: string): Promise<ApiResponse<{ worker: Worker; skills: WorkerSkill[]; serviceAreas: WorkerServiceArea[] }>> {
     const response = await api.get(`/workers/${id}`)
-    return { data: response.data, status: response.status }
+    const data = response.data
+    return {
+      data: {
+        worker: {
+          id: data.worker.id,
+          workerCode: data.worker.worker_code,
+          verificationStatus: data.worker.verification_status,
+          rating: data.worker.rating != null ? Number(data.worker.rating) : null,
+          currentStatus: data.worker.current_status,
+          experienceYears: data.worker.experience_years,
+          serviceRadiusKm: data.worker.service_radius_km,
+          name: data.worker.name,
+          phone: data.worker.phone,
+          email: data.worker.email,
+          avatarUrl: data.worker.avatar_url,
+          cooperativeName: data.worker.cooperative_name,
+          district: data.worker.district,
+          state: data.worker.state,
+          bio: data.worker.bio,
+          totalJobs: data.worker.total_jobs,
+          completedJobs: data.worker.completed_jobs,
+          cancelledJobs: data.worker.cancelled_jobs,
+        },
+        skills: data.skills?.map((s: any) => ({
+          skillId: s.skill_id,
+          name: s.name,
+          category: s.category,
+          level: s.level,
+          verified: s.verified,
+          yearsExperience: s.years_experience,
+        })) ?? [],
+        serviceAreas: data.serviceAreas?.map((sa: any) => ({
+          serviceId: sa.service_id,
+          name: sa.name,
+          radiusKm: sa.radius_km,
+        })) ?? [],
+      },
+      status: response.status,
+    }
   },
 
   async approveVerification(id: string): Promise<ApiResponse<{ worker: Worker }>> {
@@ -444,6 +506,16 @@ export const adminApi = {
     return { data: response.data, status: response.status }
   },
 
+  async getAdminSociety(id: string): Promise<ApiResponse<{ society: AdminCooperative }>> {
+    const response = await api.get(`/admin/cooperatives/${id}`)
+    return { data: { society: response.data.cooperative }, status: response.status }
+  },
+
+  async getAdminSocieties(params?: { status?: string; page?: number; limit?: number; search?: string }): Promise<ApiResponse<{ societies: AdminCooperative[]; total: number }>> {
+    const response = await api.get("/admin/cooperatives", { params })
+    return { data: { societies: response.data.cooperatives, total: response.data.total }, status: response.status }
+  },
+
   async createSociety(data: { name: string; code: string; district: string; state: string; federationId: string; contactEmail?: string; contactPhone?: string; address?: string; commissionRate?: number; minWorkers?: number; maxWorkers?: number }): Promise<ApiResponse<{ cooperative: AdminCooperative }>> {
     const response = await api.post("/admin/cooperatives", data)
     return { data: response.data, status: response.status }
@@ -506,12 +578,12 @@ export const adminApi = {
   // AI INSIGHTS
   // ═══════════════════════════════════════════════════════════════════
 
-  async getDemandForecast(): Promise<ApiResponse<{ predictions?: Array<{ date?: string; area?: string; service?: string; predicted_requests?: number; confidence?: number }> }>> {
+  async getDemandForecast(): Promise<ApiResponse<any>> {
     const response = await api.get("/ai/demand-forecast")
     return { data: response.data, status: response.status }
   },
 
-  async getWorkforceAllocation(): Promise<ApiResponse<{ recommendations?: Array<{ society?: string; region?: string; recommended_workers?: number; current_workers?: number; reasoning?: string }> }>> {
+  async getWorkforceAllocation(): Promise<ApiResponse<any>> {
     const response = await api.get("/ai/workforce-allocation")
     return { data: response.data, status: response.status }
   },
@@ -667,68 +739,120 @@ export const adminApi = {
   },
 
   // ═══════════════════════════════════════════════════════════════════
-  // SUPPORT (ADMIN-SCOPED)
+  // SOCIETY TERRITORIES
   // ═══════════════════════════════════════════════════════════════════
 
-  async getAdminSupportTickets(params?: { status?: string; category?: string; page?: number; limit?: number }): Promise<ApiResponse<{ tickets: SupportTicket[]; total: number }>> {
-    const response = await api.get("/admin/support/tickets", { params })
+  async createTerritory(cooperativeId: string, data: { polygon: { type: "Polygon"; coordinates: number[][][] }; status?: string }): Promise<ApiResponse<{ territory: any }>> {
+    const response = await api.post(`/territories/cooperatives/${cooperativeId}/territory`, data)
     return { data: response.data, status: response.status }
   },
 
-  async assignSupportTicket(id: string, assignedTo: string): Promise<ApiResponse<{ ticket: SupportTicket }>> {
-    const response = await api.post(`/admin/support/tickets/${id}/assign`, { assignedTo })
+  async getTerritory(cooperativeId: string): Promise<ApiResponse<{ territory: any }>> {
+    const response = await api.get(`/territories/cooperatives/${cooperativeId}/territory`)
+    return { data: response.data, status: response.status }
+  },
+
+  async updateTerritory(cooperativeId: string, data: { polygon?: { type: "Polygon"; coordinates: number[][][] }; status?: string }): Promise<ApiResponse<{ territory: any }>> {
+    const response = await api.patch(`/territories/cooperatives/${cooperativeId}/territory`, data)
+    return { data: response.data, status: response.status }
+  },
+
+  async validateTerritory(data: { polygon: { type: "Polygon"; coordinates: number[][][] }; federationId: string; cooperativeId?: string }): Promise<ApiResponse<{ valid: boolean; errors: string[]; warnings: string[]; conflicts: any[] }>> {
+    const response = await api.post("/territories/validate", data)
+    return { data: response.data, status: response.status }
+  },
+
+  async previewTerritory(data: { polygon: { type: "Polygon"; coordinates: number[][][] } }): Promise<ApiResponse<{ bookingCount: number; workerCount: number; activeWorkerCount: number; customerCount: number; areaKm2: number }>> {
+    const response = await api.post("/territories/preview", data)
+    return { data: response.data, status: response.status }
+  },
+
+  async resolveTerritory(lat: number, lng: number): Promise<ApiResponse<{ matched: boolean; cooperative?: any; territory?: any }>> {
+    const response = await api.get("/territories/resolve", { params: { lat, lng } })
+    return { data: response.data, status: response.status }
+  },
+
+  async getFederationTerritories(federationId: string): Promise<ApiResponse<{ territories: any[] }>> {
+    const response = await api.get(`/territories/federations/${federationId}/territories`)
+    return { data: response.data, status: response.status }
+  },
+
+  async getTerritoryStatistics(cooperativeId: string): Promise<ApiResponse<any>> {
+    const response = await api.get(`/territories/cooperatives/${cooperativeId}/territory/statistics`)
+    return { data: response.data, status: response.status }
+  },
+
+  async getTerritoryUnassignedBookings(): Promise<ApiResponse<{ bookings: any[] }>> {
+    const response = await api.get("/territories/unassigned")
+    return { data: response.data, status: response.status }
+  },
+
+  async assignBooking(bookingId: string, cooperativeId: string): Promise<ApiResponse<{ success: boolean }>> {
+    const response = await api.post("/territories/assign-booking", { bookingId, cooperativeId })
+    return { data: response.data, status: response.status }
+  },
+
+async getFederationCoverageStats(federationId: string): Promise<ApiResponse<any>> {
+    const response = await api.get(`/territories/federations/${federationId}/coverage-stats`)
+    return { data: response.data, status: response.status }
+  },
+
+  async getTerritoryGaps(federationId: string): Promise<ApiResponse<{ gaps: any[] }>> {
+    const response = await api.get(`/territories/federations/${federationId}/gaps`)
+    return { data: response.data, status: response.status }
+  },
+
+  async resolveWorkerTerritory(workerId: string): Promise<ApiResponse<{ territory: any; cooperativeId: string }>> {
+    const response = await api.get(`/territories/worker/${workerId}/resolve`)
     return { data: response.data, status: response.status }
   },
 
   // ═══════════════════════════════════════════════════════════════════
-  // SECURITY & SYSTEM
+  // SOCIETY ADMIN MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════
 
-  async getSecurityEvents(params?: { userId?: string; eventType?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }): Promise<ApiResponse<{ events: SecurityEvent[]; total: number }>> {
-    const response = await api.get("/admin/security-events", { params })
+  async createSocietyAdmin(cooperativeId: string, data: { name: string; email: string; phone: string }): Promise<ApiResponse<{ user: any; temporaryPassword: string; message: string }>> {
+    const response = await api.post(`/admin/cooperatives/${cooperativeId}/admin`, data)
     return { data: response.data, status: response.status }
   },
 
-  async updateUserStatus(id: string, status: "active" | "inactive" | "suspended"): Promise<ApiResponse<{ user: AdminUserRow }>> {
-    const response = await api.patch(`/admin/users/${id}/status`, { status })
+  async getSocietyAdmin(cooperativeId: string): Promise<ApiResponse<{ admin: any }>> {
+    const response = await api.get(`/admin/cooperatives/${cooperativeId}/admin`)
     return { data: response.data, status: response.status }
   },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // ROLE MANAGEMENT
-  // ═══════════════════════════════════════════════════════════════════
-
-  async createRole(data: { name: string; description?: string; permissions?: string[] }): Promise<ApiResponse<{ role: RoleRow }>> {
-    const response = await api.post("/admin/roles", data)
+  async updateSocietyStatus(cooperativeId: string, status: string): Promise<ApiResponse<{ cooperative: any }>> {
+    const response = await api.patch(`/admin/cooperatives/${cooperativeId}/status`, { status })
     return { data: response.data, status: response.status }
   },
 
-  async updateRole(id: string, data: Partial<{ name: string; description: string; permissions: string[] }>): Promise<ApiResponse<{ role: RoleRow }>> {
-    const response = await api.patch(`/admin/roles/${id}`, data)
-    return { data: response.data, status: response.status }
+  async getCooperatives(params?: { page?: number; limit?: number; search?: string }): Promise<ApiResponse<{ cooperatives: AdminCooperative[]; total: number }>> {
+    const response = await api.get("/admin/cooperatives", { params })
+    return { data: { cooperatives: response.data.cooperatives, total: response.data.total }, status: response.status }
   },
 
-  async deleteRole(id: string): Promise<ApiResponse<void>> {
-    const response = await api.delete(`/admin/roles/${id}`)
+  async getAuditLog(params?: { actorId?: string; action?: string; resourceType?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }): Promise<ApiResponse<{ events: AuditEvent[]; total: number }>> {
+    const response = await api.get("/admin/audit-log", { params })
     return { data: response.data, status: response.status }
   },
-
-  // ═══════════════════════════════════════════════════════════════════
-  // NOTIFICATION TEMPLATES
-  // ═══════════════════════════════════════════════════════════════════
 
   async getNotificationTemplates(): Promise<ApiResponse<{ templates: NotificationTemplate[] }>> {
     const response = await api.get("/admin/notifications/templates")
     return { data: response.data, status: response.status }
   },
 
-  async createNotificationTemplate(data: { name: string; type: string; titleTemplate: string; bodyTemplate: string; channels?: string[]; language?: string; variables?: string[] }): Promise<ApiResponse<{ template: NotificationTemplate }>> {
-    const response = await api.post("/admin/notifications/templates", data)
+  async getReports(params?: { type?: string; fromDate?: string; toDate?: string }): Promise<ApiResponse<{ reports: any[] }>> {
+    const response = await api.get("/reports/reports", { params })
     return { data: response.data, status: response.status }
   },
 
-  async updateNotificationTemplate(id: string, data: Partial<{ titleTemplate: string; bodyTemplate: string; channels: string[]; language: string; isActive: boolean }>): Promise<ApiResponse<{ template: NotificationTemplate }>> {
-    const response = await api.patch(`/admin/notifications/templates/${id}`, data)
+  async getSupportTicket(id: string): Promise<ApiResponse<{ ticket: SupportTicket }>> {
+    const response = await api.get(`/admin/support/tickets/${id}`)
+    return { data: response.data, status: response.status }
+  },
+
+  async replySupportTicket(id: string, message: string): Promise<ApiResponse<{ ticket: SupportTicket }>> {
+    const response = await api.post(`/admin/support/tickets/${id}/reply`, { message })
     return { data: response.data, status: response.status }
   },
 }

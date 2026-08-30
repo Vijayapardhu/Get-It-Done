@@ -47,6 +47,10 @@ export interface Worker {
   serviceAreas?: WorkerServiceArea[];
   activeJobs?: number;
   jobsLast30Days?: number;
+  bio?: string;
+  totalJobs?: number;
+  completedJobs?: number;
+  cancelledJobs?: number;
 }
 
 export interface WorkerSkill {
@@ -518,6 +522,7 @@ export interface AdminCooperative {
   code: string;
   district: string;
   state: string;
+  status?: SocietyStatus;
   federation_id?: string;
   federation_name?: string;
   contact_email?: string;
@@ -661,3 +666,40 @@ export interface NotificationTemplate {
   is_active?: boolean;
   created_at?: string;
 }
+
+// ─────────────────────────────────────────────── Territory & Onboarding ──
+
+export interface Territory {
+  id: string;
+  cooperative_id: string;
+  cooperative_name?: string;
+  status: string;
+  version: number;
+  geometry: { type: "Polygon"; coordinates: number[][][] };
+  area_km2: number;
+  center_lat: number;
+  center_lng: number;
+  created_at: string;
+  updated_at: string;
+  validated_at?: string;
+}
+
+export interface TerritoryGap {
+  geometry: { type: "Polygon"; coordinates: number[][][] };
+  area_km2: number;
+  center_lat: number;
+  center_lng: number;
+}
+
+export interface SocietyAdmin {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  last_login_at?: string;
+  temporary_password: boolean;
+  created_at: string;
+}
+
+export type SocietyStatus = "draft" | "territory_pending" | "admin_pending" | "active" | "suspended";

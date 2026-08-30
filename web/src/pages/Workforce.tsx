@@ -48,6 +48,16 @@ export function Workforce() {
   const [drawerWorker, setDrawerWorker] = useState<Worker | null>(null)
   const queryClient = useQueryClient()
 
+  const { data: drawerData, isLoading: drawerLoading } = useQuery({
+    queryKey: ["worker-detail", drawerWorker?.id],
+    queryFn: () => adminApi.getWorker(drawerWorker!.id).then((r) => r.data),
+    enabled: !!drawerWorker,
+  })
+
+  const detailWorker = drawerData?.worker
+    ? { ...drawerData.worker, skills: drawerData.skills, serviceAreas: drawerData.serviceAreas }
+    : drawerWorker
+
   const params: WorkersListParams = {
     page,
     limit: 20,
@@ -172,15 +182,17 @@ export function Workforce() {
         subtitle={drawerWorker?.workerCode}
         width="lg"
       >
-        {drawerWorker && (
+        {drawerLoading ? (
+          <LoadingState message="Loading worker details…" />
+        ) : detailWorker ? (
           <WorkerDrawer
-            worker={drawerWorker}
+            worker={detailWorker}
             approve={approve.mutate}
             reject={reject.mutate}
             suspend={suspend.mutate}
             busy={approve.isPending || reject.isPending || suspend.isPending}
           />
-        )}
+        ) : null}
       </DetailDrawer>
     </div>
   )

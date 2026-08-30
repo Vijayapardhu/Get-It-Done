@@ -75,7 +75,7 @@ export function AiInsights() {
           </div>
           {workforceRecs.length > 0 ? (
             <div className="space-y-2">
-              {workforceRecs.slice(0, 5).map((r, i) => (
+              {workforceRecs.slice(0, 5).map((r: any, i: number) => (
                 <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                   <div>
                     <p className="text-sm text-ink">{r.society ?? r.region ?? "General"}</p>

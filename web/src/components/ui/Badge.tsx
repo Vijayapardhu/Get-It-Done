@@ -1,4 +1,5 @@
 import { cn } from "../../lib/utils"
+import { User } from "@phosphor-icons/react"
 
 interface BadgeProps {
   children: React.ReactNode
@@ -73,19 +74,12 @@ const avatarSizes = {
 }
 
 export function Avatar({ name, src, size = "md", className }: AvatarProps) {
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2)
-
   if (src) {
     return (
       <img
         src={src}
-        alt=""
-        className={cn("rounded-full object-cover", avatarSizes[size], className)}
+        alt={name}
+        className={cn("rounded-full object-cover bg-muted/20", avatarSizes[size], className)}
         aria-hidden="true"
       />
     )
@@ -94,13 +88,13 @@ export function Avatar({ name, src, size = "md", className }: AvatarProps) {
   return (
     <div
       className={cn(
-        "rounded-full bg-accent/20 flex items-center justify-center font-medium text-accent",
+        "rounded-full bg-accent/10 flex items-center justify-center text-accent/60",
         avatarSizes[size],
         className
       )}
       aria-label={name}
     >
-      {initials}
+      <User size={size === "sm" ? 12 : size === "md" ? 16 : size === "lg" ? 20 : 24} weight="regular" />
     </div>
   )
 }

@@ -1480,6 +1480,99 @@ adminRouter.post("/support/tickets/:id/assign", requireAuth, requireRoles("syste
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
+   SUPPORT TICKET DETAIL & REPLY
+   ────────────────────────────────────────────────────────────────────────────── */
+
+adminRouter.get("/support/tickets/:id", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"), async (req, res, next) => {
+  try {
+    const id = z.string().uuid().parse(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+
+    const result = await pool.query(
+      `SELECT c.*, b.id as booking_id, s.name as service_name,
+              u.name as raised_by_name, u.phone as raised_by_phone,
+              a.name as assigned_to_name
+       FROM complaints c
+       LEFT JOIN bookings b ON b.id = c.booking_id
+       LEFT JOIN services s ON s.id = b.service_id
+       JOIN users u ON u.id = c.raised_by
+       LEFT JOIN users a ON a.id = c.assigned_to
+       WHERE c.id = $1`,
+      [id]
+    );
+
+    if (!result.rows[0]) { res.status(404).json({ error: "Ticket not found" }); return; }
+    res.json({ ticket: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
+adminRouter.post("/support/tickets/:id/reply", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin", "support_staff"), async (req, res, next) => {
+  try {
+    const id = z.string().uuid().parse(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { message } = z.object({ message: z.string().min(1).max(5000) }).parse(req.body);
+
+    const result = await pool.query(
+      `UPDATE complaints SET description = description || E'\n\n--- Reply ---\n' || $1, updated_at = now() WHERE id = $2 RETURNING *`,
+      [message, id]
+    );
+
+    if (!result.rows[0]) { res.status(404).json({ error: "Ticket not found" }); return; }
+
+    await recordAuditEvent({ actorId: req.user!.id, action: "support.ticket.replied", resourceType: "complaint", resourceId: id, requestId: req.header("x-request-id") ?? undefined, metadata: { messageLength: message.length } }).catch(() => undefined);
+
+    res.json({ ticket: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   AUDIT LOG
+   ────────────────────────────────────────────────────────────────────────────── */
+
+adminRouter.get("/audit-log", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const query = z.object({
+      actorId: z.string().optional(),
+      action: z.string().optional(),
+      resourceType: z.string().optional(),
+      fromDate: z.string().optional(),
+      toDate: z.string().optional(),
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(100).default(20),
+    }).parse(req.query);
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let index = 1;
+
+    if (query.actorId) { conditions.push(`actor_id = $${index++}`); values.push(query.actorId); }
+    if (query.action) { conditions.push(`action = $${index++}`); values.push(query.action); }
+    if (query.resourceType) { conditions.push(`resource_type = $${index++}`); values.push(query.resourceType); }
+    if (query.fromDate) { conditions.push(`created_at >= $${index++}`); values.push(query.fromDate); }
+    if (query.toDate) { conditions.push(`created_at <= $${index++}`); values.push(query.toDate); }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const offset = (query.page - 1) * query.limit;
+    values.push(query.limit, offset);
+
+    const result = await pool.query(
+      `SELECT a.*, u.name as actor_name
+       FROM audit_events a
+       LEFT JOIN users u ON u.id = a.actor_id
+       ${whereClause}
+       ORDER BY a.created_at DESC
+       LIMIT $${index++} OFFSET $${index}`,
+      values
+    );
+
+    const countResult = await pool.query(
+      `SELECT count(*)::int as total FROM audit_events a ${whereClause}`,
+      values.slice(0, -2)
+    );
+
+    res.json({ events: result.rows, total: countResult.rows[0].total, page: query.page, limit: query.limit });
+  } catch (error) { next(error); }
+});
+
+/* ──────────────────────────────────────────────────────────────────────────────
    AI RECOMMENDATIONS MANAGEMENT
    ────────────────────────────────────────────────────────────────────────────── */
 
@@ -1628,5 +1721,141 @@ async function canAccessCooperative(userId: string, cooperativeId: string): Prom
   const result = await pool.query(`SELECT 1 FROM admin_scopes WHERE user_id = $1 AND cooperative_id = $2`, [userId, cooperativeId]);
   return Boolean(result.rows[0]);
 }
+
+// ── Society Admin Creation ─────────────────────────────────────────────────
+// Creates a society_admin user with temporary password and assigns scope
+
+const societyAdminCreateSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  email: z.string().email(),
+  phone: z.string().trim().min(10).max(20),
+});
+
+adminRouter.post("/cooperatives/:id/admin", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const cooperativeId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const input = societyAdminCreateSchema.parse(req.body);
+
+    const coopResult = await pool.query(`SELECT id, name, federation_id, status FROM cooperatives WHERE id = $1`, [cooperativeId]);
+    if (!coopResult.rows[0]) { res.status(404).json({ error: "Cooperative not found" }); return; }
+
+    const canEdit = req.user!.role === "system_admin" ||
+      (req.user!.role === "federation_admin" && await canAccessFederation(req.user!.id, coopResult.rows[0].federation_id));
+    if (!canEdit) { res.status(403).json({ error: "Cannot manage this cooperative" }); return; }
+
+    const existingUser = await pool.query(`SELECT id FROM users WHERE email = $1`, [input.email]);
+    if (existingUser.rows[0]) { res.status(409).json({ error: "User with this email already exists" }); return; }
+
+    const tempPassword = crypto.randomBytes(4).toString("hex").toUpperCase();
+    const bcrypt = await import("bcryptjs");
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const userResult = await client.query(
+        `INSERT INTO users (id, name, email, phone, password_hash, role, status, password_must_change, temporary_password, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'society_admin', 'active', true, true, now(), now())
+         RETURNING id, name, email, phone, role, status`,
+        [crypto.randomUUID(), input.name, input.email, input.phone, passwordHash]
+      );
+      const newUser = userResult.rows[0];
+
+      await client.query(
+        `INSERT INTO admin_scopes (user_id, cooperative_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [newUser.id, cooperativeId]
+      );
+
+      await client.query(
+        `UPDATE cooperatives SET status = 'active', updated_at = now() WHERE id = $1 AND status IN ('draft', 'territory_pending', 'admin_pending')`,
+        [cooperativeId]
+      );
+
+      await client.query("COMMIT");
+
+      await recordAuditEvent({
+        actorId: req.user!.id,
+        action: "society.admin_created",
+        resourceType: "user",
+        resourceId: newUser.id,
+        metadata: { cooperativeId, email: input.email },
+      }).catch(() => undefined);
+
+      res.status(201).json({
+        user: newUser,
+        temporaryPassword: tempPassword,
+        message: "Society admin created. Share the temporary password securely.",
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) { next(error); }
+});
+
+// ── Update Society Status ──────────────────────────────────────────────────
+
+const societyStatusSchema = z.object({
+  status: z.enum(["draft", "territory_pending", "admin_pending", "active", "suspended"]),
+});
+
+adminRouter.patch("/cooperatives/:id/status", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const cooperativeId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const input = societyStatusSchema.parse(req.body);
+
+    const coopResult = await pool.query(`SELECT id, federation_id FROM cooperatives WHERE id = $1`, [cooperativeId]);
+    if (!coopResult.rows[0]) { res.status(404).json({ error: "Cooperative not found" }); return; }
+
+    const canEdit = req.user!.role === "system_admin" ||
+      (req.user!.role === "federation_admin" && await canAccessFederation(req.user!.id, coopResult.rows[0].federation_id));
+    if (!canEdit) { res.status(403).json({ error: "Cannot manage this cooperative" }); return; }
+
+    const result = await pool.query(
+      `UPDATE cooperatives SET status = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+      [input.status, cooperativeId]
+    );
+
+    await recordAuditEvent({
+      actorId: req.user!.id,
+      action: "cooperative.status_changed",
+      resourceType: "cooperative",
+      resourceId: cooperativeId,
+      metadata: { newStatus: input.status },
+    }).catch(() => undefined);
+
+    res.json({ cooperative: result.rows[0] });
+  } catch (error) { next(error); }
+});
+
+// ── Get Society Admin ──────────────────────────────────────────────────────
+
+adminRouter.get("/cooperatives/:id/admin", requireAuth, requireRoles("system_admin", "federation_admin"), async (req, res, next) => {
+  try {
+    const cooperativeId = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+
+    const coopResult = await pool.query(`SELECT id, federation_id FROM cooperatives WHERE id = $1`, [cooperativeId]);
+    if (!coopResult.rows[0]) { res.status(404).json({ error: "Cooperative not found" }); return; }
+
+    const canView = req.user!.role === "system_admin" ||
+      (req.user!.role === "federation_admin" && await canAccessFederation(req.user!.id, coopResult.rows[0].federation_id));
+    if (!canView) { res.status(403).json({ error: "Cannot view this cooperative" }); return; }
+
+    const result = await pool.query(
+      `SELECT u.id, u.name, u.email, u.phone, u.status, u.last_login_at, u.temporary_password, u.created_at
+       FROM users u
+       JOIN admin_scopes s ON s.user_id = u.id
+       WHERE s.cooperative_id = $1 AND u.role = 'society_admin'
+       ORDER BY u.created_at DESC
+       LIMIT 1`,
+      [cooperativeId]
+    );
+
+    res.json({ admin: result.rows[0] || null });
+  } catch (error) { next(error); }
+});
 
 export default adminRouter;

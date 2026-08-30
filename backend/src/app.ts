@@ -37,6 +37,7 @@ import { institutionalRouter } from "./routes/institutional.js";
 import { recurringRouter } from "./routes/recurring.js";
 import { reportsRouter } from "./routes/reports.js";
 import { supportRouter } from "./routes/support.js";
+import { territoryRouter } from "./routes/territory.js";
 import { matchingRouter } from "./routes/matching.js";
 import { welfareRouter } from "./routes/welfare.js";
 import { reviewsRouter } from "./routes/reviews.js";
@@ -351,6 +352,7 @@ export function createApp(): Express {
   app.use("/service-areas", requireAuth, serviceAreasRouter);
   app.use("/reports", requireAuth, reportsRouter);
   app.use("/support", requireAuth, supportRouter);
+  app.use("/territories", requireAuth, territoryRouter);
   // Mounted before "/services" so servicesRouter's GET /:id cannot swallow it.
   app.use("/services/discovery", requireAuth, serviceDiscoveryRouter);
   // Before servicesRouter: its `/:id` would otherwise capture "categories".

@@ -4,6 +4,7 @@ import { quoteBookingAmount } from "./pricingService.js";
 import type { PoolClient } from "pg";
 import { findMatchingWorkers } from "./matching.js";
 import { writeNotification } from "./notificationService.js";
+import { territoryService } from "./territoryService.js";
 import { settleBooking } from "./revenueSplit.js";
 import { generateBookingOtps } from "../core/otp.js";
 import { scheduleAssignmentTimeout, clearAssignmentTimeout, reassignToNextCandidate } from "./emergencyService.js";
@@ -103,6 +104,17 @@ async function placeBooking(client: PoolClient, input: BookingSeed): Promise<Pla
   );
 
   const bookingId: string = result.rows[0].id;
+
+  // Resolve territory for this booking location
+  try {
+    const territoryResult = await territoryService.resolveAndAssignBooking(bookingId, input.latitude, input.longitude);
+    if (territoryResult.assigned) {
+      // Booking was assigned to a society based on territory
+    }
+  } catch (territoryError) {
+    // Territory resolution failure should not block booking creation
+    console.warn("Territory resolution failed for booking:", bookingId, territoryError);
+  }
 
   // Freeze the price now, in this transaction. The customer is committing to a
   // booking, so this is the moment the number becomes a promise -- leaving it

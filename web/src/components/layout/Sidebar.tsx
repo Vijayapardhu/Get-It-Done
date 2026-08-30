@@ -20,6 +20,14 @@ import {
   MapPin,
   ChartLineUp,
   MapTrifold,
+  CurrencyDollar,
+  Bank,
+  ClipboardText,
+  FileText,
+  Bell,
+  TrendUp,
+  SquaresFour,
+  UserPlus,
 } from "@phosphor-icons/react"
 import { useAuth } from "../../lib/AuthContext"
 import { Logo } from "../ui/Logo"
@@ -41,18 +49,29 @@ const cooperativeNav = [
 
 const federationNav = [
   { key: "overview", label: "Overview", icon: House, href: "/", roles: ["system_admin", "federation_admin"] },
+  { key: "societies", label: "Societies", icon: Buildings, href: "/societies", roles: ["system_admin", "federation_admin"] },
+  { key: "onboarding", label: "Onboarding", icon: UserPlus, href: "/onboarding", roles: ["system_admin", "federation_admin"] },
+  { key: "territories", label: "Territories", icon: MapTrifold, href: "/territories", roles: ["system_admin", "federation_admin"] },
+  { key: "unassigned", label: "Unassigned", icon: WarningCircle, href: "/unassigned", roles: ["system_admin", "federation_admin"] },
+  { key: "performance", label: "Performance", icon: ChartLineUp, href: "/society-performance", roles: ["system_admin", "federation_admin"] },
+  { key: "workforce", label: "Workforce", icon: Users, href: "/workforce", roles: ["system_admin", "federation_admin"] },
   { key: "operations", label: "Operations", icon: Pulse, href: "/operations", roles: ["system_admin", "federation_admin"] },
   { key: "emergencies", label: "Emergencies", icon: WarningCircle, href: "/emergencies", roles: ["system_admin", "federation_admin"] },
-  { key: "workforce", label: "Workforce", icon: Users, href: "/workforce", roles: ["system_admin", "federation_admin"] },
-  { key: "societies", label: "Societies", icon: Buildings, href: "/societies", roles: ["system_admin", "federation_admin"] },
-  { key: "performance", label: "Performance", icon: ChartLineUp, href: "/society-performance", roles: ["system_admin", "federation_admin"] },
-  { key: "regional-demand", label: "Regional Demand", icon: MapPin, href: "/regional-demand", roles: ["system_admin", "federation_admin"] },
-  { key: "ai-insights", label: "AI Insights", icon: Brain, href: "/ai-insights", roles: ["system_admin", "federation_admin"] },
-  { key: "finance", label: "Finance", icon: CurrencyInr, href: "/finance", roles: ["system_admin", "federation_admin"] },
   { key: "catalogue", label: "Categories", icon: Package, href: "/catalogue", roles: ["system_admin", "federation_admin"] },
   { key: "pricing", label: "Pricing", icon: Tag, href: "/pricing", roles: ["system_admin", "federation_admin"] },
+  { key: "zones", label: "Zones", icon: MapTrifold, href: "/zones", roles: ["system_admin", "federation_admin"] },
+  { key: "finance", label: "Finance", icon: CurrencyInr, href: "/finance", roles: ["system_admin", "federation_admin"] },
+  { key: "refunds", label: "Refunds", icon: CurrencyDollar, href: "/refunds", roles: ["system_admin", "federation_admin"] },
+  { key: "settlements", label: "Settlements", icon: Bank, href: "/settlements", roles: ["system_admin", "federation_admin"] },
+  { key: "regional-demand", label: "Regional Demand", icon: MapPin, href: "/regional-demand", roles: ["system_admin", "federation_admin"] },
+  { key: "forecast", label: "Demand Forecast", icon: TrendUp, href: "/forecast", roles: ["system_admin", "federation_admin"] },
+  { key: "allocation", label: "Allocation", icon: SquaresFour, href: "/allocation", roles: ["system_admin", "federation_admin"] },
+  { key: "ai-insights", label: "AI Insights", icon: Brain, href: "/ai-insights", roles: ["system_admin", "federation_admin"] },
   { key: "support", label: "Support", icon: Headphones, href: "/support", roles: ["system_admin", "federation_admin"] },
-  { key: "insight", label: "Analytics", icon: ChartBar, href: "/insight", roles: ["system_admin", "federation_admin"] },
+  { key: "customers", label: "Customers", icon: User, href: "/customers", roles: ["system_admin", "federation_admin"] },
+  { key: "reports", label: "Reports", icon: FileText, href: "/reports", roles: ["system_admin", "federation_admin"] },
+  { key: "audit", label: "Audit Log", icon: ClipboardText, href: "/audit", roles: ["system_admin", "federation_admin"] },
+  { key: "notifications", label: "Notifications", icon: Bell, href: "/notifications", roles: ["system_admin", "federation_admin"] },
   { key: "system", label: "System", icon: Gear, href: "/system", roles: ["system_admin"] },
 ] as const
 
@@ -104,7 +123,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
   return (
     <>
-      {/* Desktop Sidebar - fixed, always visible on lg+ */}
       <aside
         className="hidden lg:flex fixed left-0 top-16 bottom-0 z-40 w-60 bg-white border-r border-border flex-col"
         aria-label="Main navigation"
@@ -144,22 +162,17 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         </nav>
       </aside>
 
-      {/* Mobile Drawer - slides in from left on mobile */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 transition-opacity"
             onClick={onMobileClose}
             aria-hidden="true"
           />
-
-          {/* Drawer */}
           <aside
             className="relative w-72 max-w-[80vw] bg-white shadow-xl flex flex-col animate-slide-in-left"
             aria-label="Mobile navigation"
           >
-            {/* Drawer Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-2.5">
                 <Logo size={28} />
@@ -173,13 +186,9 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                 <X size={20} weight="regular" />
               </button>
             </div>
-
-            {/* Navigation */}
             <nav className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1" role="navigation">
               {renderNav(onMobileClose)}
             </nav>
-
-            {/* Bottom section */}
             <div className="border-t border-border p-3 space-y-1">
               <NavLink
                 to="/settings"

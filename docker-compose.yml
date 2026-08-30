@@ -18,7 +18,32 @@ services:
       - ./backend/src/db/migration_phase7.sql:/docker-entrypoint-initdb.d/06-migration_phase7.sql:ro
       - ./backend/src/db/migration_phase8_connected_system.sql:/docker-entrypoint-initdb.d/07-migration_phase8.sql:ro
       - ./backend/src/db/migration_phase9.sql:/docker-entrypoint-initdb.d/08-migration_phase9.sql:ro
-      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/09-seed.sql:ro
+      - ./backend/src/db/migration_phase10_missing_entities.sql:/docker-entrypoint-initdb.d/10-migration_phase10.sql:ro
+      - ./backend/src/db/migration_phase11_financials.sql:/docker-entrypoint-initdb.d/11-migration_phase11.sql:ro
+      - ./backend/src/db/migration_phase12_security_events.sql:/docker-entrypoint-initdb.d/12-migration_phase12.sql:ro
+      - ./backend/src/db/migration_phase13_artwork.sql:/docker-entrypoint-initdb.d/13-migration_phase13.sql:ro
+      - ./backend/src/db/migration_phase14_catalogue.sql:/docker-entrypoint-initdb.d/14-migration_phase14.sql:ro
+      - ./backend/src/db/migration_phase15_service_detail.sql:/docker-entrypoint-initdb.d/15-migration_phase15.sql:ro
+      - ./backend/src/db/migration_phase16_orders.sql:/docker-entrypoint-initdb.d/16-migration_phase16.sql:ro
+      - ./backend/src/db/migration_phase17_time_pricing.sql:/docker-entrypoint-initdb.d/17-migration_phase17.sql:ro
+      - ./backend/src/db/migration_phase18_admin_totp.sql:/docker-entrypoint-initdb.d/18-migration_phase18.sql:ro
+      - ./backend/src/db/migration_phase19_catalogue_expansion.sql:/docker-entrypoint-initdb.d/19-migration_phase19.sql:ro
+      - ./backend/src/db/migration_phase20_order_contact.sql:/docker-entrypoint-initdb.d/20-migration_phase20.sql:ro
+      - ./backend/src/db/migration_phase21_skill_consolidation.sql:/docker-entrypoint-initdb.d/21-migration_phase21.sql:ro
+      - ./backend/src/db/migration_phase22_totp_replay.sql:/docker-entrypoint-initdb.d/22-migration_phase22.sql:ro
+      - ./backend/src/db/migration_phase23_booking_locality.sql:/docker-entrypoint-initdb.d/23-migration_phase23.sql:ro
+      - ./backend/src/db/migration_phase24_booking_address.sql:/docker-entrypoint-initdb.d/24-migration_phase24.sql:ro
+      - ./backend/src/db/migration_phase25_support_tickets.sql:/docker-entrypoint-initdb.d/25-migration_phase25.sql:ro
+      - ./backend/src/db/migration_phase26_worker_app.sql:/docker-entrypoint-initdb.d/26-migration_phase26.sql:ro
+      - ./backend/src/db/migration_phase27_training.sql:/docker-entrypoint-initdb.d/27-migration_phase27.sql:ro
+      - ./backend/src/db/migration_phase28_zones.sql:/docker-entrypoint-initdb.d/28-migration_phase28.sql:ro
+      - ./backend/src/db/migration_phase29_pricing_priority.sql:/docker-entrypoint-initdb.d/29-migration_phase29.sql:ro
+      - ./backend/src/db/migration_phase30_territories.sql:/docker-entrypoint-initdb.d/30-migration_phase30.sql:ro
+      - ./backend/src/db/migration_phase31_cooperative_status.sql:/docker-entrypoint-initdb.d/31-migration_phase31.sql:ro
+      - ./backend/src/db/migration_admin_features.sql:/docker-entrypoint-initdb.d/32-migration_admin_features.sql:ro
+      - ./backend/src/db/migration_chats.sql:/docker-entrypoint-initdb.d/33-migration_chats.sql:ro
+      - ./backend/src/db/migration_roles.sql:/docker-entrypoint-initdb.d/34-migration_roles.sql:ro
+      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/35-seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U getitdone -d getitdone"]
       interval: 10s

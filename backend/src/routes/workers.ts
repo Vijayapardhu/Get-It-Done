@@ -658,7 +658,7 @@ workersRouter.get("/", async (req, res, next) => {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const offset = (query.page - 1) * query.limit;
 
-    const result = await pool.query(`SELECT w.id, w.worker_code, w.verification_status, w.rating, w.current_status, w.experience_years, w.service_radius_km, u.name, u.avatar_url, c.name as cooperative_name, c.district, c.state FROM workers w JOIN users u ON u.id = w.user_id LEFT JOIN cooperatives c ON c.id = w.cooperative_id ${whereClause} ORDER BY w.rating DESC NULLS LAST LIMIT $${index++} OFFSET $${index}`, [...values, query.limit, offset]);
+    const result = await pool.query(`SELECT w.id, w.worker_code, w.verification_status, w.rating, w.current_status, w.experience_years, w.service_radius_km, u.name, u.phone, u.email, u.avatar_url, c.name as cooperative_name, c.district, c.state FROM workers w JOIN users u ON u.id = w.user_id LEFT JOIN cooperatives c ON c.id = w.cooperative_id ${whereClause} ORDER BY w.rating DESC NULLS LAST LIMIT $${index++} OFFSET $${index}`, [...values, query.limit, offset]);
     res.json({ workers: result.rows, page: query.page, limit: query.limit });
   } catch (error) { next(error); }
 });
@@ -805,7 +805,7 @@ workersRouter.get("/:id/statistics", async (req, res, next) => {
 
 workersRouter.get("/:id", async (req, res, next) => {
   try {
-    const result = await pool.query(`SELECT w.id, w.worker_code, w.verification_status, w.rating, w.current_status, w.experience_years, w.service_radius_km, w.bio, w.total_jobs, w.completed_jobs, w.cancelled_jobs, u.name, u.avatar_url, c.name as cooperative_name, c.district, c.state FROM workers w JOIN users u ON u.id = w.user_id LEFT JOIN cooperatives c ON c.id = w.cooperative_id WHERE w.id = $1`, [req.params.id]);
+    const result = await pool.query(`SELECT w.id, w.worker_code, w.verification_status, w.rating, w.current_status, w.experience_years, w.service_radius_km, w.bio, w.total_jobs, w.completed_jobs, w.cancelled_jobs, u.name, u.phone, u.email, u.avatar_url, c.name as cooperative_name, c.district, c.state FROM workers w JOIN users u ON u.id = w.user_id LEFT JOIN cooperatives c ON c.id = w.cooperative_id WHERE w.id = $1`, [req.params.id]);
     if (!result.rows[0]) { res.status(404).json({ error: "Worker not found" }); return; }
     const worker = result.rows[0];
     const skills = await pool.query(`SELECT ws.service_id AS skill_id, s.name, s.category, ws.level, ws.years_experience, ws.verified FROM worker_skills ws JOIN services s ON s.id = ws.service_id WHERE ws.worker_id = $1`, [worker.id]);

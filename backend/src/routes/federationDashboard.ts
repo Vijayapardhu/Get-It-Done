@@ -252,20 +252,40 @@ async function getDemandForecasts(federationId: string | null): Promise<any[]> {
     const fedFilter = federationId ? `AND c.federation_id = $1` : "";
     const params = federationId ? [federationId] : [];
 
-    // Get recent booking history for AI forecast
+    // Get recent booking history for AI forecast - use grid_cell for proper area grouping
     const history = await pool.query(
       `SELECT DATE_TRUNC('day', b.created_at)::date as date,
-              b.address as area,
+               b.grid_cell as area,
+               max(b.locality) as locality,
+               s.name as service,
+               COUNT(*)::int as requests
+        FROM bookings b
+        JOIN services s ON s.id = b.service_id
+        JOIN workers w ON w.id = b.worker_id
+        JOIN cooperatives c ON c.id = w.cooperative_id
+        WHERE b.created_at >= CURRENT_DATE - INTERVAL '90 days'
+          AND b.grid_cell IS NOT NULL
+        ${fedFilter}
+        GROUP BY DATE_TRUNC('day', b.created_at), b.grid_cell, s.name
+        ORDER BY date`,
+      params
+    );
+
+    // Get worker supply per area/service
+    const supply = await pool.query(
+      `SELECT DISTINCT b.grid_cell as area,
               s.name as service,
-              COUNT(*)::int as requests
-       FROM bookings b
-       JOIN services s ON s.id = b.service_id
-       JOIN workers w ON w.id = b.worker_id
-       JOIN cooperatives c ON c.id = w.cooperative_id
-       WHERE b.created_at >= CURRENT_DATE - INTERVAL '90 days'
-       ${fedFilter}
-       GROUP BY DATE_TRUNC('day', b.created_at), b.address, s.name
-       ORDER BY date`,
+              count(DISTINCT w.id) filter (where w.verification_status = 'verified') as available
+        FROM bookings b
+        JOIN services s ON s.id = b.service_id
+        JOIN workers w ON w.cooperative_id = c.id
+        JOIN cooperatives c ON c.id = w.cooperative_id
+        WHERE b.grid_cell IS NOT NULL
+          AND b.created_at >= CURRENT_DATE - INTERVAL '90 days'
+          AND w.verification_status = 'verified'
+          AND w.location_sharing_enabled = true
+        ${fedFilter}
+        GROUP BY b.grid_cell, s.name`,
       params
     );
 
@@ -276,11 +296,12 @@ async function getDemandForecasts(federationId: string | null): Promise<any[]> {
         const response = await fetch(`${env.AI_SERVICE_URL}/forecast/demand`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ days: 7, history: history.rows }),
+          body: JSON.stringify({ days: 7, history: history.rows, supply: supply.rows.map(s => ({ area: s.area, service: s.service, available: s.available })) }),
           signal: AbortSignal.timeout(10000),
         });
         if (response.ok) {
-          return (await response.json()).predictions ?? [];
+          const data = await response.json();
+          return data.forecasts ?? data.predictions ?? [];
         }
       } catch (e) {
         console.warn("AI service unavailable for forecasts:", e);
