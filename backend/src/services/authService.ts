@@ -50,6 +50,9 @@ export interface User {
   avatarUrl?: string | null;
   oauthProvider?: string | null;
   oauthSubject?: string | null;
+  cooperativeId?: string | null;
+  cooperativeName?: string | null;
+  homeAddress?: string | null;
 }
 
 export interface AuthTokens {
