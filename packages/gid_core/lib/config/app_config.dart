@@ -17,7 +17,7 @@ abstract final class AppConfig {
   /// first launch, and a release build threw outright unless someone remembered
   /// the --dart-define. Anyone who does want their own machine has two ways to
   /// say so: --dart-define at build time, or the developer screen at runtime.
-  static const deployedApiBaseUrl = 'http://getitdone.vijayapardhu.tech';
+  static const deployedApiBaseUrl = 'https://getitdone.vijayapardhu.tech';
 
   /// Resolved API host.
   static String get apiBaseUrl =>
