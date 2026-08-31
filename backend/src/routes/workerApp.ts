@@ -1552,3 +1552,803 @@ workerJobsRouter.post("/:id/work-clock", workerOnly, async (req, res, next) => {
 
 /** Exposed for the app's clock-skew measurement on connect. */
 export const workerAcceptWindowSeconds = env.WORKER_ACCEPT_TIMEOUT_SECONDS;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKER REGISTRATION & PROFILE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const registrationSchema = z.object({
+  name: z.string().min(2).max(100),
+  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number"),
+  address: z.string().min(10).max(500),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  aadharKey: z.string().min(1).optional(),
+  panKey: z.string().min(1).optional(),
+});
+
+/**
+ * POST /worker/register
+ * Public endpoint for worker registration.
+ * Creates user (worker role), worker profile, documents, and auto-assigns federation based on location.
+ */
+export const workerRegistrationRouter = Router();
+
+workerRegistrationRouter.post("/register", async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const data = registrationSchema.parse(req.body);
+
+    await client.query("BEGIN");
+
+    // Check if phone already exists
+    const existingUser = await client.query("SELECT id FROM users WHERE phone = $1", [data.phone]);
+    if (existingUser.rows[0]) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: "Phone number already registered" });
+      return;
+    }
+
+    // Create user with worker role
+    const email = `worker_${Date.now()}@getitdone.internal`;
+    const userResult = await client.query<{ id: string }>(
+      `INSERT INTO users (name, email, phone, role, status, created_at, updated_at)
+       VALUES ($1, $2, $3, 'worker', 'active', now(), now())
+       RETURNING id`,
+      [data.name, email, data.phone]
+    );
+    const userId = userResult.rows[0].id;
+
+    // Auto-detect cooperative/territory based on location
+    let federationId: string | null = null;
+    let federationName: string | null = null;
+    if (data.latitude && data.longitude) {
+      const fedResult = await client.query<{ id: string; name: string }>(
+        `SELECT c.id, c.name
+           FROM cooperative_territories ct
+           JOIN cooperatives c ON c.id = ct.cooperative_id
+          WHERE ST_Contains(
+            ct.polygon::geometry,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)
+          )
+          LIMIT 1`,
+        [data.longitude, data.latitude]
+      );
+      if (fedResult.rows[0]) {
+        federationId = fedResult.rows[0].id;
+        federationName = fedResult.rows[0].name;
+      }
+    }
+
+    // Generate worker code
+    const codeResult = await client.query<{ code: string }>(
+      `SELECT 'W' || lpad(nextval('worker_code_seq')::text, 6, '0') as code`
+    );
+    const workerCode = codeResult.rows[0].code;
+
+    // Create worker profile
+    const workerResult = await client.query<{ id: string }>(
+      `INSERT INTO workers (user_id, worker_code, name, phone, address, experience_years, verification_status, current_status, latitude, longitude, cooperative_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 0, 'submitted', 'offline', $6, $7, $8, now(), now())
+       RETURNING id`,
+      [userId, workerCode, data.name, data.phone, data.address, data.latitude ?? null, data.longitude ?? null, federationId]
+    );
+    const workerId = workerResult.rows[0].id;
+
+    // Create documents
+    if (data.aadharKey) {
+      await client.query(
+        `INSERT INTO worker_documents (worker_id, type, file_url, status, created_at)
+         VALUES ($1, 'aadhar', $2, 'pending', now())`,
+        [workerId, data.aadharKey]
+      );
+    }
+    if (data.panKey) {
+      await client.query(
+        `INSERT INTO worker_documents (worker_id, type, file_url, status, created_at)
+         VALUES ($1, 'pan', $2, 'pending', now())`,
+        [workerId, data.panKey]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    logger.info({ workerId, workerCode, federationId }, "Worker registered successfully");
+
+    res.status(201).json({
+      worker: {
+        id: workerId,
+        workerCode,
+        verificationStatus: "submitted",
+        currentStatus: "offline",
+        name: data.name,
+        phone: data.phone,
+        federationId,
+      },
+      federation: federationId ? { id: federationId, name: federationName } : null,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    next(error);
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * GET /workers/me/profile
+ * Get the authenticated worker's full profile.
+ */
+workerAppRouter.get("/me/profile", workerOnly, async (req, res, next) => {
+  try {
+    const workerResult = await pool.query(
+      `SELECT w.*, u.name, u.phone
+         FROM workers w
+         JOIN users u ON u.id = w.user_id
+        WHERE w.user_id = $1`,
+      [req.user!.id]
+    );
+    if (!workerResult.rows[0]) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+    const worker = workerResult.rows[0];
+
+    const documentsResult = await pool.query(
+      `SELECT id, worker_id, type, file_url, status, rejection_reason, created_at
+         FROM worker_documents
+        WHERE worker_id = $1
+        ORDER BY created_at DESC`,
+      [worker.id]
+    );
+
+    const payoutResult = await pool.query(
+      `SELECT id, worker_id, provider, account_holder, account_number, ifsc_code, upi_id, verified_at, created_at
+         FROM payout_accounts
+        WHERE worker_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [worker.id]
+    );
+
+    res.json({
+      worker: {
+        id: worker.id,
+        workerCode: worker.worker_code,
+        verificationStatus: worker.verification_status,
+        currentStatus: worker.current_status,
+        name: worker.name,
+        phone: worker.phone,
+        address: worker.address,
+        rating: worker.rating,
+        experienceYears: worker.experience_years,
+        totalJobs: worker.total_jobs,
+        completedJobs: worker.completed_jobs,
+      },
+      documents: documentsResult.rows,
+      payoutAccount: payoutResult.rows[0] ?? null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /workers/me/stats
+ * Get worker stats for dashboard.
+ */
+workerAppRouter.get("/me/stats", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const stats = await pool.query(
+      `SELECT
+         w.completed_jobs,
+         w.rating,
+         coalesce(SUM(CASE WHEN e.entry_type = 'earning' THEN e.amount ELSE 0 END), 0) as earnings
+       FROM workers w
+       LEFT JOIN worker_earnings_ledger e ON e.worker_id = w.id
+       WHERE w.id = $1
+       GROUP BY w.id, w.completed_jobs, w.rating`,
+      [workerId]
+    );
+
+    res.json(stats.rows[0] ?? { completedJobs: 0, rating: 0, earnings: 0 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /workers/me/jobs
+ * Get worker's assigned jobs.
+ */
+workerAppRouter.get("/me/jobs", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT b.id, s.name as service_name, b.address, b.scheduled_at, b.status, b.price,
+              u.name as customer_name
+         FROM bookings b
+         JOIN services s ON s.id = b.service_id
+         JOIN users u ON u.id = b.customer_id
+        WHERE b.worker_id = $1
+        ORDER BY b.scheduled_at DESC
+        LIMIT 50`,
+      [workerId]
+    );
+
+    res.json({ jobs: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WALLET & PAYOUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /workers/me/wallet
+ * Get wallet balance and transaction history.
+ */
+workerAppRouter.get("/me/wallet", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const balanceResult = await pool.query(
+      `SELECT
+         coalesce(SUM(CASE WHEN entry_type = 'earning' THEN amount ELSE 0 END), 0) as total_earnings,
+         coalesce(SUM(CASE WHEN entry_type = 'payout' THEN amount ELSE 0 END), 0) as total_payouts
+       FROM worker_earnings_ledger
+       WHERE worker_id = $1`,
+      [workerId]
+    );
+
+    const balance = balanceResult.rows[0].total_earnings - balanceResult.rows[0].total_payouts;
+
+    const payoutAccountsResult = await pool.query(
+      `SELECT id, worker_id, provider, account_holder, account_number, ifsc_code, upi_id, verified_at, created_at
+         FROM payout_accounts
+        WHERE worker_id = $1
+        ORDER BY created_at DESC`,
+      [workerId]
+    );
+
+    const transactionsResult = await pool.query(
+      `SELECT id, worker_id, booking_id, entry_type, amount, reference, created_at
+         FROM worker_earnings_ledger
+        WHERE worker_id = $1
+        ORDER BY created_at DESC
+        LIMIT 20`,
+      [workerId]
+    );
+
+    res.json({
+      wallet: {
+        balance,
+        totalEarnings: balanceResult.rows[0].total_earnings,
+        pendingPayout: 0,
+      },
+      payoutAccounts: payoutAccountsResult.rows,
+      transactions: transactionsResult.rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /workers/me/payout-accounts
+ * Add a payout account (bank or UPI).
+ */
+workerAppRouter.post("/me/payout-accounts", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const schema = z.object({
+      provider: z.enum(["bank", "upi"]),
+      accountHolder: z.string().min(2).max(100),
+      accountNumber: z.string().min(9).max(18).optional(),
+      ifscCode: z.string().regex(/^[A-Z]{4}\d{7}$/, "Invalid IFSC code").optional(),
+      upiId: z.string().regex(/^[a-zA-Z0-9._-]+@[a-zA-Z]{2,}$/, "Invalid UPI ID").optional(),
+    }).refine((data) => {
+      if (data.provider === "bank") return !!data.accountNumber && !!data.ifscCode;
+      if (data.provider === "upi") return !!data.upiId;
+      return false;
+    }, { message: "Provide bank details or UPI ID" });
+
+    const data = schema.parse(req.body);
+
+    const result = await pool.query(
+      `INSERT INTO payout_accounts (worker_id, provider, account_holder, account_number, ifsc_code, upi_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       RETURNING *`,
+      [workerId, data.provider, data.accountHolder, data.accountNumber ?? null, data.ifscCode ?? null, data.upiId ?? null]
+    );
+
+    res.status(201).json({ account: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /workers/me/withdraw
+ * Request withdrawal to a payout account.
+ */
+workerAppRouter.post("/me/withdraw", workerOnly, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const schema = z.object({
+      amount: z.number().positive(),
+      accountId: z.string().uuid(),
+    });
+    const data = schema.parse(req.body);
+
+    await client.query("BEGIN");
+
+    // Check balance
+    const balanceResult = await client.query(
+      `SELECT coalesce(SUM(CASE WHEN entry_type = 'earning' THEN amount ELSE -amount END), 0) as balance
+         FROM worker_earnings_ledger
+        WHERE worker_id = $1`,
+      [workerId]
+    );
+    const balance = Number(balanceResult.rows[0].balance);
+
+    if (data.amount > balance) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "Insufficient balance" });
+      return;
+    }
+
+    // Verify account belongs to worker
+    const accountResult = await client.query(
+      `SELECT id FROM payout_accounts WHERE id = $1 AND worker_id = $2`,
+      [data.accountId, workerId]
+    );
+    if (!accountResult.rows[0]) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Payout account not found" });
+      return;
+    }
+
+    // Create payout entry
+    const payoutResult = await client.query(
+      `INSERT INTO worker_earnings_ledger (worker_id, entry_type, amount, reference, created_at)
+       VALUES ($1, 'payout', $2, $3, now())
+       RETURNING id`,
+      [workerId, data.amount, `payout_to_${data.accountId}`]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({ success: true, payoutId: payoutResult.rows[0].id });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    next(error);
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * POST /workers/me/documents
+ * Upload a document reference.
+ */
+workerAppRouter.post("/me/documents", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const schema = z.object({
+      type: z.enum(["aadhar", "pan", "driving_license", "other"]),
+      fileKey: z.string().min(1),
+    });
+    const data = schema.parse(req.body);
+
+    const result = await pool.query(
+      `INSERT INTO worker_documents (worker_id, type, file_url, status, created_at)
+       VALUES ($1, $2, $3, 'pending', now())
+       RETURNING *`,
+      [workerId, data.type, data.fileKey]
+    );
+
+    res.status(201).json({ document: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PATCH /workers/me/status
+ * Update worker availability status.
+ */
+workerAppRouter.patch("/me/status", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const schema = z.object({
+      status: z.enum(["available", "offline"]),
+    });
+    const { status } = schema.parse(req.body);
+
+    await pool.query(
+      `UPDATE workers SET current_status = $1, updated_at = now() WHERE id = $2`,
+      [status, workerId]
+    );
+
+    res.json({ currentStatus: status });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKER JOB MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /workers/me/jobs
+ * Get all jobs for the worker (active and completed).
+ */
+workerAppRouter.get("/me/jobs", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT b.id, b.status, b.price, b.address, b.description, 
+              b.scheduled_at, b.started_at, b.completed_at,
+              b.advance_amount, b.balance_due, b.advance_paid, b.final_paid, b.payment_stage,
+              s.name as service_name, s.base_price,
+              u.name as customer_name, u.phone as customer_phone,
+              b.start_verified_at, b.completion_verified_at
+       FROM bookings b
+       JOIN services s ON s.id = b.service_id
+       JOIN users u ON u.id = b.customer_id
+       WHERE b.worker_id = $1
+       ORDER BY 
+         CASE b.status 
+           WHEN 'assigned' THEN 1
+           WHEN 'accepted' THEN 2
+           WHEN 'en_route' THEN 3
+           WHEN 'arrived' THEN 4
+           WHEN 'started' THEN 5
+           WHEN 'completed' THEN 6
+           ELSE 7
+         END,
+         b.scheduled_at DESC
+       LIMIT 50`,
+      [workerId]
+    );
+
+    const jobs = result.rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      serviceName: row.service_name,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+      address: row.address,
+      description: row.description,
+      scheduledAt: row.scheduled_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      price: row.price,
+      advanceAmount: row.advance_amount,
+      balanceDue: row.balance_due,
+      paymentStage: row.payment_stage,
+      startVerified: !!row.start_verified_at,
+      completionVerified: !!row.completion_verified_at,
+    }));
+
+    res.json({ jobs });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /workers/me/jobs/:jobId
+ * Get detailed information about a specific job.
+ */
+workerAppRouter.get("/me/jobs/:jobId", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT b.*, s.name as service_name, s.base_price,
+              u.name as customer_name, u.phone as customer_phone,
+              u.email as customer_email
+       FROM bookings b
+       JOIN services s ON s.id = b.service_id
+       JOIN users u ON u.id = b.customer_id
+       WHERE b.id = $1 AND b.worker_id = $2`,
+      [req.params.jobId, workerId]
+    );
+
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+
+    const row = result.rows[0];
+    res.json({
+      id: row.id,
+      status: row.status,
+      serviceName: row.service_name,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+      customerEmail: row.customer_email,
+      address: row.address,
+      description: row.description,
+      scheduledAt: row.scheduled_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      price: row.price,
+      advanceAmount: row.advance_amount,
+      balanceDue: row.balance_due,
+      advancePaid: row.advance_paid,
+      finalPaid: row.final_paid,
+      paymentStage: row.payment_stage,
+      startVerified: !!row.start_verified_at,
+      completionVerified: !!row.completion_verified_at,
+      durationMinutes: row.duration_minutes,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /workers/me/jobs/:jobId/verify-start
+ * Verify job start with customer OTP.
+ */
+workerAppRouter.post("/me/jobs/:jobId/verify-start", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const { otp } = z.object({ otp: z.string().regex(/^[0-9]{6}$/) }).parse(req.body);
+
+    // Get booking and verify worker owns it
+    const bookingResult = await pool.query(
+      `SELECT id, status, start_otp_hash, start_verified_at 
+       FROM bookings WHERE id = $1 AND worker_id = $2`,
+      [req.params.jobId, workerId]
+    );
+
+    const booking = bookingResult.rows[0];
+    if (!booking) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+
+    if (booking.start_verified_at) {
+      res.status(409).json({ error: "Start already verified" });
+      return;
+    }
+
+    // Verify OTP
+    const { sha256Hex } = await import("../core/otp.js");
+    if (booking.start_otp_hash !== sha256Hex(otp)) {
+      res.status(400).json({ error: "Invalid OTP" });
+      return;
+    }
+
+    // Update booking
+    await pool.query(
+      `UPDATE bookings 
+       SET start_verified_at = now(), started_at = now(), status = 'started', updated_at = now() 
+       WHERE id = $1`,
+      [req.params.jobId]
+    );
+
+    res.json({ message: "Job started successfully", status: "started" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /workers/me/jobs/:jobId/verify-complete
+ * Verify job completion with customer OTP.
+ */
+workerAppRouter.post("/me/jobs/:jobId/verify-complete", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const { otp } = z.object({ otp: z.string().regex(/^[0-9]{6}$/) }).parse(req.body);
+
+    // Get booking and verify worker owns it
+    const bookingResult = await pool.query(
+      `SELECT id, status, completion_otp_hash, completion_verified_at, advance_paid, price
+       FROM bookings WHERE id = $1 AND worker_id = $2`,
+      [req.params.jobId, workerId]
+    );
+
+    const booking = bookingResult.rows[0];
+    if (!booking) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+
+    if (booking.completion_verified_at) {
+      res.status(409).json({ error: "Completion already verified" });
+      return;
+    }
+
+    if (booking.status !== "started") {
+      res.status(400).json({ error: "Job must be in started status" });
+      return;
+    }
+
+    // Verify OTP
+    const { sha256Hex } = await import("../core/otp.js");
+    if (booking.completion_otp_hash !== sha256Hex(otp)) {
+      res.status(400).json({ error: "Invalid OTP" });
+      return;
+    }
+
+    // Update booking
+    await pool.query(
+      `UPDATE bookings 
+       SET completion_verified_at = now(), completed_at = now(), status = 'completed', updated_at = now() 
+       WHERE id = $1`,
+      [req.params.jobId]
+    );
+
+    // Free up the worker
+    await pool.query(
+      `UPDATE workers SET current_status = 'available', updated_at = now() WHERE id = $1`,
+      [workerId]
+    );
+
+    res.json({ 
+      message: "Job completed. Customer will now pay the remaining balance.",
+      status: "completed",
+      balanceDue: booking.price - (booking.advance_paid ? booking.price * 0.2 : 0)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /workers/me/earnings
+ * Get worker earnings summary.
+ */
+workerAppRouter.get("/me/earnings", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    // Get earnings summary
+    const earningsResult = await pool.query(
+      `SELECT 
+         COALESCE(SUM(CASE WHEN entry_type = 'earning' THEN amount ELSE 0 END), 0) as total_earnings,
+         COALESCE(SUM(CASE WHEN entry_type = 'payout' THEN amount ELSE 0 END), 0) as total_payouts,
+         COALESCE(SUM(CASE WHEN entry_type = 'adjustment' THEN amount ELSE 0 END), 0) as total_adjustments
+       FROM worker_earnings_ledger
+       WHERE worker_id = $1`,
+      [workerId]
+    );
+
+    const balance = Number(earningsResult.rows[0].total_earnings) - 
+                   Number(earningsResult.rows[0].total_payouts) +
+                   Number(earningsResult.rows[0].total_adjustments);
+
+    // Get recent transactions
+    const transactionsResult = await pool.query(
+      `SELECT id, booking_id, entry_type, amount, reference, created_at
+       FROM worker_earnings_ledger
+       WHERE worker_id = $1
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [workerId]
+    );
+
+    // Get completed jobs count
+    const jobsResult = await pool.query(
+      `SELECT COUNT(*) as count FROM bookings WHERE worker_id = $1 AND status = 'completed'`,
+      [workerId]
+    );
+
+    res.json({
+      summary: {
+        totalEarnings: Number(earningsResult.rows[0].total_earnings),
+        totalPayouts: Number(earningsResult.rows[0].total_payouts),
+        balance,
+        completedJobs: Number(jobsResult.rows[0].count),
+      },
+      transactions: transactionsResult.rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /workers/me/location
+ * Update worker location.
+ */
+workerAppRouter.post("/me/location", workerOnly, async (req, res, next) => {
+  try {
+    const workerId = await workerIdFor(req.user!.id);
+    if (!workerId) {
+      res.status(404).json({ error: "Worker profile not found" });
+      return;
+    }
+
+    const { latitude, longitude } = z.object({
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+    }).parse(req.body);
+
+    // Update worker location
+    await pool.query(
+      `UPDATE workers 
+       SET latitude = $1, longitude = $2, location_updated_at = now(), updated_at = now() 
+       WHERE id = $3`,
+      [latitude, longitude, workerId]
+    );
+
+    // Insert into location trail
+    await pool.query(
+      `INSERT INTO worker_location_trail (worker_id, location, recorded_at)
+       VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, now())`,
+      [workerId, longitude, latitude]
+    );
+
+    res.json({ message: "Location updated" });
+  } catch (error) {
+    next(error);
+  }
+});

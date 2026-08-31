@@ -302,8 +302,9 @@ class _NextUp extends StatelessWidget {
     final tokens = context.tokens;
     final scheduled = jobs.where((j) => j.stage == JobStage.accepted && j.scheduledAt != null).toList()
       ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+    final offered = jobs.where((j) => j.stage == JobStage.offered).toList();
 
-    if (scheduled.isEmpty) {
+    if (scheduled.isEmpty && offered.isEmpty) {
       if (hasActive) return const SizedBox.shrink();
       return Container(
         width: double.infinity,
@@ -330,9 +331,6 @@ class _NextUp extends StatelessWidget {
       );
     }
 
-    final next = scheduled.first;
-    final time = DateFormat('EEE d MMM, h:mm a').format(next.scheduledAt!.toLocal());
-
     return Container(
       padding: WorkerSizes.rowInsets,
       decoration: BoxDecoration(
@@ -340,12 +338,43 @@ class _NextUp extends StatelessWidget {
         borderRadius: Radii.rXl,
         border: Border.all(color: tokens.border),
       ),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text('Next: ${next.serviceName}', style: context.text.titleMedium),
-        subtitle: Text(time, style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary)),
-        trailing: AppIcon(AppIcons.chevronRight),
-        onTap: () => context.push('/job/${next.id}'),
+      child: Column(
+        children: [
+          if (offered.isNotEmpty)
+            for (final job in offered)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Offered: ${job.serviceName}', style: context.text.titleMedium),
+                subtitle: Text(job.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: job.payout == null
+                    ? AppIcon(AppIcons.chevronRight)
+                    : Text(
+                        '₹${job.payout!.round()}',
+                        style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                onTap: () => context.push('/job/${job.id}'),
+              ),
+          if (scheduled.isNotEmpty && offered.isNotEmpty)
+            const Divider(height: 1),
+          if (scheduled.isNotEmpty)
+            for (final job in scheduled)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Next: ${job.serviceName}', style: context.text.titleMedium),
+                subtitle: Text(
+                  '${DateFormat('EEE d MMM, h:mm a').format(job.scheduledAt!.toLocal())} · ${job.address}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: job.payout == null
+                    ? AppIcon(AppIcons.chevronRight)
+                    : Text(
+                        '₹${job.payout!.round()}',
+                        style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                onTap: () => context.push('/job/${job.id}'),
+              ),
+        ],
       ),
     );
   }

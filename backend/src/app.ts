@@ -43,7 +43,7 @@ import { welfareRouter } from "./routes/welfare.js";
 import { reviewsRouter } from "./routes/reviews.js";
 import { serviceAreasRouter } from "./routes/serviceAreas.js";
 import { bookingAttachmentsRouter } from "./routes/ba.js";
-import { workerAppRouter, workerJobsRouter } from "./routes/workerApp.js";
+import { workerAppRouter, workerJobsRouter, workerRegistrationRouter } from "./routes/workerApp.js";
 import { addressesRouter } from "./routes/addresses.js";
 import { chatRouter } from "./routes/chat.js";
 import { trainingRouter } from "./routes/training.js";
@@ -363,6 +363,8 @@ export function createApp(): Express {
   // catch-all `/:id`, and while a two-segment path like /me/offers could not
   // match it today, ordering the specific router first means a later `/:a/:b`
   // route cannot quietly shadow these.
+  // Public worker registration (mounted before auth-protected /workers routes)
+  app.use("/worker", workerRegistrationRouter);
   app.use("/workers", requireAuth, workerAppRouter);
   app.use("/bookings", requireAuth, workerJobsRouter);
   app.use("/workers", requireAuth, workersRouter);
@@ -373,7 +375,7 @@ export function createApp(): Express {
   app.use("/ai", requireAuth, aiRouter);
   app.use("/trust", requireAuth, trustRouter);
   app.use("/notifications", requireAuth, notificationsRouter);
-  app.use("/files", requireAuth, filesRouter);
+  app.use("/files", filesRouter);
   app.use("/chats", requireAuth, chatRouter);
 app.use("/training", requireAuth, trainingRouter);
 

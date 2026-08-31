@@ -296,6 +296,8 @@ export interface Service {
   listPrice?: number;
   hero_image_url?: string;
   heroImageUrl?: string;
+  heroImageKey?: string;
+  hero_image_key?: string;
   includes?: string[];
   excludes?: string[];
   steps?: string[] | Array<{ title: string; description: string; imageUrl?: string | null }>;
@@ -318,6 +320,7 @@ export interface ServiceCategory {
   category: string;
   services: Service[];
   imageUrl: string | null;
+  imageKey?: string | null;
   animationUrl: string | null;
   accentColor: string | null;
 }
@@ -532,6 +535,7 @@ export interface AdminCooperative {
   min_workers?: number;
   max_workers?: number;
   created_at?: string;
+  logo_key?: string;
 }
 
 export interface LiveOperations {
@@ -703,3 +707,65 @@ export interface SocietyAdmin {
 }
 
 export type SocietyStatus = "draft" | "territory_pending" | "admin_pending" | "active" | "suspended";
+
+// ═══════════════════════════════════════════════════════════════════
+// WORKER APP TYPES
+// ═══════════════════════════════════════════════════════════════════
+
+export interface WorkerDocument {
+  id: string;
+  workerId: string;
+  type: "aadhar" | "pan" | "driving_license" | "other";
+  fileUrl: string;
+  status: "pending" | "verified" | "rejected";
+  createdAt: string;
+  rejectionReason?: string;
+}
+
+export interface PayoutAccount {
+  id: string;
+  workerId: string;
+  provider: "bank" | "upi";
+  accountHolder: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  upiId?: string;
+  verifiedAt?: string;
+  createdAt: string;
+}
+
+export interface WorkerEarnings {
+  id: string;
+  workerId: string;
+  bookingId?: string;
+  entryType: "earning" | "adjustment" | "payout" | "refund";
+  amount: number;
+  reference?: string;
+  createdAt: string;
+}
+
+export interface WorkerWallet {
+  balance: number;
+  totalEarnings: number;
+  pendingPayout: number;
+}
+
+export interface WorkerJob {
+  id: string;
+  serviceName: string;
+  address: string;
+  scheduledAt: string;
+  status: "assigned" | "started" | "completed" | "cancelled";
+  price?: number;
+  customerName?: string;
+}
+
+export interface WorkerRegistration {
+  name: string;
+  phone: string;
+  address: string;
+  latitude?: number;
+  longitude?: number;
+  aadharKey?: string | null;
+  panKey?: string | null;
+}

@@ -21,6 +21,9 @@ class AppUser {
     this.status = 'active',
     this.avatarUrl,
     this.displayName,
+    this.cooperativeId,
+    this.cooperativeName,
+    this.homeAddress,
   });
 
   final String id;
@@ -33,8 +36,27 @@ class AppUser {
   final String? avatarUrl;
   final String? displayName;
 
+  /// The cooperative the user is linked to, set during onboarding.
+  ///
+  /// Null for a worker (they link through a different flow) or a customer who
+  /// has not yet resolved their location. The customer app gates the home
+  /// screen on this being non-null after sign-in.
+  final String? cooperativeId;
+  final String? cooperativeName;
+
+  /// The address the user confirmed during onboarding. The customer app shows
+  /// it in the home header and in the cooperative trust card.
+  final String? homeAddress;
+
   bool get isCustomer => role == 'customer' || role == 'institutional_customer';
   bool get isWorker => role == 'worker';
+
+  /// True when this customer has a cooperative and is therefore "ready" — the
+  /// home screen can show the catalogue. False when the onboarding flow still
+  /// has to run.
+  bool get hasCooperative =>
+      isCustomer && cooperativeId != null && cooperativeId!.isNotEmpty;
+
   String get shortName => name.trim().split(RegExp(r'\s+')).first;
 
   /// One or two letters for an avatar with no photo behind it.
@@ -63,6 +85,15 @@ class AppUser {
         status: asString(pick(json, 'status'), fallback: 'active'),
         avatarUrl: asStringOrNull(pick(json, 'avatarUrl')),
         displayName: asStringOrNull(pick(json, 'displayName')),
+        cooperativeId:
+            asStringOrNull(pick(json, 'cooperativeId')) ??
+            asStringOrNull(pick(json, 'cooperative_id')),
+        cooperativeName:
+            asStringOrNull(pick(json, 'cooperativeName')) ??
+            asStringOrNull(pick(json, 'cooperative_name')),
+        homeAddress:
+            asStringOrNull(pick(json, 'homeAddress')) ??
+            asStringOrNull(pick(json, 'home_address')),
       );
 
   /// For the on-device cache that lets the app open signed-in with no network.
@@ -79,6 +110,9 @@ class AppUser {
         'status': status,
         'avatarUrl': avatarUrl,
         'displayName': displayName,
+        'cooperativeId': cooperativeId,
+        'cooperativeName': cooperativeName,
+        'homeAddress': homeAddress,
       };
 }
 

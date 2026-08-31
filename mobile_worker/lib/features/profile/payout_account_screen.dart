@@ -15,14 +15,19 @@ class PayoutAccountScreen extends ConsumerStatefulWidget {
 
 class _PayoutAccountScreenState extends ConsumerState<PayoutAccountScreen> {
   late final TextEditingController _accountRefController;
+  late final TextEditingController _accountHolderController;
+  late final TextEditingController _ifscCodeController;
   String _provider = 'upi';
   bool _submitting = false;
   bool _loaded = false;
   String? _accountRefError;
+  String? _accountHolderError;
 
   @override
   void dispose() {
     _accountRefController.dispose();
+    _accountHolderController.dispose();
+    _ifscCodeController.dispose();
     super.dispose();
   }
 
@@ -30,24 +35,31 @@ class _PayoutAccountScreenState extends ConsumerState<PayoutAccountScreen> {
     if (_loaded) return;
     final currentProvider = asStringOrNull(pick(account, 'provider'));
     final accountRef = asStringOrNull(pick(account, 'accountReference'));
+    final accountHolder = asStringOrNull(pick(account, 'accountHolder'));
+    final ifscCode = asStringOrNull(pick(account, 'ifscCode'));
 
     _provider = currentProvider ?? 'upi';
     _accountRefController = TextEditingController(text: accountRef ?? '');
+    _accountHolderController = TextEditingController(text: accountHolder ?? '');
+    _ifscCodeController = TextEditingController(text: ifscCode ?? '');
     _loaded = true;
   }
 
   Future<void> _save() async {
     setState(() {
       _accountRefError = _accountRefController.text.trim().isEmpty ? 'This field is required' : null;
+      _accountHolderError = _accountHolderController.text.trim().isEmpty ? 'This field is required' : null;
     });
-    if (_accountRefError != null) return;
+    if (_accountRefError != null || _accountHolderError != null) return;
 
     setState(() => _submitting = true);
 
     try {
       await ref.read(workerApiProvider).savePayoutAccount(
             provider: _provider,
+            accountHolder: _accountHolderController.text.trim(),
             accountReference: _accountRefController.text.trim(),
+            ifscCode: _provider == 'bank' ? _ifscCodeController.text.trim() : null,
           );
 
       if (mounted) {
@@ -152,16 +164,35 @@ class _PayoutAccountScreenState extends ConsumerState<PayoutAccountScreen> {
                 ),
                 const SizedBox(height: Space.x5),
                 AppTextField(
+                  label: 'Account holder name',
+                  controller: _accountHolderController,
+                  hint: 'Full name on the account',
+                  textInputAction: TextInputAction.next,
+                  error: _accountHolderError,
+                  onChanged: (_) => setState(() => _accountHolderError = null),
+                ),
+                const SizedBox(height: Space.x4),
+                AppTextField(
                   label: _provider == 'upi' ? 'UPI ID' : 'Account number',
                   controller: _accountRefController,
                   hint: _provider == 'upi' ? 'name@upi' : 'Enter account number',
                   keyboardType: _provider == 'upi'
                       ? TextInputType.emailAddress
                       : TextInputType.number,
-                  textInputAction: TextInputAction.done,
+                  textInputAction: _provider == 'upi' ? TextInputAction.done : TextInputAction.next,
                   error: _accountRefError,
                   onChanged: (_) => setState(() => _accountRefError = null),
                 ),
+                if (_provider == 'bank') ...[
+                  const SizedBox(height: Space.x4),
+                  AppTextField(
+                    label: 'IFSC code',
+                    controller: _ifscCodeController,
+                    hint: 'e.g. SBIN0001234',
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) => setState(() => _accountRefError = null),
+                  ),
+                ],
                 const SizedBox(height: Space.x8),
                 AppButton.primary(
                   label: 'Save payout account',

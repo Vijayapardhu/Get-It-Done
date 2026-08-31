@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gid_core/gid_core.dart';
 import 'package:gid_ui/gid_ui.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/worker_models.dart';
 import '../../core/offers/offer_inbox.dart';
@@ -83,11 +85,15 @@ class _OfferScreenState extends ConsumerState<OfferScreen> with SingleTickerProv
     super.dispose();
   }
 
-  void _close(_OfferOutcome outcome) {
+  void _close(_OfferOutcome outcome, {String? bookingId}) {
     if (!mounted) return;
     _ticker?.cancel();
     ref.read(offerNotificationsProvider).dismissOffer();
     Navigator.of(context).pop(outcome);
+
+    if (outcome == _OfferOutcome.accepted && bookingId != null && mounted) {
+      context.push('/job/$bookingId');
+    }
   }
 
   Future<void> _accept() async {
@@ -95,22 +101,22 @@ class _OfferScreenState extends ConsumerState<OfferScreen> with SingleTickerProv
     setState(() => _answering = true);
     HapticFeedback.mediumImpact();
 
-    final outcome = await ref.read(offerInboxProvider).accept(widget.offer);
-    if (!mounted) return;
-
-    switch (outcome) {
-      case AcceptOutcome.accepted:
-        _close(_OfferOutcome.accepted);
-      case AcceptOutcome.gone:
-        _close(_OfferOutcome.taken);
-      case AcceptOutcome.unreachable:
-        // Still time on the clock: let them try again rather than closing the
-        // screen on a network blip.
-        setState(() => _answering = false);
-        _say('Could not reach the server. Try again.');
-      case AcceptOutcome.failed:
-        setState(() => _answering = false);
-        _say('Something went wrong. Try again.');
+    try {
+      await ref.read(offerInboxProvider).accept(widget.offer);
+      if (!mounted) return;
+      _close(_OfferOutcome.accepted, bookingId: widget.offer.bookingId);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      switch (error.code) {
+        case 'OFFER_EXPIRED':
+        case 'OFFER_REVOKED':
+          _close(_OfferOutcome.taken);
+        case 'OFFER_ACCEPTED_ELSEWHERE':
+          _close(_OfferOutcome.taken);
+        default:
+          setState(() => _answering = false);
+          _say('Could not reach the server. Try again.');
+      }
     }
   }
 
@@ -513,19 +519,19 @@ Future<void> showOffer(BuildContext context, WidgetRef ref, JobOffer offer) asyn
 
   if (!context.mounted || outcome == null) return;
 
+  if (outcome == _OfferOutcome.accepted) {
+    ref.invalidate(upcomingJobsProvider);
+    return;
+  }
+
   final message = switch (outcome) {
-    _OfferOutcome.accepted => null, // The job screen says it better.
+    _OfferOutcome.accepted => null,
     _OfferOutcome.declined => 'Passed. We will offer you the next one.',
-    // Never "failed" or "error". It is not the worker's fault and it is not the
-    // app's fault, and saying so wrongly is how a worker stops trusting either.
     _OfferOutcome.expired => 'That offer ran out of time.',
     _OfferOutcome.taken => 'That job went to another worker.',
   };
 
-  if (message != null) {
+  if (message != null && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
-  if (outcome == _OfferOutcome.accepted) {
-    ref.invalidate(upcomingJobsProvider);
   }
 }

@@ -148,7 +148,7 @@ const verificationSubmitSchema = z.object({
     issuedBy: z.string().optional(),
     issuedAt: z.string().date().optional(),
     expiresAt: z.string().date().optional(),
-  })).min(1).max(20),
+  })).default([]),
   notes: z.string().max(1000).optional(),
 });
 

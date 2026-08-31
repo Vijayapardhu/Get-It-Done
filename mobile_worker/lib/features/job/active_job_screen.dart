@@ -150,15 +150,18 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
         appBar: AppBar(),
         body: Center(child: Text('Could not load this job.\n$error', textAlign: TextAlign.center)),
       ),
-      data: (jobs) {
-        final job = jobs.where((j) => j.id == widget.bookingId).firstOrNull;
-        if (job == null) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(child: Text('This job is no longer yours.')),
-          );
-        }
-        return _JobBody(
+        data: (jobs) {
+          final job = jobs.where((j) => j.id == widget.bookingId).firstOrNull;
+          if (job == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) context.pop();
+            });
+            return Scaffold(
+              appBar: AppBar(),
+              body: const Center(child: Text('This job is no longer yours.')),
+            );
+          }
+          return _JobBody(
           job: job,
           working: _working,
           noShowEligibleAt: _noShowEligibleAt ?? job.arrivedAt?.add(const Duration(minutes: 10)),

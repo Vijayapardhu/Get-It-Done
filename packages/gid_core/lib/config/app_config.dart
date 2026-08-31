@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 /// Pass overrides with --dart-define to point a build somewhere else:
 ///
 ///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:4000
-///   flutter build apk --dart-define=API_BASE_URL=https://getitdone.vijayapardhu.tech
+///   flutter build apk --dart-define=API_BASE_URL=http://getitdone.vijayapardhu.tech
 abstract final class AppConfig {
   static const _apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
 
@@ -17,7 +17,7 @@ abstract final class AppConfig {
   /// first launch, and a release build threw outright unless someone remembered
   /// the --dart-define. Anyone who does want their own machine has two ways to
   /// say so: --dart-define at build time, or the developer screen at runtime.
-  static const deployedApiBaseUrl = 'https://getitdone.vijayapardhu.tech';
+  static const deployedApiBaseUrl = 'http://getitdone.vijayapardhu.tech';
 
   /// Resolved API host.
   static String get apiBaseUrl =>

@@ -241,16 +241,13 @@ export async function getServiceById(id: string): Promise<ServiceDetail | null> 
 }
 
 export async function createService(input: CreateService): Promise<Service> {
-  // RETURNING cannot reach the category and rating joins, so it would hand back
-  // a service whose artwork and rating are null purely because of how it was
-  // fetched. Read it back through the one projection instead.
   const result = await pool.query<{ id: string }>(
     `
-      insert into services (name, category, description, base_price, emergency_supported)
-      values ($1, $2, $3, $4, $5)
+      insert into services (name, category, description, base_price, emergency_supported, hero_image_key, includes, excludes, steps, faqs)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       returning id
     `,
-    [input.name, input.category, input.description ?? null, input.basePrice, input.emergencySupported ?? false]
+    [input.name, input.category, input.description ?? null, input.basePrice, input.emergencySupported ?? false, input.heroImageKey ?? null, JSON.stringify(input.includes ?? []), JSON.stringify(input.excludes ?? []), JSON.stringify(input.steps ?? []), JSON.stringify(input.faqs ?? [])]
   );
 
   const created = await getServiceById(result.rows[0].id);
@@ -298,6 +295,26 @@ export async function updateService(id: string, input: UpdateService): Promise<S
   if (input.defaultMinutes !== undefined) {
     fields.push(`default_minutes = $${paramIndex++}`);
     values.push(input.defaultMinutes);
+  }
+  if (input.heroImageKey !== undefined) {
+    fields.push(`hero_image_key = $${paramIndex++}`);
+    values.push(input.heroImageKey);
+  }
+  if (input.includes !== undefined) {
+    fields.push(`includes = $${paramIndex++}`);
+    values.push(JSON.stringify(input.includes));
+  }
+  if (input.excludes !== undefined) {
+    fields.push(`excludes = $${paramIndex++}`);
+    values.push(JSON.stringify(input.excludes));
+  }
+  if (input.steps !== undefined) {
+    fields.push(`steps = $${paramIndex++}`);
+    values.push(JSON.stringify(input.steps));
+  }
+  if (input.faqs !== undefined) {
+    fields.push(`faqs = $${paramIndex++}`);
+    values.push(JSON.stringify(input.faqs));
   }
 
   if (fields.length === 0) {

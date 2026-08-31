@@ -40,7 +40,8 @@ export function ServiceView() {
     return <LoadingState message="Loading service…" />
   }
 
-  const heroImage = service.heroImageUrl ?? service.hero_image_url
+  const heroImage = service.heroImageKey ?? service.hero_image_key
+  const heroImageUrl = heroImage ? `${import.meta.env.VITE_API_URL}/files/${encodeURIComponent(heroImage)}` : null
   const basePrice = service.basePrice ?? service.base_price
   const listPrice = service.listPrice ?? service.list_price
   const pricePerMinute = service.pricePerMinute ?? service.price_per_minute
@@ -100,9 +101,9 @@ export function ServiceView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
-          {heroImage && (
+          {heroImageUrl && (
             <div className="aspect-video rounded-lg overflow-hidden bg-muted/30">
-              <img src={heroImage} alt={service.name} className="w-full h-full object-cover" />
+              <img src={heroImageUrl} alt={service.name} className="w-full h-full object-cover" />
             </div>
           )}
 

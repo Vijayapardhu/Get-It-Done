@@ -148,6 +148,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onboarding = path.startsWith('/onboarding') || path == '/verification';
       if (profile.hasValue && worker == null && !onboarding) return '/onboarding';
       if (worker != null && !worker.isVerified && !onboarding) return '/verification';
+      if (worker != null && worker.isVerified && onboarding) return '/today';
 
       return null;
     },

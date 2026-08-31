@@ -111,6 +111,11 @@ export type CreateService = {
   emergencySupported?: boolean;
   imageUrl?: string | null;
   animationUrl?: string | null;
+  heroImageKey?: string | null;
+  includes?: string[];
+  excludes?: string[];
+  steps?: string[];
+  faqs?: Array<{ question: string; answer: string }>;
 };
 
 /// Everything a create takes, plus the rate and duration bounds an operator

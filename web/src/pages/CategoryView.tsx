@@ -76,7 +76,13 @@ export function CategoryView() {
                 <tr key={service.id} className="border-b border-border/50 hover:bg-muted/10">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {service.heroImageUrl || service.hero_image_url ? (
+                       {service.heroImageKey || service.hero_image_key ? (
+                        <img
+                          src={`${import.meta.env.VITE_API_URL}/files/${encodeURIComponent(service.heroImageKey ?? service.hero_image_key ?? "")}`}
+                          alt=""
+                          className="w-10 h-10 rounded-md object-cover"
+                        />
+                      ) : service.heroImageUrl || service.hero_image_url ? (
                         <img
                           src={service.heroImageUrl ?? service.hero_image_url}
                           alt=""

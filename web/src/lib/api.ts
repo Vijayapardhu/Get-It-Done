@@ -43,6 +43,12 @@ import type {
   Settlement,
   Refund,
   NotificationTemplate,
+  WorkerDocument,
+  PayoutAccount,
+  WorkerWallet,
+  WorkerEarnings,
+  WorkerJob,
+  WorkerRegistration,
 } from "./types"
 
 let accessToken: string | null = null
@@ -384,12 +390,12 @@ export const adminApi = {
     return { data: response.data, status: response.status }
   },
 
-  async getAdminCategories(): Promise<ApiResponse<{ categories: Array<{ id: string; name: string; description: string | null; icon: string | null; displayOrder: number; status: string; imageUrl?: string | null; animationUrl?: string | null; accentColor?: string | null }> }>> {
+  async getAdminCategories(): Promise<ApiResponse<{ categories: Array<{ id: string; name: string; description: string | null; icon: string | null; displayOrder: number; status: string; imageUrl?: string | null; imageKey?: string | null; animationUrl?: string | null; accentColor?: string | null }> }>> {
     const response = await api.get("/service-areas/categories")
     return { data: response.data, status: response.status }
   },
 
-  async createCategory(data: { name: string; description?: string; icon?: string; displayOrder?: number; status?: string }): Promise<ApiResponse<{ category: { id: string; name: string } }>> {
+  async createCategory(data: { name: string; description?: string; icon?: string; displayOrder?: number; status?: string; imageKey?: string; accentColor?: string; parentId?: string; subcategories?: string[] }): Promise<ApiResponse<{ category: { id: string; name: string } }>> {
     const response = await api.post("/service-areas/categories", data)
     return { data: response.data, status: response.status }
   },
@@ -521,7 +527,7 @@ export const adminApi = {
     return { data: response.data, status: response.status }
   },
 
-  async updateSociety(id: string, data: Partial<{ name: string; code: string; district: string; state: string; contactEmail: string; contactPhone: string; address: string; commissionRate: number; minWorkers: number; maxWorkers: number }>): Promise<ApiResponse<{ cooperative: AdminCooperative }>> {
+  async updateSociety(id: string, data: Partial<{ name: string; code: string; district: string; state: string; contactEmail: string; contactPhone: string; address: string; commissionRate: number; minWorkers: number; maxWorkers: number; logoKey: string }>): Promise<ApiResponse<{ cooperative: AdminCooperative }>> {
     const response = await api.patch(`/admin/cooperatives/${id}`, data)
     return { data: response.data, status: response.status }
   },
@@ -665,12 +671,12 @@ export const adminApi = {
     return { data: response.data, status: response.status }
   },
 
-  async createService(data: { name: string; category: string; description?: string; basePrice: number; emergencySupported?: boolean; pricePerMinute?: number; minMinutes?: number; maxMinutes?: number; defaultMinutes?: number; listPrice?: number; heroImageUrl?: string; includes?: string[]; excludes?: string[]; steps?: string[]; faqs?: ServiceFaq[] }): Promise<ApiResponse<{ service: Service }>> {
+  async createService(data: { name: string; category: string; description?: string; basePrice: number; emergencySupported?: boolean; pricePerMinute?: number; minMinutes?: number; maxMinutes?: number; defaultMinutes?: number; listPrice?: number; heroImageKey?: string; includes?: string[]; excludes?: string[]; steps?: string[]; faqs?: ServiceFaq[] }): Promise<ApiResponse<{ service: Service }>> {
     const response = await api.post("/admin/services", data)
     return { data: response.data, status: response.status }
   },
 
-  async updateService(id: string, data: Partial<{ name: string; category: string; description: string; basePrice: number; emergencySupported: boolean; pricePerMinute: number; minMinutes: number; maxMinutes: number; defaultMinutes: number; listPrice: number; heroImageUrl: string; includes: string[]; excludes: string[]; steps: string[]; faqs: ServiceFaq[] }>): Promise<ApiResponse<{ service: Service }>> {
+  async updateService(id: string, data: Partial<{ name: string; category: string; description: string; basePrice: number; emergencySupported: boolean; pricePerMinute: number; minMinutes: number; maxMinutes: number; defaultMinutes: number; listPrice: number; heroImageKey: string; includes: string[]; excludes: string[]; steps: string[]; faqs: ServiceFaq[] }>): Promise<ApiResponse<{ service: Service }>> {
     const response = await api.patch(`/admin/services/${id}`, data)
     return { data: response.data, status: response.status }
   },
@@ -853,6 +859,106 @@ async getFederationCoverageStats(federationId: string): Promise<ApiResponse<any>
 
   async replySupportTicket(id: string, message: string): Promise<ApiResponse<{ ticket: SupportTicket }>> {
     const response = await api.post(`/admin/support/tickets/${id}/reply`, { message })
+    return { data: response.data, status: response.status }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FILE UPLOAD
+  // ═══════════════════════════════════════════════════════════════════
+
+  async getUploadUrl(type: string, filename: string, contentType: string): Promise<ApiResponse<{ uploadUrl: string; fileKey: string; expiresIn: number }>> {
+    const response = await api.post("/files/upload-url", { type, filename, contentType })
+    return { data: response.data, status: response.status }
+  },
+
+  async completeUpload(fileKey: string): Promise<ApiResponse<{ fileKey: string; url: string }>> {
+    const response = await api.post(`/files/${fileKey}/complete`)
+    return { data: response.data, status: response.status }
+  },
+
+  async uploadFile(file: File, type: string): Promise<{ fileKey: string; url: string }> {
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("type", type)
+    const response = await api.post("/files/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+    return { fileKey: response.data.fileKey, url: response.data.url }
+  },
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WORKER APP API
+// ═══════════════════════════════════════════════════════════════════
+
+export const workerApi = {
+  async getProfile(): Promise<ApiResponse<{ worker: Worker & { phone: string; address: string }; documents: WorkerDocument[]; payoutAccount: PayoutAccount | null }>> {
+    const response = await api.get("/workers/me/profile")
+    return { data: response.data, status: response.status }
+  },
+
+  async getStats(): Promise<ApiResponse<{ completedJobs: number; rating: number; earnings: number }>> {
+    const response = await api.get("/workers/me/stats")
+    return { data: response.data, status: response.status }
+  },
+
+  async register(data: WorkerRegistration): Promise<ApiResponse<{ worker: Worker; federation: { id: string; name: string } | null }>> {
+    const response = await api.post("/worker/register", data)
+    return { data: response.data, status: response.status }
+  },
+
+  async getJobs(): Promise<ApiResponse<{ jobs: WorkerJob[] }>> {
+    const response = await api.get("/workers/me/jobs")
+    return { data: response.data, status: response.status }
+  },
+
+  async getWallet(): Promise<ApiResponse<{ wallet: WorkerWallet; payoutAccounts: PayoutAccount[]; transactions: WorkerEarnings[] }>> {
+    const response = await api.get("/workers/me/wallet")
+    return { data: response.data, status: response.status }
+  },
+
+  async addPayoutAccount(data: { provider: "bank" | "upi"; accountHolder: string; accountNumber?: string; ifscCode?: string; upiId?: string }): Promise<ApiResponse<{ account: PayoutAccount }>> {
+    const response = await api.post("/workers/me/payout-accounts", data)
+    return { data: response.data, status: response.status }
+  },
+
+  async withdraw(data: { amount: number; accountId: string }): Promise<ApiResponse<{ success: boolean; payoutId: string }>> {
+    const response = await api.post("/workers/me/withdraw", data)
+    return { data: response.data, status: response.status }
+  },
+
+  async uploadDocument(type: "aadhar" | "pan" | "driving_license" | "other", fileKey: string): Promise<ApiResponse<{ document: WorkerDocument }>> {
+    const response = await api.post("/workers/me/documents", { type, fileKey })
+    return { data: response.data, status: response.status }
+  },
+
+  async updateStatus(status: "available" | "offline"): Promise<ApiResponse<{ currentStatus: string }>> {
+    const response = await api.patch("/workers/me/status", { status })
+    return { data: response.data, status: response.status }
+  },
+
+  async getJobDetail(jobId: string): Promise<ApiResponse<{ job: any }>> {
+    const response = await api.get(`/workers/me/jobs/${jobId}`)
+    return { data: response.data, status: response.status }
+  },
+
+  async verifyStart(jobId: string, otp: string): Promise<ApiResponse<{ message: string; status: string; balanceDue?: number }>> {
+    const response = await api.post(`/workers/me/jobs/${jobId}/verify-start`, { otp })
+    return { data: response.data, status: response.status }
+  },
+
+  async verifyComplete(jobId: string, otp: string): Promise<ApiResponse<{ message: string; status: string; balanceDue?: number }>> {
+    const response = await api.post(`/workers/me/jobs/${jobId}/verify-complete`, { otp })
+    return { data: response.data, status: response.status }
+  },
+
+  async getEarnings(): Promise<ApiResponse<{ summary: { totalEarnings: number; totalPayouts: number; balance: number; completedJobs: number }; transactions: any[] }>> {
+    const response = await api.get("/workers/me/earnings")
+    return { data: response.data, status: response.status }
+  },
+
+  async updateLocation(latitude: number, longitude: number): Promise<ApiResponse<{ message: string }>> {
+    const response = await api.post("/workers/me/location", { latitude, longitude })
     return { data: response.data, status: response.status }
   },
 }

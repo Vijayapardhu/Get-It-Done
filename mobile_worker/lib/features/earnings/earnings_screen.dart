@@ -153,7 +153,9 @@ class _WeekBars extends StatelessWidget {
   }
 
   static bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+      a.toLocal().year == b.toLocal().year &&
+      a.toLocal().month == b.toLocal().month &&
+      a.toLocal().day == b.toLocal().day;
 }
 
 class _PendingCard extends StatelessWidget {

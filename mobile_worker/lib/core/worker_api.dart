@@ -263,10 +263,17 @@ class WorkerApi {
     return asJson(pick(json, 'account', aliases: ['payoutAccount'])) ?? const {};
   }
 
-  Future<void> savePayoutAccount({required String provider, required String accountReference}) =>
+  Future<void> savePayoutAccount({
+    required String provider,
+    required String accountHolder,
+    required String accountReference,
+    String? ifscCode,
+  }) =>
       _client.put('/earnings/workers/me/payout-account', body: {
         'provider': provider,
+        'accountHolder': accountHolder,
         'accountReference': accountReference,
+        if (ifscCode != null) 'ifscCode': ifscCode,
       });
 
   // ───────────────────────────────────────────────────────── self, welfare ──
@@ -281,7 +288,11 @@ class WorkerApi {
     return VerificationStatus.fromJson(json);
   }
 
-  Future<void> submitForVerification() => _client.post('/workers/me/verification/submit');
+  Future<void> submitForVerification({String? notes, List<Json>? documents}) =>
+      _client.post('/workers/me/verification/submit', body: {
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+        if (documents != null) 'documents': documents,
+      });
 
   Future<WorkerStatistics> statistics() async {
     final json = await _client.get('/workers/me/statistics');
@@ -350,6 +361,48 @@ class WorkerApi {
   }
 
   Future<Json> onboard(Json body) => _client.post('/workers/me/onboarding', body: body);
+
+  /// Register a new worker with personal details and auto-detect federation.
+  Future<Json> registerWorker({
+    required String name,
+    required String phone,
+    required String address,
+    double? latitude,
+    double? longitude,
+  }) =>
+      _client.post('/worker/register', body: {
+        'name': name,
+        'phone': phone,
+        'address': address,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      });
+
+  /// Get worker jobs.
+  Future<List<WorkerJob>> jobs() async {
+    final json = await _client.get('/workers/me/jobs');
+    return parseList(pick(json, 'jobs'), WorkerJob.fromJson);
+  }
+
+  /// Verify job start with OTP.
+  Future<void> verifyJobStart(String bookingId, String otp) =>
+      _client.post('/workers/me/jobs/$bookingId/verify-start', body: {'otp': otp});
+
+  /// Verify job completion with OTP.
+  Future<Json> verifyJobComplete(String bookingId, String otp) async {
+    final json = await _client.post('/workers/me/jobs/$bookingId/verify-complete', body: {'otp': otp});
+    return json;
+  }
+
+  /// Update worker location.
+  Future<void> updateLocation({
+    required double latitude,
+    required double longitude,
+  }) =>
+      _client.post('/workers/me/location', body: {
+        'latitude': latitude,
+        'longitude': longitude,
+      });
 
   Future<WorkerProfile> updateProfile({String? address, int? experienceYears, String? photoUrl}) async {
     final json = await _client.patch('/workers/me', body: {

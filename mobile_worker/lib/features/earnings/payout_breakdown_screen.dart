@@ -26,7 +26,9 @@ class PayoutBreakdownScreen extends ConsumerWidget {
     final tokens = context.tokens;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Your pay for this job')),
+      appBar: AppBar(
+        title: const Text('Your pay for this job'),
+      ),
       body: preview.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Padding(

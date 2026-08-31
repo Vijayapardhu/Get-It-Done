@@ -49,7 +49,13 @@ export function Catalogue() {
               className="group bg-white border border-border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
             >
               <div className="aspect-video bg-muted/30 relative overflow-hidden">
-                {cat.imageUrl ? (
+                {cat.imageKey ? (
+                  <img
+                    src={`${import.meta.env.VITE_API_URL}/files/${encodeURIComponent(cat.imageKey)}`}
+                    alt={cat.category}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                ) : cat.imageUrl ? (
                   <img
                     src={cat.imageUrl}
                     alt={cat.category}

@@ -1,11 +1,46 @@
 import { Router } from "express";
 import { z } from "zod";
+import multer from "multer";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { requireAuth } from "../middleware/auth.js";
-import { getUploadUrl, completeUpload, getDownloadUrl, deleteFile, scanForMalware, MAX_FILE_SIZE } from "../core/storage.js";
+import { getUploadUrl, completeUpload, getDownloadUrl, deleteFile, scanForMalware, MAX_FILE_SIZE, putObject, BUCKET, s3Client } from "../core/storage.js";
 import { recordAuditEvent } from "../services/auditService.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
+import crypto from "node:crypto";
 
 export const filesRouter = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
+});
+
+filesRouter.post("/upload", requireAuth, upload.single("file"), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "No file provided" });
+      return;
+    }
+
+    const type = z.string().trim().min(2).max(50).parse(req.body.type ?? "general");
+    const ext = req.file.originalname.split(".").pop()?.toLowerCase() ?? "bin";
+    const hash = crypto.randomBytes(16).toString("hex");
+    const fileKey = `private/${type}/${req.user!.id}/${hash}.${ext}`;
+
+    const result = await putObject(fileKey, req.file.buffer, req.file.mimetype);
+
+    await recordAuditEvent({
+      actorId: req.user!.id,
+      action: "file.uploaded",
+      resourceType: "file",
+      resourceId: fileKey,
+      requestId: req.header("x-request-id") ?? undefined,
+      metadata: { type, size: req.file.size },
+    }).catch(() => undefined);
+
+    res.status(201).json({ fileKey: result.fileKey, url: `/files/${result.fileKey}` });
+  } catch (error) { next(error); }
+});
 
 // Malformed ids 404 instead of reaching Postgres, which would raise
 // "invalid input syntax for type uuid" and surface as a 500.
@@ -50,17 +85,25 @@ filesRouter.post("/:id/complete", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-filesRouter.get("/:id", requireAuth, async (req, res, next) => {
+filesRouter.get("*", async (req, res, next) => {
   try {
-    const fileKey = z.string().min(1).parse(req.params.id);
-    const downloadUrl = await getDownloadUrl(fileKey);
-    res.redirect(downloadUrl);
+    const fileKey = decodeURIComponent(req.path.slice(1));
+    const command = new GetObjectCommand({ Bucket: BUCKET, Key: fileKey });
+    const object = await s3Client.send(command);
+    res.set("Content-Type", object.ContentType ?? "application/octet-stream");
+    res.set("Content-Length", object.ContentLength?.toString() ?? "0");
+    res.set("Cache-Control", "public, max-age=31536000");
+    if (object.Body) {
+      (object.Body as NodeJS.ReadableStream).pipe(res);
+    } else {
+      res.status(404).json({ error: "File not found" });
+    }
   } catch (error) { next(error); }
 });
 
 filesRouter.delete("/:id", requireAuth, async (req, res, next) => {
   try {
-    const fileKey = z.string().min(1).parse(req.params.id);
+    const fileKey = decodeURIComponent(String(req.params.id));
     await deleteFile(fileKey);
     res.status(204).send();
   } catch (error) { next(error); }

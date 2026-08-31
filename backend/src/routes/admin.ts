@@ -849,6 +849,7 @@ const coopCreateSchema = z.object({
   commissionRate: z.number().min(0).max(100).default(10),
   minWorkers: z.number().int().positive().default(1),
   maxWorkers: z.number().int().positive().default(1000),
+  logoKey: z.string().trim().optional(),
 });
 
 const coopUpdateSchema = coopCreateSchema.partial();
@@ -925,7 +926,7 @@ adminRouter.patch("/cooperatives/:id", requireAuth, requireRoles("system_admin",
     const fields: string[] = [];
     const values: unknown[] = [];
     let index = 1;
-    const fieldMap: Record<string, string> = { contactEmail: "contact_email", contactPhone: "contact_phone", commissionRate: "commission_rate", minWorkers: "min_workers", maxWorkers: "max_workers", federationId: "federation_id" };
+    const fieldMap: Record<string, string> = { contactEmail: "contact_email", contactPhone: "contact_phone", commissionRate: "commission_rate", minWorkers: "min_workers", maxWorkers: "max_workers", federationId: "federation_id", logoKey: "logo_key" };
     for (const [key, value] of Object.entries(input)) {
       if (value !== undefined) { fields.push(`${fieldMap[key] ?? key} = $${index++}`); values.push(value); }
     }

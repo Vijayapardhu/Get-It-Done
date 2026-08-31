@@ -10,19 +10,22 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/worker_models.dart';
 import '../../core/providers.dart';
+import 'document_scanner_screen.dart';
 
-/// Six steps, each one saved on its own.
+/// Provider for loading all platform services for trade selection.
+final _allServicesProvider = FutureProvider<List<Service>>((ref) async {
+  return ref.watch(sharedApiProvider).services();
+});
+
+/// Comprehensive 6-step worker onboarding wizard.
 ///
-/// Nobody finishes this in one sitting on a 2G connection, and a wizard that
-/// loses everything when the app is backgrounded at step four is a wizard
-/// nobody finishes at all. So every step commits as soon as it is valid, the
-/// rail shows where the worker is, and closing the app is safe at any point.
-///
-///   personal → cooperative → skills → service areas → documents → payout
-///
-/// Steps 3 and 4 write through `PUT /workers/me/skills` and
-/// `/service-areas`, which are whole-collection replaces — so they are edited
-/// as a set here and sent as a set.
+/// Steps:
+///   1. Personal details / About you (Name, phone, photo, experience, location)
+///   2. Your trades / Skills (Choose which services you perform)
+///   3. How far you travel (Set service radius in km)
+///   4. Your documents (Aadhaar & PAN with Google ML Kit Scanner & OCR)
+///   5. Where you get paid (UPI or Bank account)
+///   6. Send for checking (Summary review & submit for verification)
 class OnboardingWizard extends ConsumerStatefulWidget {
   const OnboardingWizard({super.key});
 
@@ -35,32 +38,80 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   bool _busy = false;
   String? _failure;
 
+  // Step 1: Personal Details
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
   final _address = TextEditingController();
-  final _experience = TextEditingController(text: '0');
-  final _payoutRef = TextEditingController();
-  String _payoutProvider = 'upi';
-  final Set<String> _serviceIds = {};
-  double _radiusKm = 10;
-
-  // Profile photo
+  int _experienceYears = 2;
+  double? _latitude;
+  double? _longitude;
   File? _photoFile;
   final _picker = ImagePicker();
   bool _pickingPhoto = false;
 
-  static const _steps = [
-    ('About you', 'Where you are based, and how long you have been doing this'),
-    ('Your trades', 'What work you take. You can change this later'),
-    ('How far you travel', 'We will not offer you jobs beyond this'),
-    ('Your documents', 'An ID and anything that proves your trade'),
-    ('Where you get paid', 'A UPI id or a bank account in your name'),
-    ('Send for checking', 'A cooperative admin looks at it, usually within a day'),
+  // Step 2: Trades / Skills
+  final Set<String> _selectedServiceIds = {};
+
+  // Step 3: Service Radius
+  double _globalRadiusKm = 15.0;
+
+  // Step 4: Documents (Aadhaar & PAN with ML Kit OCR)
+  File? _aadharFile;
+  String? _aadharText;
+  String? _aadharNumber;
+  File? _panFile;
+  String? _panText;
+  String? _panNumber;
+
+  // Step 5: Payout Account
+  final _accountHolder = TextEditingController();
+  final _payoutRef = TextEditingController();
+  final _ifscCode = TextEditingController();
+  String _payoutProvider = 'upi';
+
+  // Step 6: Review & Submit
+  final _adminNotes = TextEditingController();
+
+  static const _stepTitles = [
+    ('About you', 'Your name, phone, experience, and where you work'),
+    ('Your trades', 'Select the services you offer to customers'),
+    ('How far you travel', 'Set your preferred travel distance for jobs'),
+    ('Your documents', 'Aadhaar and PAN card for identity verification'),
+    ('Where you get paid', 'A UPI ID or bank account in your name'),
+    ('Send for checking', 'Review your details and submit for approval'),
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _prefillFromAuth();
+  }
+
+  void _prefillFromAuth() {
+    final user = ref.read(authProvider).user;
+    if (user != null) {
+      if (user.name.isNotEmpty && _name.text.isEmpty) {
+        _name.text = user.name;
+      }
+      final phone = user.phone;
+      if (phone != null && phone.isNotEmpty && _phone.text.isEmpty) {
+        _phone.text = phone;
+      }
+      if (_accountHolder.text.isEmpty && user.name.isNotEmpty) {
+        _accountHolder.text = user.name;
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    _name.dispose();
+    _phone.dispose();
     _address.dispose();
-    _experience.dispose();
+    _accountHolder.dispose();
     _payoutRef.dispose();
+    _ifscCode.dispose();
+    _adminNotes.dispose();
     super.dispose();
   }
 
@@ -71,113 +122,68 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     });
     try {
       await work();
-      if (mounted) setState(() => _step = (_step + 1).clamp(0, _steps.length - 1));
+      if (mounted) {
+        setState(() => _step = (_step + 1).clamp(0, _stepTitles.length - 1));
+      }
     } on ApiException catch (error) {
       if (mounted) {
         setState(() => _failure = error.isNetwork
-            ? 'No connection. Nothing was lost — try again when you have signal.'
+            ? 'No connection. Nothing was lost — check your network and try again.'
             : error.message);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _failure = error.toString());
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _saveProfile() => _commit(() async {
-        await ref.read(workerApiProvider).onboard({
-          'address': _address.text.trim(),
-          'experienceYears': int.tryParse(_experience.text) ?? 0,
-        });
-        // The photo goes through the presigned-URL flow; the profile only ever
-        // stores the resulting URL, never the bytes.
+  // ────────────────────────────────────────── Step 1: Personal Details ──
+
+  Future<void> _savePersonalDetails() => _commit(() async {
+        final name = _name.text.trim();
+        final phone = _phone.text.trim();
+        final address = _address.text.trim();
+
+        if (name.isEmpty) throw 'Please enter your full name.';
+        if (phone.isEmpty) throw 'Please enter your phone number.';
+
+        if (_latitude == null || _longitude == null) {
+          await _fetchCurrentLocation();
+        }
+
+        // Create or update worker profile
+        try {
+          await ref.read(workerApiProvider).registerWorker(
+                name: name,
+                phone: phone,
+                address: address.isNotEmpty ? address : 'Hyderabad',
+                latitude: _latitude,
+                longitude: _longitude,
+              );
+        } catch (_) {
+          // If already registered, update profile
+          await ref.read(workerApiProvider).updateProfile(
+                address: address.isNotEmpty ? address : null,
+                experienceYears: _experienceYears,
+              );
+        }
+
         if (_photoFile != null) {
           final url = await ref.read(workerApiProvider).uploadProfilePhoto(_photoFile!);
           await ref.read(workerApiProvider).updateProfile(photoUrl: url);
         }
+
         ref.invalidate(workerProfileProvider);
       });
 
-  Future<void> _saveSkills() => _commit(() async {
-        await ref.read(workerApiProvider).saveSkills(
-              _serviceIds.map((id) => (serviceId: id, level: null)).toList(),
-            );
-      });
-
-  Future<void> _saveAreas() => _commit(() async {
-        await ref.read(workerApiProvider).saveServiceAreas([
-          for (final id in _serviceIds)
-            ServiceAreaInput(serviceId: id, radiusKm: _radiusKm).toArea(),
-        ]);
-      });
-
-  Future<void> _savePayout() => _commit(() async {
-        await ref.read(workerApiProvider).savePayoutAccount(
-              provider: _payoutProvider,
-              accountReference: _payoutRef.text.trim(),
-            );
-      });
-
-  Future<void> _submit() => _commit(() async {
-        await ref.read(workerApiProvider).submitForVerification();
-        ref.invalidate(verificationStatusProvider);
-        if (mounted) context.go('/verification');
-      });
-
-  Future<void> _pickPhoto() async {
-    if (_pickingPhoto) return;
-    setState(() => _pickingPhoto = true);
-    try {
-      final picked = await _picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-        imageQuality: 80,
-        maxWidth: 512,
-        maxHeight: 512,
-      );
-      if (picked != null && mounted) {
-        setState(() => _photoFile = File(picked.path));
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() => _failure = 'Could not take photo: $error');
-      }
-    } finally {
-      if (mounted) setState(() => _pickingPhoto = false);
-    }
-  }
-
-  Future<void> _pickPhotoFromGallery() async {
-    if (_pickingPhoto) return;
-    setState(() => _pickingPhoto = true);
-    try {
-      final picked = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 80,
-        maxWidth: 512,
-        maxHeight: 512,
-      );
-      if (picked != null && mounted) {
-        setState(() => _photoFile = File(picked.path));
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() => _failure = 'Could not select photo: $error');
-      }
-    } finally {
-      if (mounted) setState(() => _pickingPhoto = false);
-    }
-  }
-
-  void _removePhoto() {
-    setState(() => _photoFile = null);
-  }
-
   Future<void> _fetchCurrentLocation() async {
     setState(() => _failure = null);
-
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        setState(() => _failure = 'Location services are disabled. Please enable them in settings.');
+        setState(() => _failure = 'Please enable location services in settings.');
         return;
       }
 
@@ -186,7 +192,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
-        setState(() => _failure = 'Location permission is required to auto-fill your address.');
+        setState(() => _failure = 'Location permission is required for finding jobs near you.');
         return;
       }
 
@@ -194,20 +200,171 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
-      _address.text = '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        if (_address.text.isEmpty) {
+          _address.text = 'Location: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+        }
+      });
     } catch (error) {
-      setState(() => _failure = 'Could not get location: $error');
+      setState(() => _failure = 'Could not get current location: $error');
+    }
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    if (_pickingPhoto) return;
+    setState(() => _pickingPhoto = true);
+    try {
+      final picked = await _picker.pickImage(
+        source: source,
+        preferredCameraDevice: CameraDevice.front,
+        imageQuality: 85,
+        maxWidth: 600,
+        maxHeight: 600,
+      );
+      if (picked != null && mounted) {
+        setState(() => _photoFile = File(picked.path));
+      }
+    } catch (error) {
+      if (mounted) setState(() => _failure = 'Photo selection error: $error');
+    } finally {
+      if (mounted) setState(() => _pickingPhoto = false);
+    }
+  }
+
+  // ────────────────────────────────────────── Step 2: Trades & Skills ──
+
+  Future<void> _saveTrades() => _commit(() async {
+        if (_selectedServiceIds.isEmpty) {
+          throw 'Please select at least one trade you can perform.';
+        }
+
+        final skillsList = _selectedServiceIds.map((id) => (serviceId: id, level: 'intermediate')).toList();
+        await ref.read(workerApiProvider).saveSkills(skillsList);
+      });
+
+  // ────────────────────────────────────────── Step 3: Service Radius ──
+
+  Future<void> _saveRadius() => _commit(() async {
+        final allServices = await ref.read(_allServicesProvider.future);
+        final selectedServices = allServices.where((s) => _selectedServiceIds.contains(s.id)).toList();
+
+        final areas = selectedServices.map((service) => ServiceArea(
+              serviceId: service.id,
+              serviceName: service.name,
+              radiusKm: _globalRadiusKm,
+            )).toList();
+
+        await ref.read(workerApiProvider).saveServiceAreas(areas);
+      });
+
+  // ────────────────────────────────────────── Step 4: Documents ──
+
+  Future<void> _scanDocument(String type) async {
+    final result = await DocumentScannerScreen.show(
+      context,
+      documentType: type,
+      enableOcr: true,
+      uploadOnSave: false,
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        if (type == 'aadhar') {
+          _aadharFile = result.image;
+          _aadharText = result.text;
+          _aadharNumber = result.idNumber;
+        } else {
+          _panFile = result.image;
+          _panText = result.text;
+          _panNumber = result.idNumber;
+        }
+      });
+    }
+  }
+
+  Future<void> _saveDocuments() => _commit(() async {
+        if (_aadharFile == null && _panFile == null) {
+          throw 'Please upload at least your Aadhaar or PAN card.';
+        }
+
+        if (_aadharFile != null) {
+          await ref.read(workerApiProvider).uploadDocument(
+                type: 'aadhar',
+                file: _aadharFile!,
+                extractedText: _aadharText,
+              );
+        }
+
+        if (_panFile != null) {
+          await ref.read(workerApiProvider).uploadDocument(
+                type: 'pan',
+                file: _panFile!,
+                extractedText: _panText,
+              );
+        }
+      });
+
+  // ────────────────────────────────────────── Step 5: Payout Account ──
+
+  Future<void> _savePayout() => _commit(() async {
+        final holder = _accountHolder.text.trim();
+        final refStr = _payoutRef.text.trim();
+        final ifsc = _ifscCode.text.trim().toUpperCase();
+
+        if (holder.isEmpty) throw 'Please enter account holder name.';
+        if (refStr.isEmpty) {
+          throw _payoutProvider == 'upi' ? 'Please enter your UPI ID.' : 'Please enter your account number.';
+        }
+        if (_payoutProvider == 'bank' && ifsc.isEmpty) {
+          throw 'Please enter IFSC code.';
+        }
+
+        await ref.read(workerApiProvider).savePayoutAccount(
+              provider: _payoutProvider,
+              accountHolder: holder,
+              accountReference: refStr,
+              ifscCode: _payoutProvider == 'bank' ? ifsc : null,
+            );
+      });
+
+  // ────────────────────────────────────────── Step 6: Submit Verification ──
+
+  Future<void> _submitVerification() => _commit(() async {
+        await ref.read(workerApiProvider).submitForVerification(
+              notes: _adminNotes.text.trim().isNotEmpty ? _adminNotes.text.trim() : null,
+            );
+        ref.invalidate(verificationStatusProvider);
+        ref.invalidate(workerProfileProvider);
+        if (mounted) context.go('/verification');
+      });
+
+  void _advance() {
+    switch (_step) {
+      case 0:
+        _savePersonalDetails();
+      case 1:
+        _saveTrades();
+      case 2:
+        _saveRadius();
+      case 3:
+        _saveDocuments();
+      case 4:
+        _savePayout();
+      default:
+        _submitVerification();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
-    final (title, subtitle) = _steps[_step];
+    final (title, subtitle) = _stepTitles[_step];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Step ${_step + 1} of ${_steps.length}'),
+        title: Text('Step ${_step + 1} of ${_stepTitles.length}'),
         leading: _step == 0
             ? null
             : IconButton(
@@ -217,11 +374,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       ),
       body: Column(
         children: [
+          // Step progress indicator bar
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Space.page),
+            padding: const EdgeInsets.symmetric(horizontal: Space.page, vertical: Space.x2),
             child: Row(
               children: [
-                for (var i = 0; i < _steps.length; i++)
+                for (var i = 0; i < _stepTitles.length; i++)
                   Expanded(
                     child: Container(
                       height: 5,
@@ -241,7 +399,10 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               children: [
                 Text(title, style: context.text.headlineSmall),
                 const SizedBox(height: Space.x2),
-                Text(subtitle, style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary)),
+                Text(
+                  subtitle,
+                  style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary),
+                ),
                 const SizedBox(height: Space.x6),
                 _body(),
                 if (_failure != null) ...[
@@ -249,7 +410,19 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                   Container(
                     padding: const EdgeInsets.all(Space.x3),
                     decoration: BoxDecoration(color: tokens.dangerSoft, borderRadius: Radii.rMd),
-                    child: Text(_failure!, style: context.text.bodyMedium?.copyWith(color: tokens.danger)),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppIcon(AppIcons.close, size: 20, color: tokens.danger),
+                        const SizedBox(width: Space.x2),
+                        Expanded(
+                          child: Text(
+                            _failure!,
+                            style: context.text.bodyMedium?.copyWith(color: tokens.danger),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ],
@@ -265,200 +438,50 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             onPressed: _busy ? null : _advance,
             child: _busy
                 ? const SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.n0),
                   )
-                : Text(_step == _steps.length - 1 ? 'Send for checking' : 'Save and continue'),
+                : Text(_step == _stepTitles.length - 1 ? 'Send for checking' : 'Save and continue'),
           ),
         ),
       ),
     );
   }
 
-  void _advance() {
-    switch (_step) {
-      case 0:
-        _saveProfile();
-      case 1:
-        _saveSkills();
-      case 2:
-        _saveAreas();
-      case 3:
-        setState(() => _step += 1);
-      case 4:
-        _savePayout();
-      default:
-        _submit();
-    }
-  }
-
   Widget _body() {
-    final tokens = context.tokens;
     switch (_step) {
       case 0:
-        return _AboutYouStep(
-          addressController: _address,
-          experienceController: _experience,
-          photoFile: _photoFile,
-          onPickPhoto: _pickPhoto,
-          onPickFromGallery: _pickPhotoFromGallery,
-          onRemovePhoto: _removePhoto,
-          isPickingPhoto: _pickingPhoto,
-          onFetchLocation: _fetchCurrentLocation,
-        );
-
+        return _buildStep1Personal();
       case 1:
-        return Consumer(
-          builder: (context, ref, _) {
-            final services = ref.watch(_servicesProvider);
-            return services.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, __) => const Text('Could not load the list of trades. Pull down to retry.'),
-              data: (list) => Column(
-                children: [
-                  for (final service in list)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _serviceIds.contains(service.id),
-                      title: Text(service.name),
-                      subtitle: Text(service.category, style: context.text.bodySmall),
-                      onChanged: (on) => setState(() {
-                        on == true ? _serviceIds.add(service.id) : _serviceIds.remove(service.id);
-                      }),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-
+        return _buildStep2Trades();
       case 2:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${_radiusKm.round()} km', style: context.text.displaySmall),
-            Slider(
-              value: _radiusKm,
-              min: 2,
-              max: 50,
-              divisions: 24,
-              onChanged: (v) => setState(() => _radiusKm = v),
-            ),
-            Text(
-              'A bigger area means more offers and longer journeys. You can change it any time.',
-              style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
-            ),
-          ],
-        );
-
+        return _buildStep3Radius();
       case 3:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You will need a photo ID, and a certificate for any trade that needs one '
-              '(gas, electrical, childcare).',
-              style: context.text.bodyMedium,
-            ),
-            const SizedBox(height: Space.x4),
-            OutlinedButton.icon(
-              onPressed: () => context.push('/profile/documents'),
-              icon: AppIcon(AppIcons.upload, size: 20),
-              label: const Text('Upload documents'),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(WorkerSizes.button)),
-            ),
-          ],
-        );
-
+        return _buildStep4Documents();
       case 4:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'upi', label: Text('UPI')),
-                ButtonSegment(value: 'bank', label: Text('Bank account')),
-              ],
-              selected: {_payoutProvider},
-              onSelectionChanged: (s) => setState(() => _payoutProvider = s.first),
-            ),
-            const SizedBox(height: Space.x4),
-            TextField(
-              controller: _payoutRef,
-              decoration: InputDecoration(
-                labelText: _payoutProvider == 'upi' ? 'Your UPI id' : 'Account number and IFSC',
-              ),
-            ),
-            const SizedBox(height: Space.x3),
-            Text(
-              'It must be in your own name. Payouts to somebody else\'s account cannot be released.',
-              style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
-            ),
-          ],
-        );
-
+        return _buildStep5Payout();
       default:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'That is everything we need. A cooperative admin will check it, usually within a day. '
-              'We will tell you as soon as it is done.',
-              style: context.text.bodyLarge,
-            ),
-            const SizedBox(height: Space.x4),
-            Text(
-              'You will not be offered jobs until then.',
-              style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary),
-            ),
-          ],
-        );
+        return _buildStep6Review();
     }
   }
-}
 
-/// Step 0 — About you: photo, location, experience.
-///
-/// A single cohesive card instead of scattered fields. Photo first (customers
-/// see it), then address with GPS shortcut, then experience.
-class _AboutYouStep extends StatelessWidget {
-  const _AboutYouStep({
-    required this.addressController,
-    required this.experienceController,
-    required this.photoFile,
-    required this.onPickPhoto,
-    required this.onPickFromGallery,
-    required this.onRemovePhoto,
-    required this.isPickingPhoto,
-    required this.onFetchLocation,
-  });
+  // ────────────────────────────────────────────── Step 1 UI ──
 
-  final TextEditingController addressController;
-  final TextEditingController experienceController;
-  final File? photoFile;
-  final VoidCallback onPickPhoto;
-  final VoidCallback onPickFromGallery;
-  final VoidCallback onRemovePhoto;
-  final bool isPickingPhoto;
-  final VoidCallback onFetchLocation;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildStep1Personal() {
     final tokens = context.tokens;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Profile photo ──
         Center(
           child: Stack(
             children: [
               CircleAvatar(
-                radius: 56,
+                radius: 54,
                 backgroundColor: tokens.primarySoft,
-                backgroundImage: photoFile != null ? FileImage(photoFile!) : null,
-                child: photoFile == null
-                    ? AppIcon(AppIcons.camera, size: 32, color: tokens.primary)
+                backgroundImage: _photoFile != null ? FileImage(_photoFile!) : null,
+                child: _photoFile == null
+                    ? AppIcon(AppIcons.user, size: 48, color: tokens.primary)
                     : null,
               ),
               Positioned(
@@ -469,24 +492,15 @@ class _AboutYouStep extends StatelessWidget {
                   shape: const CircleBorder(),
                   child: InkWell(
                     customBorder: const CircleBorder(),
-                    onTap: isPickingPhoto ? null : () => _showPhotoSourceSheet(context),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: isPickingPhoto
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.n0,
-                              ),
-                            )
-                          : AppIcon(AppIcons.camera, size: 20, color: AppColors.n0),
+                    onTap: _pickingPhoto ? null : () => _showPhotoSheet(context),
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.camera_alt, size: 20, color: AppColors.n0),
                     ),
                   ),
                 ),
               ),
-              if (photoFile != null)
+              if (_photoFile != null)
                 Positioned(
                   left: 0,
                   bottom: 0,
@@ -495,10 +509,10 @@ class _AboutYouStep extends StatelessWidget {
                     shape: const CircleBorder(),
                     child: InkWell(
                       customBorder: const CircleBorder(),
-                      onTap: onRemovePhoto,
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: AppIcon(AppIcons.close, size: 18, color: AppColors.n0),
+                      onTap: () => setState(() => _photoFile = null),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.close, size: 18, color: AppColors.n0),
                       ),
                     ),
                   ),
@@ -506,56 +520,104 @@ class _AboutYouStep extends StatelessWidget {
             ],
           ),
         ),
-
         const SizedBox(height: Space.x6),
-
-        // ── Location ──
-        Text('Where you work', style: context.text.titleMedium),
+        Text('Full Name', style: context.text.titleMedium),
         const SizedBox(height: Space.x2),
         TextField(
-          controller: addressController,
-          autofocus: true,
+          controller: _name,
           textInputAction: TextInputAction.next,
-          keyboardType: TextInputType.text,
-          maxLines: 2,
           decoration: InputDecoration(
-            labelText: 'City / area',
-            hintText: 'e.g. Hyderabad, Jubilee Hills',
+            labelText: 'Your full name',
+            prefixIcon: AppIcon(AppIcons.user, size: 20, color: tokens.textSecondary),
+          ),
+        ),
+        const SizedBox(height: Space.x4),
+        Text('Phone Number', style: context.text.titleMedium),
+        const SizedBox(height: Space.x2),
+        TextField(
+          controller: _phone,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.next,
+          decoration: InputDecoration(
+            labelText: '+91 XXXXX XXXXX',
+            prefixIcon: AppIcon(AppIcons.call, size: 20, color: tokens.textSecondary),
+          ),
+        ),
+        const SizedBox(height: Space.x4),
+        Text('Years of Experience', style: context.text.titleMedium),
+        const SizedBox(height: Space.x2),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: Space.x4, vertical: Space.x1),
+          decoration: BoxDecoration(
+            border: Border.all(color: tokens.border),
+            borderRadius: Radii.rMd,
+          ),
+          child: Row(
+            children: [
+              AppIcon(AppIcons.work, size: 20, color: tokens.textSecondary),
+              const SizedBox(width: Space.x3),
+              Expanded(
+                child: Text(
+                  '$_experienceYears year${_experienceYears == 1 ? '' : 's'} working in trades',
+                  style: context.text.bodyLarge,
+                ),
+              ),
+              IconButton(
+                onPressed: _experienceYears > 0 ? () => setState(() => _experienceYears--) : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              Text(
+                '$_experienceYears',
+                style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              IconButton(
+                onPressed: _experienceYears < 40 ? () => setState(() => _experienceYears++) : null,
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: Space.x4),
+        Text('Working Base / Location', style: context.text.titleMedium),
+        const SizedBox(height: Space.x2),
+        TextField(
+          controller: _address,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            labelText: 'City or Area name',
+            hintText: 'e.g. Hyderabad, Hitec City',
             prefixIcon: AppIcon(AppIcons.location, size: 20, color: tokens.textSecondary),
             suffixIcon: IconButton(
-              tooltip: 'Use current location',
-              onPressed: onFetchLocation,
-              icon: AppIcon(AppIcons.location, size: 20),
+              tooltip: 'Get GPS location',
+              onPressed: _fetchCurrentLocation,
+              icon: AppIcon(AppIcons.locationPin, size: 22, color: tokens.primary),
             ),
           ),
         ),
-
-        const SizedBox(height: Space.x4),
-
-        // ── Experience ──
-        Text('Experience', style: context.text.titleMedium),
         const SizedBox(height: Space.x2),
-        TextField(
-          controller: experienceController,
-          keyboardType: TextInputType.number,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: 'Years doing this work',
-            hintText: '0',
-            prefixIcon: AppIcon(AppIcons.time, size: 20, color: tokens.textSecondary),
-          ),
-        ),
-
-        const SizedBox(height: Space.x3),
-        Text(
-          'This helps customers pick the right person for their job.',
-          style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
+        Row(
+          children: [
+            Icon(
+              _latitude != null ? Icons.check_circle : Icons.info_outline,
+              size: 16,
+              color: _latitude != null ? tokens.success : tokens.textTertiary,
+            ),
+            const SizedBox(width: Space.x1),
+            Text(
+              _latitude != null
+                  ? 'GPS location active (Federation auto-assigned)'
+                  : 'Tap location icon to detect your cooperative zone.',
+              style: context.text.bodySmall?.copyWith(
+                color: _latitude != null ? tokens.success : tokens.textSecondary,
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  void _showPhotoSourceSheet(BuildContext context) {
+  void _showPhotoSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       builder: (_) => SafeArea(
@@ -564,10 +626,10 @@ class _AboutYouStep extends StatelessWidget {
           children: [
             ListTile(
               leading: AppIcon(AppIcons.camera, size: 24),
-              title: const Text('Take a photo'),
+              title: const Text('Take a photo with camera'),
               onTap: () {
                 Navigator.pop(context);
-                onPickPhoto();
+                _pickPhoto(ImageSource.camera);
               },
             ),
             ListTile(
@@ -575,7 +637,7 @@ class _AboutYouStep extends StatelessWidget {
               title: const Text('Choose from gallery'),
               onTap: () {
                 Navigator.pop(context);
-                onPickFromGallery();
+                _pickPhoto(ImageSource.gallery);
               },
             ),
           ],
@@ -583,21 +645,543 @@ class _AboutYouStep extends StatelessWidget {
       ),
     );
   }
-}
 
-/// The catalogue, read once during onboarding. Lives here rather than in the
-/// composition root because nothing else in this app needs it — the worker app
-/// has no catalogue.
-final _servicesProvider = FutureProvider<List<Service>>(
-  (ref) => ref.watch(sharedApiProvider).services(),
-);
+  // ────────────────────────────────────────────── Step 2 UI ──
 
-/// A tiny helper so the wizard can build service areas without importing the
-/// model's positional shape at three call sites.
-class ServiceAreaInput {
-  const ServiceAreaInput({required this.serviceId, required this.radiusKm});
-  final String serviceId;
-  final double radiusKm;
+  Widget _buildStep2Trades() {
+    final tokens = context.tokens;
+    final allServicesAsync = ref.watch(_allServicesProvider);
 
-  ServiceArea toArea() => ServiceArea(serviceId: serviceId, serviceName: '', radiusKm: radiusKm);
+    return allServicesAsync.when(
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(Space.x8),
+          child: CircularProgressIndicator(),
+        ),
+      ),
+      error: (e, _) => Container(
+        padding: const EdgeInsets.all(Space.x4),
+        decoration: BoxDecoration(color: tokens.dangerSoft, borderRadius: Radii.rMd),
+        child: Text('Could not load services list: $e'),
+      ),
+      data: (services) {
+        if (services.isEmpty) {
+          return const Center(child: Text('No trades available on platform.'));
+        }
+
+        // Group services by category
+        final grouped = <String, List<Service>>{};
+        for (final s in services) {
+          grouped.putIfAbsent(s.category, () => []).add(s);
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(Space.x3),
+              decoration: BoxDecoration(color: tokens.surfaceBlue, borderRadius: Radii.rMd),
+              child: Row(
+                children: [
+                  AppIcon(AppIcons.info, size: 20, color: tokens.primary),
+                  const SizedBox(width: Space.x2),
+                  Expanded(
+                    child: Text(
+                      'Select every trade you are qualified for. You will only receive job offers for your chosen trades.',
+                      style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.x4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${_selectedServiceIds.length} trade${_selectedServiceIds.length == 1 ? '' : 's'} selected',
+                  style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      if (_selectedServiceIds.length == services.length) {
+                        _selectedServiceIds.clear();
+                      } else {
+                        _selectedServiceIds.addAll(services.map((s) => s.id));
+                      }
+                    });
+                  },
+                  child: Text(_selectedServiceIds.length == services.length ? 'Clear all' : 'Select all'),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.x2),
+            for (final entry in grouped.entries) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: Space.x3, bottom: Space.x1),
+                child: Text(
+                  entry.key.toUpperCase(),
+                  style: context.text.labelMedium?.copyWith(
+                    color: tokens.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              for (final service in entry.value)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _selectedServiceIds.contains(service.id),
+                  title: Text(service.name, style: context.text.bodyLarge),
+                  subtitle: Text(
+                    '₹${service.basePrice.round()} base rate',
+                    style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
+                  ),
+                  onChanged: (selected) {
+                    setState(() {
+                      if (selected == true) {
+                        _selectedServiceIds.add(service.id);
+                      } else {
+                        _selectedServiceIds.remove(service.id);
+                      }
+                    });
+                  },
+                ),
+              const Divider(),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  // ────────────────────────────────────────────── Step 3 UI ──
+
+  Widget _buildStep3Radius() {
+    final tokens = context.tokens;
+    const radiusPresets = [5.0, 10.0, 15.0, 25.0, 50.0];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: Column(
+            children: [
+              Text(
+                '${_globalRadiusKm.round()} km',
+                style: context.text.displayMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: tokens.primary,
+                ),
+              ),
+              Text(
+                'Maximum travel radius from your base',
+                style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: Space.x6),
+        Slider(
+          value: _globalRadiusKm,
+          min: 3.0,
+          max: 50.0,
+          divisions: 47,
+          label: '${_globalRadiusKm.round()} km',
+          onChanged: (val) => setState(() => _globalRadiusKm = val),
+        ),
+        const SizedBox(height: Space.x4),
+        Text('Quick presets', style: context.text.labelLarge),
+        const SizedBox(height: Space.x2),
+        Wrap(
+          spacing: Space.x2,
+          runSpacing: Space.x2,
+          children: [
+            for (final p in radiusPresets)
+              ChoiceChip(
+                label: Text('${p.round()} km'),
+                selected: _globalRadiusKm == p,
+                onSelected: (selected) {
+                  if (selected) setState(() => _globalRadiusKm = p);
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: Space.x6),
+        Container(
+          padding: const EdgeInsets.all(Space.x4),
+          decoration: BoxDecoration(color: tokens.surfaceBlue, borderRadius: Radii.rMd),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AppIcon(AppIcons.location, size: 20, color: tokens.primary),
+                  const SizedBox(width: Space.x2),
+                  Text('How this affects jobs', style: context.text.titleSmall),
+                ],
+              ),
+              const SizedBox(height: Space.x2),
+              Text(
+                '• 10–15 km is ideal for quick 15-minute response times in cities.\n'
+                '• Larger radii give you more total offers, but travel times are longer.\n'
+                '• You can customize this per trade in Settings anytime.',
+                style: context.text.bodySmall?.copyWith(color: tokens.textSecondary, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ────────────────────────────────────────────── Step 4 UI ──
+
+  Widget _buildStep4Documents() {
+    final tokens = context.tokens;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(Space.x3),
+          decoration: BoxDecoration(color: tokens.surfaceBlue, borderRadius: Radii.rMd),
+          child: Row(
+            children: [
+              AppIcon(AppIcons.document, size: 20, color: tokens.primary),
+              const SizedBox(width: Space.x2),
+              Expanded(
+                child: Text(
+                  'Powered by on-device AI scanner with auto-cropping and OCR recognition for instant verification.',
+                  style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: Space.x5),
+        _buildDocumentTile(
+          title: 'Aadhaar Card',
+          subtitle: 'Front side of government Aadhaar card',
+          file: _aadharFile,
+          detectedId: _aadharNumber,
+          onScan: () => _scanDocument('aadhar'),
+          onRemove: () => setState(() {
+            _aadharFile = null;
+            _aadharText = null;
+            _aadharNumber = null;
+          }),
+        ),
+        const SizedBox(height: Space.x4),
+        _buildDocumentTile(
+          title: 'PAN Card',
+          subtitle: 'Permanent Account Number card',
+          file: _panFile,
+          detectedId: _panNumber,
+          onScan: () => _scanDocument('pan'),
+          onRemove: () => setState(() {
+            _panFile = null;
+            _panText = null;
+            _panNumber = null;
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDocumentTile({
+    required String title,
+    required String subtitle,
+    required File? file,
+    required String? detectedId,
+    required VoidCallback onScan,
+    required VoidCallback onRemove,
+  }) {
+    final tokens = context.tokens;
+    return Container(
+      padding: const EdgeInsets.all(Space.x4),
+      decoration: BoxDecoration(
+        border: Border.all(color: file != null ? tokens.primary : tokens.border),
+        borderRadius: Radii.rMd,
+        color: file != null ? tokens.surfaceBlue.withValues(alpha: 0.3) : tokens.surfaceAlt,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(Space.x2),
+                decoration: BoxDecoration(
+                  color: file != null ? tokens.success : tokens.primarySoft,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  file != null ? Icons.check : Icons.camera_alt,
+                  size: 20,
+                  color: file != null ? AppColors.n0 : tokens.primary,
+                ),
+              ),
+              const SizedBox(width: Space.x3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: context.text.titleMedium),
+                    Text(subtitle, style: context.text.bodySmall?.copyWith(color: tokens.textSecondary)),
+                  ],
+                ),
+              ),
+              if (file != null)
+                IconButton(
+                  onPressed: onRemove,
+                  icon: AppIcon(AppIcons.close, size: 20, color: tokens.danger),
+                ),
+            ],
+          ),
+          if (file != null) ...[
+            const SizedBox(height: Space.x3),
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: Radii.rSm,
+                  child: Image.file(file, width: 64, height: 64, fit: BoxFit.cover),
+                ),
+                const SizedBox(width: Space.x3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          AppIcon(AppIcons.verified, size: 16, color: tokens.success),
+                          const SizedBox(width: Space.x1),
+                          Text(
+                            'Scanned & Ready',
+                            style: context.text.labelMedium?.copyWith(color: tokens.success),
+                          ),
+                        ],
+                      ),
+                      if (detectedId != null) ...[
+                        const SizedBox(height: Space.x1),
+                        Text(
+                          'ID: $detectedId',
+                          style: context.text.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: onScan,
+                  child: const Text('Re-scan'),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: Space.x3),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: onScan,
+                icon: const Icon(Icons.document_scanner, size: 18),
+                label: Text('Scan $title with AI'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ────────────────────────────────────────────── Step 5 UI ──
+
+  Widget _buildStep5Payout() {
+    final tokens = context.tokens;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Where would you like to receive your weekly earnings?',
+          style: context.text.bodyMedium,
+        ),
+        const SizedBox(height: Space.x4),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'upi', label: Text('UPI ID (Instant)')),
+            ButtonSegment(value: 'bank', label: Text('Bank Account')),
+          ],
+          selected: {_payoutProvider},
+          onSelectionChanged: (s) => setState(() => _payoutProvider = s.first),
+        ),
+        const SizedBox(height: Space.x6),
+        TextField(
+          controller: _accountHolder,
+          textInputAction: TextInputAction.next,
+          decoration: InputDecoration(
+            labelText: 'Account holder full name',
+            hintText: 'As registered in bank',
+            prefixIcon: AppIcon(AppIcons.user, size: 20, color: tokens.textSecondary),
+          ),
+        ),
+        const SizedBox(height: Space.x4),
+        if (_payoutProvider == 'upi')
+          TextField(
+            controller: _payoutRef,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: 'Your UPI ID',
+              hintText: 'e.g. 9876543210@paytm or name@okaxis',
+              prefixIcon: AppIcon(AppIcons.call, size: 20, color: tokens.textSecondary),
+            ),
+          )
+        else ...[
+          TextField(
+            controller: _payoutRef,
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.next,
+            decoration: InputDecoration(
+              labelText: 'Bank Account Number',
+              prefixIcon: AppIcon(AppIcons.card, size: 20, color: tokens.textSecondary),
+            ),
+          ),
+          const SizedBox(height: Space.x4),
+          TextField(
+            controller: _ifscCode,
+            textCapitalization: TextCapitalization.characters,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: 'IFSC Code',
+              hintText: 'e.g. SBIN0001234',
+              prefixIcon: AppIcon(AppIcons.card, size: 20, color: tokens.textSecondary),
+            ),
+          ),
+        ],
+        const SizedBox(height: Space.x4),
+        Container(
+          padding: const EdgeInsets.all(Space.x3),
+          decoration: BoxDecoration(color: tokens.warningSoft, borderRadius: Radii.rMd),
+          child: Row(
+            children: [
+              AppIcon(AppIcons.info, size: 20, color: tokens.warning),
+              const SizedBox(width: Space.x2),
+              Expanded(
+                child: Text(
+                  'The bank or UPI account must be in your own name to ensure compliant payout settlements.',
+                  style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ────────────────────────────────────────────── Step 6 UI ──
+
+  Widget _buildStep6Review() {
+    final tokens = context.tokens;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(Space.x4),
+          decoration: BoxDecoration(
+            color: tokens.surfaceBlue,
+            borderRadius: Radii.rLg,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AppIcon(AppIcons.verified, size: 24, color: tokens.primary),
+                  const SizedBox(width: Space.x2),
+                  Text('Onboarding Checklist', style: context.text.titleLarge),
+                ],
+              ),
+              const SizedBox(height: Space.x2),
+              Text(
+                'Everything looks ready! A cooperative administrator will review your submission, usually within 24 hours.',
+                style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: Space.x5),
+        _buildReviewRow('Personal Details', '${_name.text.trim()} (${_phone.text.trim()})', Icons.person),
+        _buildReviewRow('Experience', '$_experienceYears years in trade', Icons.badge),
+        _buildReviewRow('Selected Trades', '${_selectedServiceIds.length} trade(s) chosen', Icons.handyman),
+        _buildReviewRow('Travel Radius', '${_globalRadiusKm.round()} km radius', Icons.near_me),
+        _buildReviewRow(
+          'Documents',
+          '${_aadharFile != null ? 'Aadhaar ✓ ' : ''}${_panFile != null ? 'PAN ✓' : ''}',
+          Icons.description,
+        ),
+        _buildReviewRow(
+          'Payout Method',
+          _payoutProvider == 'upi' ? 'UPI (${_payoutRef.text.trim()})' : 'Bank Account (${_payoutRef.text.trim()})',
+          Icons.account_balance,
+        ),
+        const SizedBox(height: Space.x5),
+        Text('Note to Cooperative Reviewer (Optional)', style: context.text.titleSmall),
+        const SizedBox(height: Space.x2),
+        TextField(
+          controller: _adminNotes,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            hintText: 'Any additional certifications, references or notes…',
+          ),
+        ),
+        const SizedBox(height: Space.x6),
+        Container(
+          padding: const EdgeInsets.all(Space.x3),
+          decoration: BoxDecoration(
+            color: tokens.surfaceAlt,
+            borderRadius: Radii.rMd,
+            border: Border.all(color: tokens.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.shield_outlined, size: 24),
+              const SizedBox(width: Space.x3),
+              Expanded(
+                child: Text(
+                  'Once submitted, your verification state will update automatically. You will receive a notification as soon as you are verified.',
+                  style: context.text.bodySmall?.copyWith(color: tokens.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReviewRow(String title, String value, IconData icon) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Space.x3),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: tokens.primary),
+          const SizedBox(width: Space.x3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: context.text.labelSmall?.copyWith(color: tokens.textSecondary)),
+                Text(value, style: context.text.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          const Icon(Icons.check_circle, size: 18, color: Colors.green),
+        ],
+      ),
+    );
+  }
 }

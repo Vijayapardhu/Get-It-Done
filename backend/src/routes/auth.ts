@@ -178,6 +178,9 @@ const publicUser = (user: NonNullable<Awaited<ReturnType<typeof authService.find
   timezone: user.timezone,
   lastLoginAt: user.lastLoginAt,
   avatarUrl: user.avatarUrl,
+  cooperativeId: user.cooperativeId,
+  cooperativeName: user.cooperativeName,
+  homeAddress: user.homeAddress,
 });
 
 const authResponse = (user: NonNullable<Awaited<ReturnType<typeof authService.findUserById>>>, tokens: { accessToken: string; refreshToken: string; expiresIn: string }) => ({

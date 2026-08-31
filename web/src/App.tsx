@@ -42,6 +42,7 @@ import { SocietyDashboard } from "./pages/SocietyDashboard"
 import { SocietyOnboarding } from "./pages/SocietyOnboarding"
 import { FederationTerritories } from "./pages/FederationTerritories"
 import { UnassignedRequests } from "./pages/UnassignedRequests"
+import { WorkerApp } from "./pages/WorkerApp"
 
 export default function App() {
   return (
@@ -88,6 +89,7 @@ export default function App() {
             <Route path="notifications" element={<NotificationTemplates />} />
             <Route path="system" element={<System />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="worker-app" element={<WorkerApp />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

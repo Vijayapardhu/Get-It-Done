@@ -4,14 +4,14 @@ import crypto from "node:crypto";
 import { env } from "../config/env.js";
 import logger from "./logger.js";
 
-const s3Client = new S3Client({
+export const s3Client = new S3Client({
   region: env.S3_REGION ?? "us-east-1",
   endpoint: env.S3_ENDPOINT,
   credentials: { accessKeyId: env.S3_ACCESS_KEY ?? "", secretAccessKey: env.S3_SECRET_KEY ?? "" },
   forcePathStyle: env.S3_FORCE_PATH_STYLE,
 });
 
-const BUCKET = env.S3_BUCKET ?? "getitdone";
+export const BUCKET = env.S3_BUCKET ?? "getitdone";
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
 const ALLOWED_TYPES = {
@@ -117,4 +117,4 @@ export async function scanForMalware(fileKey: string): Promise<{ clean: boolean;
   }
 }
 
-export { BUCKET, MAX_FILE_SIZE, isS3Compatible };
+export { MAX_FILE_SIZE, isS3Compatible };

@@ -28,6 +28,7 @@ import {
   TrendUp,
   SquaresFour,
   UserPlus,
+  HardHat,
 } from "@phosphor-icons/react"
 import { useAuth } from "../../lib/AuthContext"
 import { Logo } from "../ui/Logo"
@@ -72,6 +73,7 @@ const federationNav = [
   { key: "reports", label: "Reports", icon: FileText, href: "/reports", roles: ["system_admin", "federation_admin"] },
   { key: "audit", label: "Audit Log", icon: ClipboardText, href: "/audit", roles: ["system_admin", "federation_admin"] },
   { key: "notifications", label: "Notifications", icon: Bell, href: "/notifications", roles: ["system_admin", "federation_admin"] },
+  { key: "worker-app", label: "Worker App", icon: HardHat, href: "/worker-app", roles: ["system_admin", "federation_admin"] },
   { key: "system", label: "System", icon: Gear, href: "/system", roles: ["system_admin"] },
 ] as const
 

@@ -44,6 +44,10 @@ const serviceCategoryCreateSchema = z.object({
   icon: z.string().trim().max(100).optional(),
   displayOrder: z.number().int().default(0),
   status: z.enum(["active", "inactive"]).default("active"),
+  imageKey: z.string().trim().optional(),
+  accentColor: z.string().trim().max(7).optional(),
+  parentId: z.string().uuid().optional(),
+  subcategories: z.array(z.string().trim().min(1).max(100)).optional(),
 });
 
 const serviceCreateSchema = z.object({
@@ -359,7 +363,7 @@ serviceAreasRouter.get("/variants", requireAuth, async (req, res, next) => {
 serviceAreasRouter.post("/categories", requireAuth, requireRoles("system_admin", "federation_admin", "society_admin"), async (req, res, next) => {
   try {
     const input = serviceCategoryCreateSchema.parse(req.body);
-    const result = await pool.query(`INSERT INTO service_categories (id, name, description, icon, display_order, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [crypto.randomUUID(), input.name, input.description ?? null, input.icon ?? null, input.displayOrder, input.status]);
+    const result = await pool.query(`INSERT INTO service_categories (id, name, description, icon, display_order, status, image_key, accent_color, parent_id, subcategories) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`, [crypto.randomUUID(), input.name, input.description ?? null, input.icon ?? null, input.displayOrder, input.status, input.imageKey ?? null, input.accentColor ?? null, input.parentId ?? null, JSON.stringify(input.subcategories ?? [])]);
     await recordAuditEvent({ actorId: req.user!.id, action: "service_category.created", resourceType: "service_category", resourceId: result.rows[0].id, requestId: req.header("x-request-id") ?? undefined }).catch(() => undefined);
     res.status(201).json({ category: result.rows[0] });
   } catch (error) { next(error); }

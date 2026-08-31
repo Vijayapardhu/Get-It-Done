@@ -9,7 +9,19 @@ import logger from "../core/logger.js";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
-const publicUserColumns = "id, name, phone, email, role, language, status, display_name, date_of_birth, gender, preferred_language, timezone, last_login_at, avatar_url, oauth_provider, oauth_subject";
+// The cooperative name comes from a LEFT JOIN so a user with no cooperative yet
+// still returns a row. The query helpers in this file share the same join form.
+const userJoinClause = "LEFT JOIN cooperatives ON cooperatives.id = users.cooperative_id";
+
+const publicUserColumns = `
+  users.id, users.name, users.phone, users.email, users.role, users.language,
+  users.status, users.display_name, users.date_of_birth, users.gender,
+  users.preferred_language, users.timezone, users.last_login_at,
+  users.avatar_url, users.oauth_provider, users.oauth_subject,
+  users.cooperative_id as "cooperativeId",
+  cooperatives.name as "cooperativeName",
+  users.home_address as "homeAddress"
+`;
 
 /// A user plus the two secrets sign-in needs and nothing else may see.
 ///
@@ -78,7 +90,10 @@ export class AuthService {
   async verifyPassword(password: string, passwordHash: string): Promise<boolean> { return bcrypt.compare(password, passwordHash); }
 
   async findUserById(id: string, client: Pool | PoolClient = pool): Promise<User | null> {
-    const result = await client.query(`SELECT ${publicUserColumns} FROM users WHERE id = $1 AND status = 'active'`, [id]);
+    const result = await client.query(
+      `SELECT ${publicUserColumns} FROM users ${userJoinClause} WHERE users.id = $1 AND users.status = 'active'`,
+      [id]
+    );
     return result.rows[0] ? this.toUser(result.rows[0]) : null;
   }
 
@@ -86,7 +101,7 @@ export class AuthService {
     // Returns the hash like findUserByEmail does, so phone+password sign-in
     // works the same way. Callers that do not need it simply ignore it.
     const result = await pool.query(
-      `SELECT ${publicUserColumns}, password_hash, totp_secret FROM users WHERE phone = $1`,
+      `SELECT ${publicUserColumns}, users.password_hash, users.totp_secret FROM users ${userJoinClause} WHERE users.phone = $1`,
       [phone]
     );
     if (!result.rows[0]) return null;
@@ -116,7 +131,7 @@ export class AuthService {
 
   async findUserByEmail(email: string): Promise<AuthenticatableUser | null> {
     const result = await pool.query(
-      `SELECT ${publicUserColumns}, password_hash, totp_secret FROM users WHERE lower(email) = lower($1)`,
+      `SELECT ${publicUserColumns}, users.password_hash, users.totp_secret FROM users ${userJoinClause} WHERE lower(users.email) = lower($1)`,
       [email]
     );
     if (!result.rows[0]) return null;
@@ -136,9 +151,13 @@ export class AuthService {
    */
   async createUserFromPhone(phone: string, name: string, role = "customer", password?: string): Promise<User> {
     const passwordHash = password ? await this.hashPassword(password) : null;
+    const id = uuidv4();
     const result = await pool.query(
-      `INSERT INTO users (id, name, phone, role, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING ${publicUserColumns}`,
-      [uuidv4(), name, phone, role, passwordHash]
+      `WITH inserted AS (
+         INSERT INTO users (id, name, phone, role, password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING *
+       )
+       SELECT ${publicUserColumns} FROM inserted users ${userJoinClause}`,
+      [id, name, phone, role, passwordHash]
     );
     return this.toUser(result.rows[0]);
   }
@@ -159,17 +178,28 @@ export class AuthService {
     role?: string;
   }): Promise<User> {
     const passwordHash = await this.hashPassword(input.password);
+    const id = uuidv4();
     const result = await pool.query(
-      `INSERT INTO users (id, name, email, phone, password_hash, role)
-       VALUES ($1, $2, lower($3), $4, $5, $6) RETURNING ${publicUserColumns}`,
-      [uuidv4(), input.name, input.email, input.phone, passwordHash, input.role ?? "customer"]
+      `WITH inserted AS (
+         INSERT INTO users (id, name, email, phone, password_hash, role)
+         VALUES ($1, $2, lower($3), $4, $5, $6) RETURNING *
+       )
+       SELECT ${publicUserColumns} FROM inserted users ${userJoinClause}`,
+      [id, input.name, input.email, input.phone, passwordHash, input.role ?? "customer"]
     );
     return this.toUser(result.rows[0]);
   }
 
   async createUserFromEmail(name: string, email: string, password: string, role = "customer"): Promise<User> {
     const passwordHash = await this.hashPassword(password);
-    const result = await pool.query(`INSERT INTO users (id, name, email, password_hash, role) VALUES ($1, $2, lower($3), $4, $5) RETURNING ${publicUserColumns}`, [uuidv4(), name, email, passwordHash, role]);
+    const id = uuidv4();
+    const result = await pool.query(
+      `WITH inserted AS (
+         INSERT INTO users (id, name, email, password_hash, role) VALUES ($1, $2, lower($3), $4, $5) RETURNING *
+       )
+       SELECT ${publicUserColumns} FROM inserted users ${userJoinClause}`,
+      [id, name, email, passwordHash, role]
+    );
     return this.toUser(result.rows[0]);
   }
 
@@ -203,7 +233,10 @@ export class AuthService {
    */
   async setUserRole(userId: string, role: string): Promise<User | null> {
     const result = await pool.query(
-      `UPDATE users SET role = $2, updated_at = now() WHERE id = $1 RETURNING ${publicUserColumns}`,
+      `WITH updated AS (
+         UPDATE users SET role = $2, updated_at = now() WHERE id = $1 RETURNING *
+       )
+       SELECT ${publicUserColumns} FROM updated users ${userJoinClause}`,
       [userId, role]
     );
     return result.rows[0] ? this.toUser(result.rows[0]) : null;

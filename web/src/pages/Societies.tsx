@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "react-router-dom"
 import { adminApi } from "../lib/api"
 import type { AdminCooperative } from "../lib/types"
 import { DataTable, type Column } from "../components/ui/DataTable"
@@ -17,6 +18,7 @@ export function Societies() {
   const [page, setPage] = useState(1)
   const [showCreate, setShowCreate] = useState(false)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const params = {
     page,
@@ -108,6 +110,7 @@ export function Societies() {
             data={data?.cooperatives ?? []}
             keyExtractor={(s) => s.id}
             loading={false}
+            onRowClick={(s) => navigate(`/societies/${s.id}`)}
           />
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-muted">
             <span>Page {page} of {totalPages} · {total} total</span>

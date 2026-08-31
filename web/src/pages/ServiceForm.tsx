@@ -5,6 +5,7 @@ import type { ServiceFaq } from "../lib/types"
 import { ErrorState, LoadingState } from "../components/ui/EmptyState"
 import { ArrowLeft, Plus, X, Image } from "@phosphor-icons/react"
 import { useState, useEffect } from "react"
+import { FileUpload } from "../components/ui/FileUpload"
 
 export function ServiceForm() {
   const { serviceId } = useParams<{ serviceId: string }>()
@@ -31,7 +32,7 @@ export function ServiceForm() {
     maxMinutes: "",
     defaultMinutes: "",
     listPrice: "",
-    heroImageUrl: "",
+    heroImageKey: null as string | null,
     includes: [] as string[],
     excludes: [] as string[],
     steps: [] as string[],
@@ -61,7 +62,7 @@ export function ServiceForm() {
         maxMinutes: data.maxMinutes?.toString() ?? data.max_minutes?.toString() ?? "",
         defaultMinutes: data.defaultMinutes?.toString() ?? data.default_minutes?.toString() ?? "",
         listPrice: data.listPrice?.toString() ?? data.list_price?.toString() ?? "",
-        heroImageUrl: data.heroImageUrl ?? data.hero_image_url ?? "",
+        heroImageKey: data.hero_image_url ?? null,
         includes: data.includes ?? [],
         excludes: data.excludes ?? [],
         steps: normalizedSteps,
@@ -84,16 +85,17 @@ export function ServiceForm() {
       maxMinutes: form.maxMinutes ? Number(form.maxMinutes) : undefined,
       defaultMinutes: form.defaultMinutes ? Number(form.defaultMinutes) : undefined,
       listPrice: form.listPrice ? Number(form.listPrice) : undefined,
-      heroImageUrl: form.heroImageUrl || undefined,
+      heroImageKey: form.heroImageKey || undefined,
       includes: form.includes.length > 0 ? form.includes : undefined,
       excludes: form.excludes.length > 0 ? form.excludes : undefined,
       steps: form.steps.length > 0 ? form.steps : undefined,
       faqs: form.faqs.length > 0 ? form.faqs : undefined,
     }),
-    onSuccess: (res) => {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["service", serviceId] })
       queryClient.invalidateQueries({ queryKey: ["category-services"] })
       queryClient.invalidateQueries({ queryKey: ["service-categories"] })
-      navigate(`/services/${res.data.service.id}`)
+      navigate(`/services/${serviceId}`)
     },
   })
 
@@ -109,7 +111,7 @@ export function ServiceForm() {
       maxMinutes: form.maxMinutes ? Number(form.maxMinutes) : undefined,
       defaultMinutes: form.defaultMinutes ? Number(form.defaultMinutes) : undefined,
       listPrice: form.listPrice ? Number(form.listPrice) : undefined,
-      heroImageUrl: form.heroImageUrl || undefined,
+      heroImageKey: form.heroImageKey || undefined,
       includes: form.includes.length > 0 ? form.includes : undefined,
       excludes: form.excludes.length > 0 ? form.excludes : undefined,
       steps: form.steps.length > 0 ? form.steps : undefined,
@@ -226,23 +228,14 @@ export function ServiceForm() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-fg mb-1">Hero Image URL</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="url"
-                    value={form.heroImageUrl}
-                    onChange={(e) => setForm((f) => ({ ...f, heroImageUrl: e.target.value }))}
-                    placeholder="https://example.com/image.jpg"
-                    className="flex-1 px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
-                  {form.heroImageUrl && (
-                    <div className="w-10 h-10 rounded-md overflow-hidden bg-muted/30 flex-shrink-0">
-                      <img src={form.heroImageUrl} alt="" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
-              </div>
+              <FileUpload
+                value={form.heroImageKey}
+                onChange={(key) => setForm((f) => ({ ...f, heroImageKey: key }))}
+                type="service-hero"
+                label="Hero Image"
+                description="Upload a hero image for this service. Recommended size: 1200x675px"
+                aspectRatio="video"
+              />
             </div>
 
             <div className="bg-white border border-border rounded-lg p-4 space-y-4">
@@ -498,9 +491,9 @@ export function ServiceForm() {
           <div className="space-y-4">
             <div className="bg-white border border-border rounded-lg p-4">
               <h3 className="text-sm font-medium text-fg mb-3">Preview</h3>
-              {form.heroImageUrl ? (
+              {form.heroImageKey ? (
                 <div className="aspect-video rounded-md overflow-hidden bg-muted/30 mb-3">
-                  <img src={form.heroImageUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={`${import.meta.env.VITE_API_URL}/files/${encodeURIComponent(form.heroImageKey)}`} alt="" className="w-full h-full object-cover" />
                 </div>
               ) : (
                 <div className="aspect-video rounded-md bg-muted/30 flex items-center justify-center mb-3">
@@ -534,7 +527,7 @@ export function ServiceForm() {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent/90 transition-colors disabled:opacity-50"
           >
             {mutation.isPending ? "Saving..." : isEdit ? "Update Service" : "Create Service"}
           </button>

@@ -11,6 +11,14 @@ import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { generateOtp, sha256Hex } from "../core/otp.js";
 import { settleBooking } from "../services/revenueSplit.js";
+import {
+  createAdvancePayment,
+  captureAdvancePayment,
+  createFinalPayment,
+  captureFinalPayment,
+  processAdvanceRefund,
+  getBookingPaymentStatus,
+} from "../services/advancePaymentService.js";
 import { clearAssignmentTimeout, scheduleAssignmentTimeout } from "../services/emergencyService.js";
 import { resolveOffer } from "../services/offerService.js";
 
@@ -688,6 +696,118 @@ bookingsRouter.post("/:id/verify-complete", async (req, res, next) => {
     }).catch(() => undefined);
 
     res.json({ message: "Completion verified, booking is now complete" });
-  } catch (error) { next(error); }
+  } catch (error) { next(error) }
+});
+
+// ─── ADVANCE PAYMENT: Create advance payment order ────────────────────────────
+bookingsRouter.post("/:id/advance-payment", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+
+    const result = await createAdvancePayment(req.params.id, req.user.id);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      paymentOrderId: result.paymentOrderId,
+      amount: result.amount,
+      message: "Advance payment order created. Complete payment via Razorpay.",
+    });
+  } catch (error) { next(error) }
+});
+
+// ─── ADVANCE PAYMENT: Capture after successful payment ────────────────────────
+bookingsRouter.post("/:id/advance-payment/capture", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+
+    const { paymentOrderId, providerPaymentId } = z.object({
+      paymentOrderId: z.string().uuid(),
+      providerPaymentId: z.string(),
+    }).parse(req.body);
+
+    const captured = await captureAdvancePayment(req.params.id, paymentOrderId, providerPaymentId);
+    if (!captured) {
+      res.status(400).json({ error: "Failed to capture advance payment" });
+      return;
+    }
+
+    res.json({ message: "Advance payment captured successfully", advancePaid: true });
+  } catch (error) { next(error) }
+});
+
+// ─── FINAL PAYMENT: Create final payment order after completion ───────────────
+bookingsRouter.post("/:id/final-payment", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+
+    const result = await createFinalPayment(req.params.id, req.user.id);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      paymentOrderId: result.paymentOrderId,
+      amount: result.amount,
+      message: "Final payment order created. Complete payment via Razorpay.",
+    });
+  } catch (error) { next(error) }
+});
+
+// ─── FINAL PAYMENT: Capture after successful payment ──────────────────────────
+bookingsRouter.post("/:id/final-payment/capture", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+
+    const { paymentOrderId, providerPaymentId } = z.object({
+      paymentOrderId: z.string().uuid(),
+      providerPaymentId: z.string(),
+    }).parse(req.body);
+
+    const captured = await captureFinalPayment(req.params.id, paymentOrderId, providerPaymentId);
+    if (!captured) {
+      res.status(400).json({ error: "Failed to capture final payment" });
+      return;
+    }
+
+    res.json({ message: "Final payment captured successfully", fullyPaid: true });
+  } catch (error) { next(error) }
+});
+
+// ─── PAYMENT STATUS: Get booking payment status ───────────────────────────────
+bookingsRouter.get("/:id/payment-status", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+
+    const status = await getBookingPaymentStatus(req.params.id, req.user.id);
+    if (!status) {
+      res.status(404).json({ error: "Booking not found" });
+      return;
+    }
+
+    res.json(status);
+  } catch (error) { next(error) }
+});
+
+// ─── REFUND: Process advance refund on cancellation ───────────────────────────
+bookingsRouter.post("/:id/refund-advance", async (req, res, next) => {
+  try {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+
+    const { reason } = z.object({
+      reason: z.string().optional(),
+    }).parse(req.body);
+
+    const refunded = await processAdvanceRefund(req.params.id, reason ?? "booking_cancelled");
+    if (!refunded) {
+      res.status(400).json({ error: "Refund not available for this booking" });
+      return;
+    }
+
+    res.json({ message: "Advance refund initiated", refunded: true });
+  } catch (error) { next(error) }
 });
 

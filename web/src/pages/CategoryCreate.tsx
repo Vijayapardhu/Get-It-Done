@@ -1,8 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query"
 import { useNavigate, Link } from "react-router-dom"
 import { adminApi } from "../lib/api"
-import { ArrowLeft } from "@phosphor-icons/react"
+import { ArrowLeft, Plus, X } from "@phosphor-icons/react"
 import { useState } from "react"
+import { FileUpload } from "../components/ui/FileUpload"
 
 export function CategoryCreate() {
   const navigate = useNavigate()
@@ -14,8 +15,17 @@ export function CategoryCreate() {
     icon: "",
     displayOrder: "0",
     status: "active",
-    imageUrl: "",
+    imageKey: null as string | null,
     accentColor: "",
+    parentId: "",
+  })
+
+  const [subcategoryInput, setSubcategoryInput] = useState("")
+  const [subcategories, setSubcategories] = useState<string[]>([])
+
+  const { data: parentCategories } = useQuery({
+    queryKey: ["parent-categories"],
+    queryFn: () => adminApi.getAdminCategories().then((r) => r.data.categories),
   })
 
   const createMutation = useMutation({
@@ -25,20 +35,15 @@ export function CategoryCreate() {
       icon: form.icon || undefined,
       displayOrder: Number(form.displayOrder),
       status: form.status,
+      imageKey: form.imageKey || undefined,
+      accentColor: form.accentColor || undefined,
+      parentId: form.parentId || undefined,
+      subcategories: subcategories.length > 0 ? subcategories : undefined,
     }),
     onSuccess: (res) => {
-      if (form.imageUrl || form.accentColor) {
-        adminApi.updateCategoryArtwork(res.data.category.name, {
-          imageUrl: form.imageUrl || null,
-          accentColor: form.accentColor || null,
-        }).then(() => {
-          queryClient.invalidateQueries({ queryKey: ["service-categories"] })
-          navigate(`/categories/${encodeURIComponent(res.data.category.name)}`)
-        })
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["service-categories"] })
-        navigate(`/categories/${encodeURIComponent(res.data.category.name)}`)
-      }
+      queryClient.invalidateQueries({ queryKey: ["service-categories"] })
+      queryClient.invalidateQueries({ queryKey: ["parent-categories"] })
+      navigate(`/categories/${encodeURIComponent(res.data.category.name)}`)
     },
   })
 
@@ -47,10 +52,21 @@ export function CategoryCreate() {
     createMutation.mutate()
   }
 
+  const addSubcategory = () => {
+    if (subcategoryInput.trim() && !subcategories.includes(subcategoryInput.trim())) {
+      setSubcategories([...subcategories, subcategoryInput.trim()])
+      setSubcategoryInput("")
+    }
+  }
+
+  const removeSubcategory = (name: string) => {
+    setSubcategories(subcategories.filter((s) => s !== name))
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Link to="/categories" className="p-1.5 rounded-md hover:bg-muted/50 transition-colors">
+        <Link to="/catalogue" className="p-1.5 rounded-md hover:bg-muted/50 transition-colors">
           <ArrowLeft size={18} />
         </Link>
         <div>
@@ -77,14 +93,17 @@ export function CategoryCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-fg mb-1">Icon</label>
-                  <input
-                    type="text"
-                    value={form.icon}
-                    onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
-                    placeholder="e.g., wrench, home, sparkle"
+                  <label className="block text-xs font-medium text-fg mb-1">Parent Category</label>
+                  <select
+                    value={form.parentId}
+                    onChange={(e) => setForm((f) => ({ ...f, parentId: e.target.value }))}
                     className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
+                  >
+                    <option value="">None (Top Level)</option>
+                    {parentCategories?.map((cat) => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -100,6 +119,16 @@ export function CategoryCreate() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs font-medium text-fg mb-1">Icon</label>
+                  <input
+                    type="text"
+                    value={form.icon}
+                    onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
+                    placeholder="e.g., wrench, home, sparkle"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-medium text-fg mb-1">Display Order</label>
                   <input
                     type="number"
@@ -109,6 +138,9 @@ export function CategoryCreate() {
                     className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-fg mb-1">Status</label>
                   <select
@@ -120,50 +152,89 @@ export function CategoryCreate() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-fg mb-1">Accent Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={form.accentColor || "#6366f1"}
+                      onChange={(e) => setForm((f) => ({ ...f, accentColor: e.target.value }))}
+                      className="w-10 h-10 rounded-md border border-border cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={form.accentColor}
+                      onChange={(e) => setForm((f) => ({ ...f, accentColor: e.target.value }))}
+                      placeholder="#6366f1"
+                      className="flex-1 px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="bg-white border border-border rounded-lg p-4 space-y-4">
-              <h3 className="text-sm font-medium text-fg">Appearance</h3>
+              <h3 className="text-sm font-medium text-fg">Subcategories</h3>
+              <p className="text-xs text-muted">Add subcategories under this category.</p>
 
-              <div>
-                <label className="block text-xs font-medium text-fg mb-1">Image URL</label>
+              <div className="flex items-center gap-2">
                 <input
-                  type="url"
-                  value={form.imageUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                  placeholder="https://example.com/category-image.jpg"
-                  className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  type="text"
+                  value={subcategoryInput}
+                  onChange={(e) => setSubcategoryInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSubcategory())}
+                  placeholder="Add a subcategory..."
+                  className="flex-1 px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 />
+                <button
+                  type="button"
+                  onClick={addSubcategory}
+                  className="p-2 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-fg mb-1">Accent Color</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={form.accentColor || "#6366f1"}
-                    onChange={(e) => setForm((f) => ({ ...f, accentColor: e.target.value }))}
-                    className="w-10 h-10 rounded-md border border-border cursor-pointer"
-                  />
-                  <input
-                    type="text"
-                    value={form.accentColor}
-                    onChange={(e) => setForm((f) => ({ ...f, accentColor: e.target.value }))}
-                    placeholder="#6366f1"
-                    className="flex-1 px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
+              {subcategories.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {subcategories.map((sub) => (
+                    <span
+                      key={sub}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-primary/10 text-primary rounded-full"
+                    >
+                      {sub}
+                      <button
+                        type="button"
+                        onClick={() => removeSubcategory(sub)}
+                        className="hover:text-danger"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
                 </div>
-              </div>
+              )}
+            </div>
+
+            <div className="bg-white border border-border rounded-lg p-4 space-y-4">
+              <h3 className="text-sm font-medium text-fg">Appearance</h3>
+              <FileUpload
+                value={form.imageKey}
+                onChange={(key) => setForm((f) => ({ ...f, imageKey: key }))}
+                type="category-image"
+                label="Category Image"
+                description="Upload an image for this category. Recommended size: 1200x800px"
+                aspectRatio="video"
+              />
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="bg-white border border-border rounded-lg p-4">
               <h3 className="text-sm font-medium text-fg mb-3">Preview</h3>
-              {form.imageUrl ? (
+              {form.imageKey ? (
                 <div className="aspect-video rounded-md overflow-hidden bg-muted/30 mb-3">
-                  <img src={form.imageUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={`${import.meta.env.VITE_API_URL}/files/${encodeURIComponent(form.imageKey)}`} alt="" className="w-full h-full object-cover" />
                 </div>
               ) : (
                 <div
@@ -181,6 +252,15 @@ export function CategoryCreate() {
               {form.description && (
                 <p className="text-xs text-muted mt-1 line-clamp-2">{form.description}</p>
               )}
+              {subcategories.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {subcategories.map((sub) => (
+                    <span key={sub} className="text-[10px] px-1.5 py-0.5 bg-muted/30 rounded text-muted">
+                      {sub}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {createMutation.isError && (
@@ -195,7 +275,7 @@ export function CategoryCreate() {
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
           <Link
-            to="/categories"
+            to="/catalogue"
             className="px-4 py-2 text-sm font-medium text-fg bg-white border border-border rounded-md hover:bg-muted/50 transition-colors"
           >
             Cancel
@@ -203,7 +283,7 @@ export function CategoryCreate() {
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent/90 transition-colors disabled:opacity-50"
           >
             {createMutation.isPending ? "Creating..." : "Create Category"}
           </button>
