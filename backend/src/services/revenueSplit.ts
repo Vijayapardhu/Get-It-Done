@@ -106,7 +106,8 @@ async function loadContext(client: PoolClient, bookingId: string): Promise<Settl
             b.status,
             b.price         as booking_price,
             s.base_price,
-            w.cooperative_id,
+            b.cooperative_id as booking_cooperative_id,
+            w.cooperative_id as worker_cooperative_id,
             po.id           as payment_order_id,
             po.amount       as paid_amount
        from bookings b
@@ -135,7 +136,14 @@ async function loadContext(client: PoolClient, bookingId: string): Promise<Settl
     worker_id: row.worker_id,
     service_id: row.service_id,
     status: row.status,
-    cooperative_id: row.cooperative_id,
+    // The booking's own cooperative_id is resolved from the job's actual
+    // location against cooperative territories (territoryService.
+    // resolveAndAssignBooking, run at booking time) -- it is the cooperative
+    // whose ground this job was actually done on. The worker's own
+    // cooperative_id is only a fallback for a job outside every drawn
+    // territory, so a worker who belongs to a society still earns it a share
+    // rather than the commission vanishing for want of a polygon.
+    cooperative_id: row.booking_cooperative_id ?? row.worker_cooperative_id,
     gross,
     payment_order_id: row.payment_order_id,
   };

@@ -185,7 +185,7 @@ export const territoryService = {
 
     const bookings = await pool.query(
       `SELECT count(*)::int as count FROM bookings
-       WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)::geography, location::geography)`,
+       WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), location::geometry)`,
       [geoJson]
     );
 
@@ -194,14 +194,14 @@ export const territoryService = {
               count(DISTINCT w.id) filter (where w.current_status = 'available')::int as active
        FROM workers w
        JOIN worker_locations wl ON wl.worker_id = w.id
-       WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)::geography, wl.location::geography)`,
+       WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), wl.location::geometry)`,
       [geoJson]
     );
 
     const customers = await pool.query(
       `SELECT count(DISTINCT b.customer_id)::int as count
        FROM bookings b
-       WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)::geography, b.location::geography)`,
+       WHERE ST_Contains(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), b.location::geometry)`,
       [geoJson]
     );
 
@@ -226,7 +226,7 @@ export const territoryService = {
        FROM cooperative_territories ct
        JOIN cooperatives c ON c.id = ct.cooperative_id
        WHERE ct.status = 'active'
-         AND ST_Contains(ct.polygon, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography)
+         AND ST_Contains(ct.polygon::geometry, ST_SetSRID(ST_MakePoint($1, $2), 4326))
        LIMIT 1`,
       [lng, lat]
     );
@@ -284,7 +284,7 @@ export const territoryService = {
          SELECT b.id, ct.cooperative_id, ct.id as territory_id
          FROM bookings b
          JOIN cooperative_territories ct ON ct.status = 'active'
-           AND ST_Contains(ct.polygon, b.location::geography)
+           AND ST_Contains(ct.polygon::geometry, b.location::geometry)
          WHERE b.id = $1 AND b.cooperative_id IS NULL
          LIMIT 1
        ) sub
