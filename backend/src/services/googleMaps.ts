@@ -118,7 +118,10 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult[]> 
 // prefix. The caller (GidApi.reverseGeocode) takes `results.first`, so
 // whichever copy sorts first is what the whole app shows -- and Google
 // returns the coded one first.
-const PLUS_CODE_PREFIX = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\s/i;
+// The code stands alone before a comma ("33Q9+VMG, Surampalem, ...") when
+// there is no premise name to prefix, and before a space ("33V9+2HM Aditya
+// Nagar, ...") when there is -- both need to match.
+const PLUS_CODE_PREFIX = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}(,|\s|$)/i;
 
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult[]> {
   const data = await request<{ results: any[] }>("geocode/json", { latlng: `${lat},${lng}` });
