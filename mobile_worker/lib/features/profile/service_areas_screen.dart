@@ -44,6 +44,7 @@ class _ServiceAreasScreenState extends ConsumerState<ServiceAreasScreen> {
   @override
   Widget build(BuildContext context) {
     final areas = ref.watch(_areasProvider);
+    final skills = ref.watch(_skillsProvider);
     final tokens = context.tokens;
 
     return Scaffold(
@@ -55,6 +56,29 @@ class _ServiceAreasScreenState extends ConsumerState<ServiceAreasScreen> {
           child: Text('Could not load your areas.\n$error'),
         ),
         data: (list) {
+          // A worker with trades picked but no saved radius yet -- everyone
+          // who reached this screen any way other than the onboarding
+          // wizard, which is the only other place that ever calls
+          // saveServiceAreas -- had no rows here to seed `_draft` from and no
+          // way to add one: this screen only ever showed a slider for a trade
+          // that ALREADY had a service-area row, so "no rows yet" and "no
+          // trades picked" looked identical and both dead-ended on the same
+          // message. Seed a default radius per selected trade instead, same
+          // as the wizard does, so there is always something to slide and
+          // save.
+          if (list.isEmpty && _draft == null) {
+            // Wait for skills rather than seeding an empty draft off a
+            // still-loading value: `??=` below would lock that empty draft in
+            // permanently the moment skills actually resolves.
+            if (skills.isLoading) return const Center(child: CircularProgressIndicator());
+            final trades = skills.value;
+            if (trades != null && trades.isNotEmpty) {
+              _draft = {
+                for (final s in trades)
+                  s.serviceId: ServiceArea(serviceId: s.serviceId, serviceName: s.serviceName, radiusKm: 15),
+              };
+            }
+          }
           _draft ??= {for (final a in list) a.serviceId: a};
 
           if (_draft!.isEmpty) {
@@ -140,4 +164,8 @@ class _ServiceAreasScreenState extends ConsumerState<ServiceAreasScreen> {
 
 final _areasProvider = FutureProvider<List<ServiceArea>>(
   (ref) => ref.watch(workerApiProvider).serviceAreas(),
+);
+
+final _skillsProvider = FutureProvider<List<WorkerSkill>>(
+  (ref) => ref.watch(workerApiProvider).skills(),
 );
