@@ -6,6 +6,8 @@ import logger from "../core/logger.js";
 import { requireRoles } from "../middleware/auth.js";
 import { rejectNonUuidParam } from "../middleware/uuidParams.js";
 import { recordAuditEvent } from "../services/auditService.js";
+import { writeNotification } from "../services/notificationService.js";
+import { generateBookingOtps } from "../core/otp.js";
 import {
   emitEmergencyEscalated,
   emitWorkerLocationToBookings,
@@ -1038,10 +1040,11 @@ workerJobsRouter.post("/:id/arrived", workerOnly, async (req, res, next) => {
       })
       .parse(req.body);
 
-    const booking = await pool.query<{ id: string; status: string; worker_id: string; customer_id: string }>(
-      `select b.id, b.status, b.worker_id, b.customer_id
+    const booking = await pool.query<{ id: string; status: string; worker_id: string; customer_id: string; service_name: string }>(
+      `select b.id, b.status, b.worker_id, b.customer_id, s.name as service_name
          from bookings b
          join workers w on w.id = b.worker_id
+         join services s on s.id = b.service_id
         where b.id = $1 and w.user_id = $2`,
       [req.params.id, req.user!.id]
     );
@@ -1082,6 +1085,17 @@ workerJobsRouter.post("/:id/arrived", workerOnly, async (req, res, next) => {
       return;
     }
 
+    // The start code is minted here rather than trusted from booking creation.
+    // A customer's copy is only as good as whatever cached it on that device at
+    // that moment, arbitrarily long before this point -- a different device, a
+    // cleared app, a booking placed for someone else, and there is nothing to
+    // read out. Arrival is the one moment the code is actually needed, so it is
+    // the one moment this route can guarantee the customer both HAS it (pushed
+    // below) and that it is CORRECT (freshly hashed onto the row in the same
+    // transaction as the status change, not assumed to still match a hash
+    // minted possibly days earlier).
+    const { startOtp, completionOtp, startOtpHash, completionOtpHash } = generateBookingOtps();
+
     const client = await pool.connect();
     try {
       await client.query("begin");
@@ -1091,9 +1105,14 @@ workerJobsRouter.post("/:id/arrived", workerOnly, async (req, res, next) => {
                 arrived_at = now(),
                 arrival_location = ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
                 arrival_accuracy_m = $4,
+                start_otp_hash = $5,
+                completion_otp_hash = $6,
+                start_otp_attempts = 0,
+                completion_otp_attempts = 0,
+                otp_issued_at = now(),
                 updated_at = now()
           where id = $1`,
-        [req.params.id, input.longitude, input.latitude, input.accuracy ?? null]
+        [req.params.id, input.longitude, input.latitude, input.accuracy ?? null, startOtpHash, completionOtpHash]
       );
       await client.query(
         `insert into booking_status_events (booking_id, status, actor_id, reason, request_id)
@@ -1110,13 +1129,25 @@ workerJobsRouter.post("/:id/arrived", workerOnly, async (req, res, next) => {
 
     const noShowEligibleAt = new Date(Date.now() + NO_SHOW_WAIT_MINUTES * 60_000).toISOString();
 
-    // Both rooms, deliberately. `booking:{id}` is where a customer watching the
-    // tracking map is sitting; `user:{id}` reaches them when they are not on
-    // that screen -- which, for "the worker is at your door", is most of the
-    // time and is the whole point of the event.
+    // The booking room learns only that status moved -- that is what drives the
+    // tracking screen's map and step indicator, and it is not a channel the
+    // code should ride on (anything else ever listening on this booking's
+    // room, an admin view for one, has no business seeing it). The customer's
+    // own private room carries the code, mirroring how the app already treats
+    // "the worker is at your door" as the one event worth reaching them off-
+    // screen for.
     const arrivedPayload = { id: req.params.id, status: "arrived", arrivedAt: new Date().toISOString() };
     emitBookingStatusChange(String(req.params.id), arrivedPayload);
-    emitToUser(booking.rows[0].customer_id, "booking:status_changed", arrivedPayload);
+    emitToUser(booking.rows[0].customer_id, "booking:status_changed", { ...arrivedPayload, startOtp, completionOtp });
+
+    void writeNotification(pool, {
+      userId: booking.rows[0].customer_id,
+      type: "booking.arrived",
+      title: "Your worker has arrived",
+      body: `Share this code to start your ${booking.rows[0].service_name} booking: ${startOtp}`,
+      aggregateType: "booking",
+      aggregateId: String(req.params.id),
+    }).catch((error) => logger.error({ err: error, bookingId: req.params.id }, "Failed to notify customer of arrival"));
 
     res.json({
       booking: { id: req.params.id, status: "arrived", arrivedAt: new Date().toISOString() },

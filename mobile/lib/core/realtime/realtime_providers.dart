@@ -27,7 +27,30 @@ final realtimeServiceProvider = Provider<RealtimeService>((ref) {
     }
   }, fireImmediately: true);
 
-  ref.onDispose(service.dispose);
+  // The 'arrived' event carries a freshly minted code straight from the
+  // moment it stopped being avoidable to need one -- see BookingStatusEvent's
+  // startOtp/completionOtp doc. Caught here rather than only where a tracking
+  // screen happens to be listening, so the code is already sitting in
+  // [OtpStore] by the time the customer opens the app off the push
+  // notification, not just while the map screen is on top.
+  final otpSub = service.statusChanges.listen((event) {
+    final startOtp = event.startOtp;
+    final completionOtp = event.completionOtp;
+    if (startOtp == null || completionOtp == null) return;
+    ref.read(otpStoreProvider).save(
+          event.bookingId,
+          BookingOtps(startOtp: startOtp, completionOtp: completionOtp),
+        );
+    // bookingOtpsProvider reads OtpStore once and caches it -- the write above
+    // does not, by itself, tell anything already built off the old (empty)
+    // read to rebuild.
+    ref.invalidate(bookingOtpsProvider(event.bookingId));
+  });
+
+  ref.onDispose(() {
+    otpSub.cancel();
+    service.dispose();
+  });
   return service;
 });
 

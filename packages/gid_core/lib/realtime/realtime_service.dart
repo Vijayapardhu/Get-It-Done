@@ -179,14 +179,29 @@ class RealtimeService {
 
 @immutable
 class BookingStatusEvent {
-  const BookingStatusEvent({required this.bookingId, required this.status});
+  const BookingStatusEvent({
+    required this.bookingId,
+    required this.status,
+    this.startOtp,
+    this.completionOtp,
+  });
 
   final String bookingId;
   final String status;
 
+  /// Present only on the 'arrived' event, and only in the copy pushed to the
+  /// customer's own private room -- see workerApp.ts POST /bookings/:id/arrived.
+  /// The handshake codes are minted fresh at arrival, which is what makes this
+  /// the one reliable way to have them: whatever this device cached from
+  /// booking creation may be long gone, wrong, or never existed here at all.
+  final String? startOtp;
+  final String? completionOtp;
+
   factory BookingStatusEvent.fromJson(Json json) => BookingStatusEvent(
         bookingId: asString(pick(json, 'id', aliases: ['bookingId', 'booking_id'])),
         status: asString(pick(json, 'status')),
+        startOtp: asStringOrNull(pick(json, 'startOtp')),
+        completionOtp: asStringOrNull(pick(json, 'completionOtp')),
       );
 }
 
