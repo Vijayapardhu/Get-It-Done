@@ -313,9 +313,25 @@ final verificationStatusProvider = FutureProvider<VerificationStatus?>((ref) asy
 class DutyController extends Notifier<DutyStatus> {
   @override
   DutyStatus build() {
+    // Not just `state = profile.currentStatus`. The server already says
+    // 'available' the moment an admin approves a worker -- before the app has
+    // ever asked for location permission or started the pump -- and on every
+    // cold start after that this listener is what syncs the badge to it. A
+    // worker in that state saw "You are online" and believed it: the badge
+    // matched the server, the toggle had genuinely been on since approval,
+    // there was nothing to retap. But findMatchingWorkers requires a row in
+    // worker_locations, which only `set()`'s _applyCadence call ever writes,
+    // so they never received a single job and had no way to discover why.
+    // Routing the synced state through _applyCadence too — idempotent, since
+    // LocationPump.setCadence no-ops when the cadence has not changed —
+    // means the pump's actual state always follows the badge instead of only
+    // the tap that happened to produce it.
     ref.listen(workerProfileProvider, (previous, next) {
       final profile = next.value;
-      if (profile != null) state = profile.currentStatus;
+      if (profile != null) {
+        state = profile.currentStatus;
+        _applyCadence(profile.currentStatus);
+      }
     });
     return DutyStatus.offline;
   }

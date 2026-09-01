@@ -444,6 +444,14 @@ workerAppRouter.post("/me/location/batch", workerOnly, async (req, res, next) =>
              updated_at  = now()`,
           [workerId, newest.longitude, newest.latitude, newest.accuracy ?? null, newest.recordedAt]
         );
+
+        // findMatchingWorkers hard-filters on this flag, and this batch is the
+        // ONLY path that ever writes a fresh worker_locations row -- the single
+        // -fix PUT /workers/me/location that sets it is dead code the app never
+        // calls (wrong verb too: the client POSTs it). Without this, a worker
+        // could be online with a current position on file and still never be a
+        // dispatch candidate, for a flag nothing had any way to turn on.
+        await client.query(`update workers set location_sharing_enabled = true where id = $1`, [workerId]);
       }
 
       // 4.9. A mocked fix is not an error to reject — the app is honest about
