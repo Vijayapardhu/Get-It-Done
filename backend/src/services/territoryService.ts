@@ -162,8 +162,8 @@ export const territoryService = {
     const geoJson = JSON.stringify(polygon);
     const values: unknown[] = [geoJson, federationId];
     let query = `
-      SELECT ct.id as territory_id, ct.cooperative_id, c.name as cooperative_name,
-             ST_Area(ST_Intersection(ct.polygon, ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)::geography)::geography) / 1000000 as intersection_area_km2
+      SELECT ct.id as "territoryId", ct.cooperative_id as "cooperativeId", c.name as "cooperativeName",
+             ST_Area(ST_Intersection(ct.polygon, ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)::geography)::geography) / 1000000 as "intersectionAreaKm2"
       FROM cooperative_territories ct
       JOIN cooperatives c ON c.id = ct.cooperative_id
       WHERE ct.status = 'active'
@@ -174,7 +174,7 @@ export const territoryService = {
       query += ` AND ct.cooperative_id != $3`;
       values.push(excludeCooperativeId);
     }
-    query += ` ORDER BY intersection_area_km2 DESC`;
+    query += ` ORDER BY "intersectionAreaKm2" DESC`;
 
     const result = await pool.query(query, values);
     return result.rows;

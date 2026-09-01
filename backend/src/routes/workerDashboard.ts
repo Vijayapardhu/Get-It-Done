@@ -129,6 +129,8 @@ const getWorkerDashboard = async (req: any, res: any, next: any) => {
         address: worker.address,
         profilePhotoUrl: worker.profilePhotoUrl,
         locationSharingEnabled: worker.locationSharingEnabled,
+        cooperativeId: worker.cooperativeId,
+        locationUpdatedAt: worker.locationUpdatedAt,
       },
       upcomingJobs: upcomingJobs.rows,
       todayStats: todayStats.rows[0],

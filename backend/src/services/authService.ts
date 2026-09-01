@@ -82,6 +82,9 @@ export class AuthService {
       avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
       oauthProvider: row.oauth_provider ? String(row.oauth_provider) : null,
       oauthSubject: row.oauth_subject ? String(row.oauth_subject) : null,
+      cooperativeId: row.cooperativeId ? String(row.cooperativeId) : null,
+      cooperativeName: row.cooperativeName ? String(row.cooperativeName) : null,
+      homeAddress: row.homeAddress ? String(row.homeAddress) : null,
     };
   }
 
@@ -365,7 +368,7 @@ export class AuthService {
   }
 
   async findUserByGoogleId(googleId: string): Promise<User | null> {
-    const result = await pool.query(`SELECT ${publicUserColumns} FROM users WHERE google_id = $1`, [googleId]);
+    const result = await pool.query(`SELECT ${publicUserColumns} FROM users ${userJoinClause} WHERE users.google_id = $1`, [googleId]);
     return result.rows[0] ? this.toUser(result.rows[0]) : null;
   }
 

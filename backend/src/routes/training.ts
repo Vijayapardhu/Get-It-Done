@@ -96,6 +96,7 @@ trainingRouter.get("/modules/:moduleId", requireAuth, async (req, res, next) => 
         text: q.text,
         options: q.options,
         explanation: q.explanation,
+        orderIndex: q.orderIndex,
       })),
     });
   } catch (error) { next(error); }
