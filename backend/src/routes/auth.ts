@@ -128,6 +128,14 @@ const phoneSchema = z.string().trim().regex(/^\+?[1-9]\d{7,14}$/, "Invalid phone
 const passwordSchema = z.string().min(8).max(128);
 const roleSchema = z.enum(["customer", "worker"]);
 
+// Role is required. A missing field used to default to "customer", which meant
+// a misconfigured or stale client would silently create a customer account —
+// and a worker signing up on a stale build would later show up as the wrong
+// account type with no obvious explanation. Force the client to be explicit.
+const registerRoleSchema = z.enum(["customer", "worker"], {
+  errorMap: () => ({ message: "role must be either 'customer' or 'worker'" }),
+});
+
 /// Sign-in accepts one field. The client should not have to decide whether
 /// what the user typed is an email or a phone number, and neither should the
 /// user have to pick a tab.
@@ -160,7 +168,7 @@ const registerSchema = z.object({
   email: z.string().email().max(320),
   phone: phoneSchema,
   password: passwordSchema,
-  role: roleSchema.default("customer"),
+  role: registerRoleSchema,
 });
 
 const publicUser = (user: NonNullable<Awaited<ReturnType<typeof authService.findUserById>>>) => ({

@@ -154,22 +154,18 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           await _fetchCurrentLocation();
         }
 
-        // Create or update worker profile
-        try {
-          await ref.read(workerApiProvider).registerWorker(
-                name: name,
-                phone: phone,
-                address: address.isNotEmpty ? address : 'Hyderabad',
-                latitude: _latitude,
-                longitude: _longitude,
-              );
-        } catch (_) {
-          // If already registered, update profile
-          await ref.read(workerApiProvider).updateProfile(
-                address: address.isNotEmpty ? address : null,
-                experienceYears: _experienceYears,
-              );
-        }
+        // Create the worker profile row for this user.
+        //
+        // The user row already exists (created by /auth/register with role=worker),
+        // so we use the authenticated onboarding endpoint that upserts the workers
+        // row keyed on the current user. The legacy public /worker/register route
+        // cannot be used here — it tries to create a second user row and 409s on
+        // phone uniqueness, which is what used to leave the wizard silently broken
+        // and the account looking like a customer downstream.
+        await ref.read(workerApiProvider).onboard({
+          if (address.isNotEmpty) 'address': address,
+          if (_experienceYears != null) 'experienceYears': _experienceYears,
+        });
 
         if (_photoFile != null) {
           final url = await ref.read(workerApiProvider).uploadProfilePhoto(_photoFile!);

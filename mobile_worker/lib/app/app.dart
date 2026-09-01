@@ -435,6 +435,12 @@ class _WrongAccountScreenState extends ConsumerState<_WrongAccountScreen> {
   bool _busy = false;
   String? _failure;
 
+  /// True after a 409 ACCOUNT_HAS_CUSTOMER_HISTORY — at that point the
+  /// "Continue as a worker" button is no longer the right answer, because the
+  /// backend has hard-rejected this email/phone from ever being a worker.
+  /// We hide it and surface "register a new account" as the only path.
+  bool _needsNewAccount = false;
+
   Future<void> _becomeWorker() async {
     setState(() {
       _busy = true;
@@ -449,12 +455,21 @@ class _WrongAccountScreenState extends ConsumerState<_WrongAccountScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _failure = error.isNetwork
-              ? 'No connection. Check your network and try again.'
-              : error.message;
+          _failure = _messageFor(error);
+          _needsNewAccount = error.code == 'ACCOUNT_HAS_CUSTOMER_HISTORY';
         });
       }
     }
+  }
+
+  String _messageFor(ApiException error) {
+    if (error.isNetwork) return 'No connection. Check your network and try again.';
+    if (error.code == 'ACCOUNT_HAS_CUSTOMER_HISTORY') {
+      return 'This account has already been used to book work, so it can\'t be '
+          'turned into a worker account. Sign out and create a fresh account '
+          'with a different email and phone.';
+    }
+    return error.message;
   }
 
   Future<void> _signOut() async {
@@ -483,17 +498,23 @@ class _WrongAccountScreenState extends ConsumerState<_WrongAccountScreen> {
                 ),
                 const SizedBox(height: Space.x5),
                 Text(
-                  'This is a customer account',
+                  _needsNewAccount
+                      ? 'A worker account must be new'
+                      : 'This is a customer account',
                   style: context.text.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: Space.x3),
                 Text(
-                  email == null
-                      ? 'It was set up to book work, not to do it. You can turn it into a '
-                          'worker account now — same sign-in, nothing to re-enter.'
-                      : '$email was set up to book work, not to do it. You can turn it into a '
-                          'worker account now — same sign-in, nothing to re-enter.',
+                  _needsNewAccount
+                      ? '$email has been used to book work. The same email can\'t '
+                          'become a worker account — please sign out and register a '
+                          'new account to work.'
+                      : email == null
+                          ? 'It was set up to book work, not to do it. You can turn it into a '
+                              'worker account now — same sign-in, nothing to re-enter.'
+                          : '$email was set up to book work, not to do it. You can turn it into a '
+                              'worker account now — same sign-in, nothing to re-enter.',
                   style: context.text.bodyMedium?.copyWith(color: tokens.textSecondary),
                   textAlign: TextAlign.center,
                 ),
@@ -510,29 +531,31 @@ class _WrongAccountScreenState extends ConsumerState<_WrongAccountScreen> {
                   ),
                 ],
                 const SizedBox(height: Space.x6),
-                SizedBox(
-                  width: double.infinity,
-                  height: WorkerSizes.button,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : _becomeWorker,
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.n0),
-                          )
-                        : AppIcon(AppIcons.work, size: 20, color: AppColors.n0),
-                    label: const Text('Continue as a worker'),
+                if (!_needsNewAccount) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: WorkerSizes.button,
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : _becomeWorker,
+                      icon: _busy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.n0),
+                            )
+                          : AppIcon(AppIcons.work, size: 20, color: AppColors.n0),
+                      label: const Text('Continue as a worker'),
+                    ),
                   ),
-                ),
-                const SizedBox(height: Space.x3),
+                  const SizedBox(height: Space.x3),
+                ],
                 SizedBox(
                   width: double.infinity,
                   height: WorkerSizes.button,
                   child: OutlinedButton.icon(
                     onPressed: _busy ? null : _signOut,
                     icon: AppIcon(AppIcons.logout, size: 20),
-                    label: const Text('Use a different account'),
+                    label: Text(_needsNewAccount ? 'Sign out to register again' : 'Use a different account'),
                   ),
                 ),
               ],
