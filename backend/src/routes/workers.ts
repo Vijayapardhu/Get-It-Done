@@ -296,10 +296,36 @@ workersRouter.get("/me/verification/status", workerOnly, async (req, res, next) 
     ]);
 
     const requiredDocTypes = ["identity_proof", "address_proof", "skill_certificate", "experience_letter", "cooperative_membership"];
+    const requiredDocLabels: Record<string, string> = {
+      identity_proof: "Identity proof",
+      address_proof: "Address proof",
+      skill_certificate: "Skill certificate",
+      experience_letter: "Experience letter",
+      cooperative_membership: "Cooperative membership",
+    };
     const submittedTypes = new Set(documents.rows.map(d => d.type));
     const missingDocs = requiredDocTypes.filter(t => !submittedTypes.has(t));
 
     res.json({
+      // `status` and `steps` are what the app's VerificationStatus model
+      // actually reads (see mobile_worker/lib/core/models/worker_models.dart).
+      // The fields below them are the legacy shape this endpoint used to
+      // return exclusively -- kept for any other caller -- but omitting
+      // status/steps left every worker's `isVerified` stuck at the model's
+      // 'pending' fallback and `steps` at an empty list forever, regardless
+      // of actual verification_status: the Today screen's "Finish getting
+      // verified" banner never cleared for anyone, even a fully approved
+      // worker, because it has no fallback to workerProfileProvider the way
+      // the dedicated verification screen does.
+      status: worker.verificationStatus,
+      steps: requiredDocTypes.map((type) => ({
+        key: type,
+        label: requiredDocLabels[type],
+        done: submittedTypes.has(type),
+      })),
+      // The reject endpoint (admin.ts POST /verifications/:id/reject) writes
+      // the reason onto the event, not onto workers.verification_notes.
+      rejectionReason: events.rows.find((e) => e.to_status === "rejected")?.reason ?? worker.verificationNotes,
       verificationStatus: worker.verificationStatus,
       verificationSubmittedAt: worker.verificationSubmittedAt,
       verificationNotes: worker.verificationNotes,

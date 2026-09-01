@@ -459,10 +459,17 @@ class _Warnings extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final verification = ref.watch(verificationStatusProvider).value;
+    // The verification screen already trusts the worker profile as a second
+    // source for this -- a worker approved by an admin outside the app's own
+    // submit/steps flow (a cooperative onboarding them directly, for one)
+    // never accumulates `steps`, so `verification.isVerified` can lag behind
+    // reality. Without this fallback this banner does not agree with the
+    // screen its own "Finish getting verified" link opens.
+    final profileVerified = ref.watch(workerProfileProvider).value?.isVerified == true;
     final tokens = context.tokens;
 
     final warnings = <(String, String, VoidCallback)>[
-      if (verification != null && !verification.isVerified)
+      if (verification != null && !verification.isVerified && !profileVerified)
         (
           'Finish getting verified',
           '${verification.steps.where((s) => !s.done).length} things left before you can take jobs',
