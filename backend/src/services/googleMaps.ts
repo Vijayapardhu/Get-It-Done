@@ -109,10 +109,21 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult[]> 
   }));
 }
 
+// An Open Location Code ("Plus Code") at the front of formatted_address --
+// e.g. "33V9+2HM Aditya Nagar, ADB Rd, Surampalem" -- the character set
+// Google's spec defines, deliberately excluding 0/1/I/L/O/U to avoid look-
+// alikes. Areas without a precise rooftop address, common outside city
+// centres in India, get this exact premise TWICE from the Geocoding API:
+// once prefixed with its code, once without, same address either side of the
+// prefix. The caller (GidApi.reverseGeocode) takes `results.first`, so
+// whichever copy sorts first is what the whole app shows -- and Google
+// returns the coded one first.
+const PLUS_CODE_PREFIX = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\s/i;
+
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult[]> {
   const data = await request<{ results: any[] }>("geocode/json", { latlng: `${lat},${lng}` });
-  return data.results.map((r) => ({
-    formattedAddress: r.formatted_address,
+  const mapped = data.results.map((r) => ({
+    formattedAddress: r.formatted_address as string,
     location: { lat: r.geometry.location.lat, lng: r.geometry.location.lng },
     placeId: r.place_id,
     addressComponents: r.address_components.map((c: any) => ({
@@ -121,6 +132,13 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
       types: c.types,
     })),
   }));
+
+  // Stable partition, not a filter: a point with genuinely no premise or
+  // route on file -- open countryside -- can have a plus code as its ONLY
+  // usable result, and that is still a better answer than none.
+  const clean = mapped.filter((r) => !PLUS_CODE_PREFIX.test(r.formattedAddress));
+  const coded = mapped.filter((r) => PLUS_CODE_PREFIX.test(r.formattedAddress));
+  return [...clean, ...coded];
 }
 
 export async function getDistanceMatrix(
