@@ -1,3 +1,4 @@
+import type { Pool, PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 
 export interface Point {
@@ -219,8 +220,8 @@ export const territoryService = {
     };
   },
 
-  async resolveSocietyByCoordinates(lat: number, lng: number) {
-    const result = await pool.query(
+  async resolveSocietyByCoordinates(lat: number, lng: number, db: Pool | PoolClient = pool) {
+    const result = await db.query(
       `SELECT ct.id as territory_id, ct.cooperative_id, ct.version,
               c.name as cooperative_name, c.federation_id
        FROM cooperative_territories ct
@@ -295,10 +296,16 @@ export const territoryService = {
     return result.rows[0] || null;
   },
 
-  async resolveAndAssignBooking(bookingId: string, latitude: number, longitude: number) {
-    const territory = await this.resolveSocietyByCoordinates(latitude, longitude);
+  // `db` must be the SAME client the caller inserted the booking on when
+  // called mid-transaction (bookingService.placeBooking does exactly this,
+  // before commit). Defaulting to the shared pool silently no-ops here: a
+  // second connection cannot see a row an open transaction on a different
+  // connection has not committed yet, so the UPDATE below matched zero rows
+  // for every booking ever placed until this parameter existed.
+  async resolveAndAssignBooking(bookingId: string, latitude: number, longitude: number, db: Pool | PoolClient = pool) {
+    const territory = await this.resolveSocietyByCoordinates(latitude, longitude, db);
     if (territory) {
-      await pool.query(
+      await db.query(
         `UPDATE bookings SET cooperative_id = $1, territory_id = $2, territory_version = $3 WHERE id = $4`,
         [territory.cooperative_id, territory.territory_id, territory.version, bookingId]
       );

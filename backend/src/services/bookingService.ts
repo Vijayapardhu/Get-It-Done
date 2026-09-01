@@ -107,7 +107,7 @@ async function placeBooking(client: PoolClient, input: BookingSeed): Promise<Pla
 
   // Resolve territory for this booking location
   try {
-    const territoryResult = await territoryService.resolveAndAssignBooking(bookingId, input.latitude, input.longitude);
+    const territoryResult = await territoryService.resolveAndAssignBooking(bookingId, input.latitude, input.longitude, client);
     if (territoryResult.assigned) {
       // Booking was assigned to a society based on territory
     }
