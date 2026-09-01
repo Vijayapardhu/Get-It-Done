@@ -164,7 +164,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // and the account looking like a customer downstream.
         await ref.read(workerApiProvider).onboard({
           if (address.isNotEmpty) 'address': address,
-          if (_experienceYears != null) 'experienceYears': _experienceYears,
+          'experienceYears': _experienceYears,
         });
 
         if (_photoFile != null) {

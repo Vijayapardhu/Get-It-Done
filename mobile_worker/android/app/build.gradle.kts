@@ -23,6 +23,16 @@ val allowCleartext: Boolean = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }.getProperty("ALLOW_CLEARTEXT")?.toBoolean() ?: false
 
+// The worker app's own upload key, kept out of the repository (see
+// android/keystore/ and android/key.properties, both gitignored). Falls back
+// to null -- and the release build type below falls back to the debug key --
+// so a fresh clone still builds a (debug-signed) release APK without anyone
+// having to generate a keystore first.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -100,12 +110,24 @@ android {
             if (allowCleartext) "network_security_config_dev" else "network_security_config"
     }
 
+    signingConfigs {
+        if (keystoreProperties.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: replace with the worker app's own upload key before the
-            // first internal-testing upload. Play will not accept two listings
-            // signed with the debug key.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystoreProperties.getProperty("storeFile") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
         }
